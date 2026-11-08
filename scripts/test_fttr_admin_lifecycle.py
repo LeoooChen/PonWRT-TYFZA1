@@ -20,13 +20,17 @@ enum { ONU_ABSENT,ONU_BLOCKED,ONU_REBOOT,ONU_REBOOT_WAIT,ONU_UPGRADE,ONU_UPGRADE
 enum { FTTR_ADMIN_DEACTIVATE=2 };
 struct fttr_onu_state {uint32_t downstream,upstream;unsigned char serial[8];};
 struct fttr_admin_request {uint32_t version,id,action;unsigned char serial[8];uint32_t target;};
-struct onu { bool admin_pending,service_started,grant; void *wifi;
+struct onu { bool admin_pending,service_started,grant,upgrade_held; void *wifi;
  struct {int index;} ports[7]; unsigned char admin_serial[8]; int64_t admin_timeout;
  int phase,hardware; };
 struct controller { int backend,directory; int64_t admin_scan_due; struct onu onu[FTTR_ONUS];
  struct {bool active;struct fttr_admin_request request;} move; };
 static int calls,readbacks,publishes,io_error,read_error,publish_error;
-static int table_error,recoveries,recovery_error,recovery_fatal;
+static int table_error,recoveries,recovery_error,recovery_fatal,upgrade_record_error;
+struct fttr_upgrade_record {int unused;};
+static int upgrade_record_load(struct controller *c,const unsigned char *serial,struct fttr_upgrade_record *r) {
+ (void)c;(void)serial;(void)r;return upgrade_record_error;
+}
 static int64_t clock_sample,io_duration;
 static int64_t now_ms(void){return clock_sample+io_duration;}
 static struct fttr_onu_state samples[FTTR_ONUS];
@@ -61,7 +65,7 @@ static int tick(struct controller *c,int64_t now) {
 static void reset(int backend,int64_t due) {
  memset(&c,0,sizeof(c));c.backend=backend;c.admin_scan_due=due;
  calls=readbacks=publishes=io_error=read_error=publish_error=0;target=7;
- table_error=recoveries=recovery_error=recovery_fatal=0;memset(samples,0,sizeof(samples));samples[7].serial[0]=0x54;
+ table_error=recoveries=recovery_error=recovery_fatal=0;upgrade_record_error=-ENOENT;memset(samples,0,sizeof(samples));samples[7].serial[0]=0x54;
  io_duration=0;
  c.onu[7].admin_pending=true;c.onu[7].admin_serial[0]=0x54;
  c.onu[7].admin_timeout=15000;c.onu[7].phase=ONU_BLOCKED;
@@ -106,6 +110,10 @@ int main(void) {
   if(backend==1)assert(c.onu[7].admin_pending); /* release in next pass */
   reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;samples[7].downstream=0x10000;
   assert(!admin_tick(&c,100) && !recoveries && !calls);
+  reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;
+  upgrade_record_error=0;assert(!admin_tick(&c,100) && !recoveries && c.onu[7].upgrade_held);
+  reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;
+  upgrade_record_error=-EBADMSG;assert(admin_tick(&c,100)==-EBADMSG && !recoveries);
   for(int failure=0;failure<3;failure++) {
    reset(backend,100);c.onu[7].admin_pending=false;samples[7].upstream=0x100000;
    recovery_error=failure==0?-ESTALE:failure==1?-EAGAIN:-EIO;

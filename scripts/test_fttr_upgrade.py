@@ -34,6 +34,8 @@ int fttr_miniolt_same(int fd,unsigned int id,const struct fttr_onu_state *identi
  (void)fd;(void)id;(void)identity;return -ESTALE;
 }
 int begin(int action,const void *data,size_t size){sends=0;send_error=0;return fttr_upgrade_start(&job,7,&counter,action,data,size);}
+int check(int action,int image,const unsigned char *version){sends=0;send_error=0;
+ return fttr_upgrade_check(&job,7,&counter,action,image,version);}
 int transmit(long now){return fttr_upgrade_send(&job,&counter,-1,0,now);}
 int reply(const unsigned char *body,int size,long now){struct fttr_omci_message m={.onu=7,.body=body,.length=size};return fttr_upgrade_reply(&job,&counter,&m,now);}
 int tick(long now){return fttr_upgrade_tick(&job,&counter,now);}
@@ -98,6 +100,18 @@ with tempfile.TemporaryDirectory() as d:
                 assert lib.transmit(0)==0;assert image_reply(1,1,1)==1 and lib.verified()
             else:assert lib.accepted() and not lib.verified()
             assert lib.state()==9;checks+=1
+    for action in range(3):
+        for changed in (False,True):
+            assert lib.check(action,1,b'VERSION0000001')==0
+            assert lib.transmit(0)==0 and frame()[2:10]==bytes.fromhex('490a00070001f000')
+            flags=bytes((action==2,action==1,1))
+            version=b'OTHER-VERSION!' if changed else b'VERSION0000001'
+            assert len(version)==14
+            ret=response(payload=b'\xf0\0'+version+flags)
+            assert ret==(-errno.EUCLEAN if changed else 1)
+            assert lib.count()==1
+            assert not lib.accepted() and lib.verified()==(not changed)
+            checks+=1
     data=b'x'*100
     # Rejected window retransmits the complete same offset, at most twice.
     assert select(0,data)==1;lib.transmit(0);response(payload=b'\x01')

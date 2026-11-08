@@ -92,6 +92,22 @@ int fttr_upgrade_start(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *cou
 	return 0;
 }
 
+int fttr_upgrade_check(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
+		       enum fttr_upgrade_action action, uint16_t image, const uint8_t version[14])
+{
+	memset(job, 0, sizeof(*job));
+	job->me.onu = onu;
+	if (onu >= 64 || image > 1 || action > FTTR_UPGRADE_COMMIT || action < FTTR_UPGRADE_DOWNLOAD)
+		return fail(job, -EINVAL);
+	job->action = action;
+	job->image = image;
+	job->checking = true;
+	memcpy(job->expected_version, version, 14);
+	job->stage = FTTR_UPGRADE_VERIFY;
+	prepare(job, counter);
+	return 0;
+}
+
 int fttr_upgrade_send(struct fttr_upgrade_job *job, uint16_t *counter, int fd,
 		      const struct fttr_omci_link *link, int64_t now)
 {
@@ -192,9 +208,13 @@ int fttr_upgrade_reply(struct fttr_upgrade_job *job, uint16_t *counter,
 		job->stage = FTTR_UPGRADE_DONE;
 		return 1;
 	case FTTR_UPGRADE_VERIFY:
-		if (job->me.reply[27] != 1 || (job->action == FTTR_UPGRADE_COMMIT ?
-		    job->me.reply[25] != 1 : job->me.reply[25] || job->me.reply[26]))
+		if (job->me.reply[25] > 1 || job->me.reply[26] > 1 || job->me.reply[27] != 1 ||
+		    (job->checking && memcmp(job->me.reply + 11, job->expected_version, 14)) ||
+		    (job->action == FTTR_UPGRADE_COMMIT ? job->me.reply[25] != 1 :
+		     job->action == FTTR_UPGRADE_ACTIVATE ? job->me.reply[26] != 1 :
+		     job->me.reply[25] || job->me.reply[26]))
 			return fail(job, -EUCLEAN);
+		memcpy(job->attributes[job->image], job->me.reply + 11, 17);
 		job->verified = true;
 		job->stage = FTTR_UPGRADE_DONE;
 		return 1;

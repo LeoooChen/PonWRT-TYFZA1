@@ -78,6 +78,8 @@ start_service() {
 		asic9690) ;;
 		*) echo 'FTTR: unknown MiniOLT backend' >&2; return 1 ;;
 	esac
+	mkdir -p /etc/tyfza1-fttr-upgrades || return $?
+	chmod 0700 /etc/tyfza1-fttr-upgrades || return $?
 	mkdir -p /var/run/tyfza1-fttr || return $?
 	chmod 0700 /var/run/tyfza1-fttr || return $?
 	for optical in "$miniolt"/i2c-*/*; do
@@ -86,7 +88,8 @@ start_service() {
 		procd_set_param command /usr/sbin/fttrd "$miniolt" /sys/class/net/fttr0/device \
 			/var/run/tyfza1-fttr fttr0 "$optical" "$mode" "$nway" "$pon" \
 			--services /etc/tyfza1-fttr.services --wifi /etc/tyfza1-fttr.wifi \
-			--loid-auth /tmp/tyfza1-factory/fttr-private/loid.bin
+			--loid-auth /tmp/tyfza1-factory/fttr-private/loid.bin \
+			--upgrade-state /etc/tyfza1-fttr-upgrades
 		if [ -e /etc/tyfza1-fttr.onus.json ] || [ -L /etc/tyfza1-fttr.onus.json ]; then
 			procd_append_param command --onu-auth /etc/tyfza1-fttr.onus.json
 		fi

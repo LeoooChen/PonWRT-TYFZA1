@@ -609,7 +609,7 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	int fd, ret, image_fd = -1;
 	int32_t result;
 	bool upgrade = !strcmp(action, "download") || !strcmp(action, "activate") ||
-		!strcmp(action, "commit") || !strcmp(action, "abort");
+		!strcmp(action, "commit") || !strcmp(action, "abort") || !strcmp(action, "check");
 	ssize_t size;
 
 	errno = 0;
@@ -650,7 +650,8 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 		request.version = 3;
 		request.action = !strcmp(action, "download") ? FTTR_ADMIN_DOWNLOAD :
 			!strcmp(action, "activate") ? FTTR_ADMIN_ACTIVATE :
-			!strcmp(action, "commit") ? FTTR_ADMIN_COMMIT : FTTR_ADMIN_UPGRADE_ABORT;
+			!strcmp(action, "commit") ? FTTR_ADMIN_COMMIT :
+			!strcmp(action, "check") ? FTTR_ADMIN_UPGRADE_CHECK : FTTR_ADMIN_UPGRADE_ABORT;
 		if ((request.action == FTTR_ADMIN_DOWNLOAD) != (image_path != NULL)) return -EINVAL;
 		if (image_path) {
 			image_fd = open(image_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
@@ -741,7 +742,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-		fprintf(stderr, "       %s <controller-state-directory> onu-upgrade <hardware-ID> <serial-hex> <download image-file|activate|commit|abort>\n", argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-upgrade <hardware-ID> <serial-hex> <download image-file|activate|commit|abort|check>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate|reboot>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-move <source-ID> <source-serial-hex> <target-ID> <target-serial-hex>\n", argv[0]);
 		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
@@ -767,9 +768,9 @@ int main(int argc, char **argv)
 			return 2;
 		if ((!move && !strcmp(argv[5], "move")) ||
 		    (!upgrade && (!strcmp(argv[5], "download") || !strcmp(argv[5], "activate") ||
-		     !strcmp(argv[5], "commit") || !strcmp(argv[5], "abort"))) ||
+		     !strcmp(argv[5], "commit") || !strcmp(argv[5], "abort") || !strcmp(argv[5], "check"))) ||
 		    (upgrade && strcmp(argv[5], "download") && strcmp(argv[5], "activate") &&
-		     strcmp(argv[5], "commit") && strcmp(argv[5], "abort")))
+		     strcmp(argv[5], "commit") && strcmp(argv[5], "abort") && strcmp(argv[5], "check")))
 			return 2;
 		directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);
 		if (directory < 0) { perror(argv[1]); return 1; }

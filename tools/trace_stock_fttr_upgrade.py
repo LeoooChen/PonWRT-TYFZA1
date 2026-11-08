@@ -16,7 +16,8 @@ class Upgrade:
             'plr_gponomci_me_swimg_dld_tx','plr_gponrm_cfg_image_get',
             'plr_gponomci_module_log','plr_log','plr_gponrm_image_get',
             'plr_gponrm_image_info_by_pos_id','plr_gponrm_swimg_dld_start_if',
-            'plr_gponrm_swimg_dld_activate_if','plr_gponrm_swimg_dld_commit_if'))
+            'plr_gponrm_swimg_dld_activate_if','plr_gponrm_swimg_dld_commit_if',
+            'plr_gponrm_image_mgmt_get','plr_gponrm_pr_image_get'))
         self.base=self.oracle.scratch+0x2000
         self.onu=7;self.tci=0x8123;self.fail_at=0;self.events=[];self.frames=[];self.transactions=[]
         self.oracle.call('plr_gponrm_sw_crc32_table_init')
@@ -38,6 +39,13 @@ class Upgrade:
         if name=='plr_gponomci_delete_swimg_dld_trans':return 0x80000000
         if name=='plr_gponomci_me_swimg_dld_tx':
             assert a[2]==48;self.frames.append(bytes(u.mem_read(a[1],a[2])));return 0x80000000
+        if name=='plr_gponrm_image_mgmt_get':return self.base+0xc00
+        if name=='plr_gponrm_pr_image_get':
+            instance=struct.unpack('<H',u.mem_read(a[2],2))[0]
+            assert instance in (0,1) and a[1]==0xf000
+            self.read_instances.append(instance)
+            row=bytearray(64);row[6:23]=self.image_attributes[instance]
+            u.mem_write(a[2],bytes(row));return 0
         if name=='plr_gponrm_image_get':return 0
         if name=='plr_gponrm_image_info_by_pos_id':return self.base+0xa00+64*a[1]
         if name in ('plr_gponrm_swimg_dld_start_if','plr_gponrm_swimg_dld_activate_if','plr_gponrm_swimg_dld_commit_if'):
@@ -88,6 +96,24 @@ class Upgrade:
         ret=o.call('plr_gponrm_cfg_swimg_dld_'+action,p,p+0x100)
         return ret,self.selection
 
+    def inventory(self,attributes):
+        self.image_attributes=attributes;self.read_instances=[]
+        o=self.oracle;p=self.base
+        # This one call executes the real image_get body despite its override
+        # used by selection tests; internal read transport remains modeled.
+        address=o.symbols['plr_gponrm_image_get']
+        name=o.hooks.pop(address)
+        try:
+            o.uc.mem_write(p+0xc00,bytes(124))
+            assert o.call('plr_gponrm_image_get',p)==0
+        finally:o.hooks[address]=name
+        rows=bytes(o.uc.mem_read(p+0xc00,124))
+        assert self.read_instances==[0,1]
+        for i,attrs in enumerate(attributes):
+            row=rows[i*62:(i+1)*62]
+            assert row[2:16]==attrs[:14] and row[17:20]==attrs[14:17]
+        return rows.hex()
+
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--relay',type=Path,required=True)
@@ -124,6 +150,11 @@ def main():
             ret,sleeps,frames=stock.end_retry(count)
             assert ret==(count>=120) and sleeps==([] if count>=120 else [4000000])
             assert len(frames)==(count<120)
+        inventories=[]
+        for state in range(8):
+            attributes=[b'VERSION0000001'+bytes((state&1,(state>>1)&1,(state>>2)&1)),
+                        b'VERSION0000002'+bytes((0,1,1))]
+            inventories.append(stock.inventory(attributes))
         selection_cases=[]
         for action,error in (('start',72),('active',74),('commit',75)):
             for left in range(8):
@@ -137,9 +168,9 @@ def main():
         p0=stock.base+0x1000;stock.oracle.uc.mem_write(p0,b'123456789')
         crc=stock.oracle.call('plr_gponrm_ver_crc32_get',p0,9)
         assert crc==0xfc891918,hex(crc)
-        reports.append(dict(file=binary.name,sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),cases=cases,crc=crc,selection_cases=selection_cases))
+        reports.append(dict(file=binary.name,sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),cases=cases,crc=crc,selection_cases=selection_cases,inventories=inventories))
     args.output.write_text(json.dumps(dict(reports=reports,scope='Executed factory image producers/window/encoder/retry code. Memory, async dispatch and transport are modeled; no flash write or physical activation.'),indent=2)+'\n')
-    print('Factory upgrade: both backends, 40 wire/window cases, 384 image selections, 12 window-failure/retry cases, 8 end-retry boundaries and image CRC passed')
+    print('Factory upgrade: both backends, 40 wire/window cases, 384 image selections, 16 version/flag inventories, 12 window-failure/retry cases, 8 end-retry boundaries and image CRC passed')
 
 
 if __name__=='__main__':main()

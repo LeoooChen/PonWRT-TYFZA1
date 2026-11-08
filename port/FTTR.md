@@ -5655,6 +5655,7 @@ fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 download IMAGE_FILE
 fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 activate
 fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 commit
 fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 abort
+fttrctl STATE_DIRECTORY onu-upgrade ID SERIAL16 check
 ```
 
 `download` reads both image slots with mask0xf000 and chooses the first slot
@@ -5705,8 +5706,10 @@ forwarding only after cleanup succeeds. A cleanup error remains fatal/closed.
 
 The affected ONU stays in `upgrade-wait` with business withdrawn. Separate
 activation/commit commands can run there after fresh identity/image reads.
-Observed departure/replacement or explicit `onu-admin ... resume` starts
-normal inventory/authentication before services resume. Local `abort` stops
+A durable upgrade record keeps the same serial held across departure, slot
+movement and controller restart. Explicit `onu-admin ... resume` releases that
+record and starts normal inventory/authentication before services resume;
+a replacement serial follows its own record, if any. Local `abort` stops
 further transmission and frees ownership; it does not invent an unsupported
 remote flash rollback/abort message. Status reports action, stage, selected
 image, total/confirmed bytes, accepted/verified and error. The CLI's
@@ -5730,11 +5733,85 @@ are `artifacts/fttr/upgrade-{stock,resident,resident-fpga1}-20261108.json` and
 This adds the factory protocol and controller ownership path, not physical
 flash or boot acceptance. Image content is not authenticated against a known
 subordinate model/vendor signature; the operator must supply its exact
-compatible vendor image. Durable upgrade intent/restart recovery, positive
-post-activation boot/version verification and automatic coordination with
-subordinate capabilities remain work. A controller restart does not resume
-an interrupted download. Full upstream packet retirement and hardware-ID
+compatible vendor image. Durable intent and read-only version/state recovery
+are implemented below. Positive boot-event/firmware-content verification,
+resumable image transfer and automatic coordination with subordinate
+capabilities remain work. A controller restart never replays an interrupted
+download. Full upstream packet retirement and hardware-ID
 reuse also remain unresolved. No device was accessed or upgraded.
+
+### Durable upgrade intent and image-state reconciliation
+
+Upgrade commands now require `fttrd --upgrade-state PRIVATE_DIRECTORY`.
+The init service creates `/etc/tyfza1-fttr-upgrades` mode0700 and passes this
+persistent path; it is included in package configuration preservation.
+Manual daemons without this option retain their ordinary functionality but
+reject image operations with `ENODATA`. The directory is owned by the daemon
+UID, leased with flock and checked for directory-fsync support before any
+hardware access. It is separate from volatile status/MIB journals.
+
+Before Start Download, End Download, Activate or Commit is sent, a64-byte
+versioned record is written through a0600 exclusive staging file, file fsync,
+rename and directory fsync. It records the ONU serial, controller host/OLT
+MACs, backend, action, selected image, expected14-byte version, download
+size/CRC, operation stage and pending state; a CRC covers the record. The
+serial is the filename key, so moving hardware slots cannot lose the hold
+and a different ONU cannot inherit it. Segment progress stays in memory:
+there is no per-packet flash write and no promise of resumable transfer.
+A START/END pending record means the new downloaded version has not been
+verified. Activation/commit records capture the actual selected version
+before their first mutation. Record errors prevent mutation; failure while
+saving a verified result leaves admission closed and the durable pending
+record intact. A rename followed by failed directory fsync is treated as
+uncertain, never as permission to transmit.
+
+The controller checks records before automatic inventory/provision and
+before automatic upstream-error recovery. Its startup clears inherited
+business grants when this store is configured even without a LOID policy.
+A matching record leaves that ONU at `upgrade-wait` with no business port,
+while other ONUs can recover normally. Corruption, unexpected permissions or
+controller binding mismatch fails closed. Replacement ONU serials use their
+own records. A pending record prevents another download/activate/commit with
+`EALREADY`; merely restarting the daemon, receiving a late ACK, or observing
+registration again cannot clear it. The record survives clean shutdown and
+SIGKILL. No upgrade write is automatically replayed.
+
+`onu-upgrade ... check` reads the recorded class7/image with mask0xf000 and
+compares the exact14-byte version plus valid and action-specific state:
+activation requires active, commit requires committed, and completed download
+requires inactive/uncommitted. Original ASIC/FPGA1 `plr_gponrm_image_get`
+execution confirms both slot reads and the version/committed/active/valid
+mapping (16 inventory combinations). The check cannot prove a pending
+incomplete download matches the supplied image, so that case returns
+`ENODATA`. An activation or commit whose ACK was lost can be confirmed by
+this independent readback. A successful check records the verified result
+and allows subsequent explicitly requested image operations, while keeping
+business held. `onu-admin ... resume` explicitly removes and fsyncs the hold,
+then performs the normal fresh authentication/inventory/service path. It
+also provides recovery from an incomplete download; it is not a remote flash
+rollback. `upgrade_recovery_required` exposes the held state.
+
+This verifies the ONU's reported version and software-image flags, not a
+physical reboot event or cryptographic image identity. `boot_verified` stays
+false. Two different firmware contents may report the same version; this
+mechanism cannot replace image signature/model validation. Recovery does not
+resume data transfer or reconstruct remote service ownership.
+
+Offline checks execute the actual C store with64 single-byte corruption
+cases, file/directory fsync faults, directory lease, permissions, symlink and
+stale staging cases. Production upgrade checks now include76 transaction
+scenarios, including read-only recovery and wrong-version rejection. Real
+resident/CLI/veth tests force SIGKILL during download, after activation and
+after commit with their ACKs lost, then restart against retained storage:
+no automatic upgrade writes occur; wrong versions and corrupt/foreign-bound
+records reject; correct readback permits explicit continuation. Staging and
+verified-result write failures never reopen forwarding. Tests also cover
+operation without LOID policy so startup grant cleanup is not accidentally
+dependent on authentication. Native and aarch64-musl builds, controller
+administration/reboot regressions and init syntax checks pass. Local reports
+are `artifacts/fttr/upgrade-store-{stock,resident,resident-fpga1,noauth}-20261108.json`
+and `upgrade-store-{admin,reboot}-20261108.json`; build identities are under
+`upgrade-store-build-20261108/`. No device was accessed.
 
 ### Independent UNI mode and ANI VLAN filtering
 
@@ -6379,7 +6456,7 @@ is used to acknowledge full retirement or release a quarantined hardware ID.
    ONU's actual capabilities rather than assuming one fixed subordinate model.
    The resident ONU-G reboot request is implemented as described above;
    the Software Image download/activation/commit protocol is also implemented.
-   Durable upgrade recovery, image compatibility/boot verification,
+   Resumable image transfer, image compatibility/boot verification,
    gateway/roaming coordination and physical reboot verification remain work. The original ff69/ff6a Wi-Fi update transaction is implemented with
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
    settings mapping and

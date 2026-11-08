@@ -20,10 +20,13 @@ struct fttr_upgrade_job {
 	uint16_t image, window, section, sections;
 	uint8_t attributes[2][17]; /* version14, committed, active, valid */
 	unsigned int retries, end_retries;
-	bool waiting, accepted, verified;
+	bool waiting, accepted, verified, checking;
+	uint8_t expected_version[14];
 	int error;
 };
 
+int fttr_upgrade_check(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
+		       enum fttr_upgrade_action action, uint16_t image, const uint8_t version[14]);
 int fttr_upgrade_start(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
 		       enum fttr_upgrade_action action, const uint8_t *data, size_t size);
 /* One frame per call lets the resident dispatcher service other ONUs. Caller

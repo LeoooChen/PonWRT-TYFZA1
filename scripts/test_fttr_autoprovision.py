@@ -151,6 +151,7 @@ def main():
             self.wifi_timeout = self.wifi_malformed = False
             self.wifi_lost_tci = None
             self.upgrade_images=[(1,1,1),(0,0,0)]
+            self.upgrade_lost='';self.upgrade_version=b'VERSION0000001'
             self.upgrade_mode='ok';self.upgrade_data=bytearray();self.upgrade_window=bytearray()
             self.upgrade_expected=b'';self.upgrade_section=0;self.upgrade_rejections=0
             self.reboot_mode="ack"
@@ -233,8 +234,10 @@ def main():
             if args.upgrade_control and c==7:
                 assert id in (0,1)
                 if op==0x49:
+                    if self.upgrade_mode=='verify-store-fail' and any(op==0x55 for _,op,_,_ in self.operations):
+                        (upgrade_store/(self.serial.hex()+'.upgrade.new')).mkdir()
                     assert mask==0xf000
-                    content=b'\xf0\0'+b'VERSION0000001'+bytes(self.upgrade_images[id])
+                    content=b'\xf0\0'+self.upgrade_version+bytes(self.upgrade_images[id])
                 elif op==0x53:
                     assert id==1 and self.upgrade_images[id][:2]==(0,0)
                     assert body[8]==30 and struct.unpack('>I',body[9:13])[0]==len(self.upgrade_expected)
@@ -265,9 +268,11 @@ def main():
                 elif op==0x56:
                     assert self.upgrade_images[id]==(0,0,1)
                     self.upgrade_images[0]=(1,0,1);self.upgrade_images[id]=(0,1,1);content=b''
+                    if self.upgrade_lost=='activate':return None
                 elif op==0x57:
                     assert self.upgrade_images[id]==(0,1,1)
                     self.upgrade_images[0]=(0,0,1);self.upgrade_images[id]=(1,1,1);content=b''
+                    if self.upgrade_lost=='commit':return None
                 else:raise AssertionError(('unexpected image operation',op))
                 return stock.frame(tci,(op&31)|32,b'\0'+content,onu=self.id,class_id=7,instance=id)[16:]
             if op==0x59:
@@ -662,11 +667,13 @@ def main():
             current['onus']=[r for r in current.get('onus',[]) if r['id'] in nodes]
             raise AssertionError(('state timeout',current,grants))
         hardware()
+        upgrade_store=root/'upgrade-store';upgrade_store.mkdir(mode=0o700)
         def launch(with_policy=True, with_wifi=None, grant_case='normal'):
             subprocess.run(['ip','link','set','dev','fap-host','up'],check=True)
             ni.joinpath('fttr_link').write_text('configured=1 mode=9 nway=1 clock=1 error=0 link=1\n')
             device.joinpath('tx_enable').write_text('1\n')
             return subprocess.Popen([str(args.daemon.resolve()),str(device),str(ni),str(store),'fap-host']+
+                (['--upgrade-state',str(upgrade_store)] if args.upgrade_control else []) +
                 (['--services',str(policy)] if with_policy else []) +
                 (['--loid-auth',str(auth_policy)] if args.auth or args.onu_policy else []) +
                 (['--onu-auth',str(onu_policy)] if args.onu_policy else []) +
@@ -694,11 +701,12 @@ def main():
                 until(lambda s:process.poll() is not None,allow_exit=True)
                 assert process.wait(timeout=2)==0,process.stderr.read()
             try:
-                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot'):
+                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail'):
                     while select.select([peer],[],[],0)[0]:peer.recv(2048)
                     nodes[7]=Node(7,'5445535400000007',0x107,False)
                     nodes[9]=Node(9,'5445535400000009',0x203,True)
-                    nodes[7].upgrade_mode='hold' if mode in ('abort','replace','shutdown','peer-admin') else mode
+                    for receipt in upgrade_store.iterdir():receipt.unlink()
+                    nodes[7].upgrade_mode='hold' if mode in ('abort','replace','shutdown','peer-admin','crash-download') else mode
                     nodes[7].upgrade_expected=image.read_bytes()
                     hardware();process=launch()
                     until(lambda s:all(s['onus'][id]['phase']=='configured' for id in (7,9)))
@@ -720,22 +728,41 @@ def main():
                         assert struct.unpack('i',control.recv(4))[0]==-errno.EINVAL
                         bad.unlink()
                     control.close();assert len(accel_events())==before
+                    if mode=='store-fail':
+                        # Staging creation must fail before any download mutation.
+                        (upgrade_store/(nodes[7].serial.hex()+'.upgrade.new')).mkdir()
                     if mode=='withdraw-fail':accel_fault.touch()
                     client=command()
-                    if mode=='withdraw-fail':
+                    if mode in ('withdraw-fail','store-fail'):
                         until(lambda s:process.poll() is not None,allow_exit=True)
                         stdout,stderr=client.communicate(timeout=2)
                         assert process.wait(timeout=2)==1 and client.returncode==1
-                        assert f'({-errno.ETIMEDOUT})' in stderr
+                        assert f'({-errno.ETIMEDOUT if mode=="withdraw-fail" else -errno.EISDIR})' in stderr
+                        assert not any(op in (0x53,0x14,0x54,0x55,0x56,0x57) for _,op,_,_ in nodes[7].operations)
+                        assert not any(v for v,_,_ in accel_events()[before:])
+                        if mode=='store-fail':
+                            (upgrade_store/(nodes[7].serial.hex()+'.upgrade.new')).rmdir();process=None;checks.append(mode);continue
                         assert not any(c==7 for _,_,c,_ in nodes[7].operations)
                         accel_fault.unlink();process=None;checks.append(mode);continue
                     until(lambda s:any(op==0x53 for _,op,_,_ in nodes[7].operations))
                     assert datapath(9)==healthy and 'fttr-u7' not in ports()
                     if mode=='snapshot':image.write_bytes(b'changed after controller snapshot')
                     if mode=='client-gone':client.kill();client.wait()
-                    if mode in ('abort','replace','shutdown','peer-admin'):
+                    if mode in ('abort','replace','shutdown','peer-admin','crash-download'):
                         until(lambda s:any(op==0x54 for _,op,_,_ in nodes[7].operations))
-                        if mode=='peer-admin':
+                        if mode=='crash-download':
+                            process.kill();process.wait();client.kill();client.wait()
+                            before_ops=len(nodes[7].operations)
+                            process=launch()
+                            until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                            assert not nodes[7].operations[before_ops:] and 'fttr-u7' not in ports()
+                            finish(command('download'),errno.EALREADY);finish(command('check'),errno.ENODATA)
+                            result=subprocess.run([str(args.upgrade_control.resolve()),str(store),'onu-admin','7',nodes[7].serial.hex(),'resume'],capture_output=True,text=True,timeout=3)
+                            assert result.returncode==0,(result.stdout,result.stderr)
+                            if args.backend=='fpga1':hardware()
+                            until(lambda s:s['onus'][7]['phase']=='configured')
+                            assert not list(upgrade_store.iterdir())
+                        elif mode=='peer-admin':
                             # Other ONU control may close, but must not reopen the shared gate.
                             result=subprocess.run([str(args.upgrade_control.resolve()),str(store),'onu-admin','9',nodes[9].serial.hex(),'block'],capture_output=True,text=True,timeout=3)
                             assert result.returncode==0,(result.stdout,result.stderr)
@@ -751,6 +778,15 @@ def main():
                             stdout,stderr=client.communicate(timeout=2)
                             assert client.returncode==1 and f'({-errno.ECANCELED})' in stderr
                             assert process.wait(timeout=2)==0;process=None;checks.append(mode);continue
+                    elif mode=='verify-store-fail':
+                        until(lambda s:process.poll() is not None,allow_exit=True)
+                        stdout,stderr=client.communicate(timeout=2)
+                        assert process.wait(timeout=2)==1 and client.returncode==1
+                        assert f'({-errno.EISDIR})' in stderr
+                        assert not any(v for v,_,_ in accel_events()[before:])
+                        assert (upgrade_store/(nodes[7].serial.hex()+'.upgrade')).read_bytes()[42]==1
+                        (upgrade_store/(nodes[7].serial.hex()+'.upgrade.new')).rmdir()
+                        process=None;checks.append(mode);continue
                     elif mode=='drop-start':
                         finish(client,errno.ETIMEDOUT,seconds=35)
                         assert sum(op==0x53 for _,op,_,_ in nodes[7].operations)==1
@@ -760,11 +796,46 @@ def main():
                         until(lambda s:s['onus'][7]['phase']=='upgrade-wait')
                         assert status()['onus'][7]['upgrade_verified'] and nodes[7].upgrade_data==nodes[7].upgrade_expected
                         assert datapath(9)==healthy and 'fttr-u7' not in ports()
+                        if mode in ('ok','crash-activate','crash-commit'):
+                            if mode.startswith('crash-'):nodes[7].upgrade_lost='activate'
                         if mode=='ok':
                             finish(command('activate'))
                             assert status()['onus'][7]['upgrade_accepted'] and not status()['onus'][7]['upgrade_verified']
+                            finish(command('check'))
                             finish(command('commit'))
                             assert status()['onus'][7]['upgrade_verified']
+                        if mode in ('crash-activate','crash-commit'):
+                            activate=command('activate')
+                            until(lambda s:any(op==0x56 for _,op,_,_ in nodes[7].operations))
+                            process.kill();process.wait();activate.kill();activate.wait()
+                            nodes[7].upgrade_lost='';before_ops=len(nodes[7].operations)
+                            if mode=='crash-activate':
+                                receipt=upgrade_store/(nodes[7].serial.hex()+'.upgrade');saved=receipt.read_bytes()
+                                for mismatch in ('corrupt','other-controller'):
+                                    changed=bytearray(saved);changed[12]^=1
+                                    if mismatch=='other-controller':changed[60:64]=struct.pack('>I',crc(changed[:60]))
+                                    receipt.write_bytes(changed);process=launch()
+                                    until(lambda s:process.poll() is not None,allow_exit=True)
+                                    assert process.wait(timeout=2)==1
+                                    assert not nodes[7].operations[before_ops:] and 'fttr-u7' not in ports()
+                                receipt.write_bytes(saved)
+                            process=launch()
+                            until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                            assert not nodes[7].operations[before_ops:]
+                            finish(command('activate'),errno.EALREADY)
+                            nodes[7].upgrade_version=b'WRONGVERSION00'
+                            finish(command('check'),errno.EUCLEAN)
+                            nodes[7].upgrade_version=b'VERSION0000001'
+                            finish(command('check'))
+                            assert status()['onus'][7]['upgrade_verified'] and 'fttr-u7' not in ports()
+                            if mode=='crash-commit':
+                                nodes[7].upgrade_lost='commit';commit=command('commit')
+                                until(lambda s:any(op==0x57 for _,op,_,_ in nodes[7].operations))
+                                process.kill();process.wait();commit.kill();commit.wait()
+                                nodes[7].upgrade_lost='';before_ops=len(nodes[7].operations);process=launch()
+                                until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                                assert not nodes[7].operations[before_ops:]
+                                finish(command('check'));assert status()['onus'][7]['upgrade_verified']
                     stop();process=None;checks.append(mode)
             finally:
                 if process is not None and process.poll() is None:process.kill();process.wait()

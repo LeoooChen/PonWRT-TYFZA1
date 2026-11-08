@@ -30,6 +30,7 @@
 #include "omci-wifi.h"
 #include "omci-auth.h"
 #include "omci-upgrade.h"
+#include "upgrade-store.h"
 #include "onu-policy.h"
 #include "omci-socket.h"
 
@@ -93,6 +94,9 @@ struct onu {
 	uint8_t identity[8];
 	bool grant;
 	struct fttr_upgrade_job upgrade;
+	struct fttr_upgrade_record upgrade_record;
+	bool upgrade_held, upgrade_marked;
+	int upgrade_store_error;
 	struct fttr_me_job reboot;
 	int reboot_error;
 	bool admin_pending;
@@ -102,7 +106,7 @@ struct onu {
 };
 
 struct controller {
-	int directory, ni, store, socket, control;
+	int directory, ni, store, socket, control, upgrade_store;
 	struct fttr_omci_link link;
 	enum fttr_backend backend;
 	struct fttr_net net;
@@ -166,6 +170,7 @@ static int forwarding(struct controller *c, bool enable)
 static int move_drive(struct controller *c);
 static int reboot_drive(struct controller *c);
 static int upgrade_drive(struct controller *c);
+static int upgrade_record_load(struct controller *c, const uint8_t serial[8], struct fttr_upgrade_record *record);
 static int upgrade_finish(struct controller *c, int result);
 static int reboot_finish(struct controller *c, int result);
 static int policy_move(struct controller *c, unsigned int id);
@@ -485,7 +490,7 @@ static int publish(struct controller *c, const char *state, int error)
 				"\"onu_auth_required\":%s,\"onu_authenticated\":%s,\"onu_auth_action\":%u,"
 				"\"onu_auth_logical_id\":%u,\"onu_auth_method\":%u,\"onu_auth_error\":%d,"
 				"\"reboot_sent\":%s,\"reboot_accepted\":%s,\"reboot_error\":%d,\"upgrade_stage\":%u,"
-				"\"upgrade_bytes\":%u,\"upgrade_size\":%u,\"upgrade_action\":%u,\"upgrade_image\":%u,\"upgrade_accepted\":%s,\"upgrade_verified\":%s,\"upgrade_error\":%d}",
+				"\"upgrade_bytes\":%u,\"upgrade_size\":%u,\"upgrade_action\":%u,\"upgrade_image\":%u,\"upgrade_accepted\":%s,\"upgrade_verified\":%s,\"upgrade_error\":%d,\"upgrade_recovery_required\":%s}",
 				u->services.count, u->services.configured ? "true" : "false", u->services.cleanup_error,
 				u->sync.valid ? "true" : "false", u->sync.value, u->sync.observed,
 				u->sync.error, u->sync.checked, u->rescans,
@@ -501,7 +506,7 @@ static int publish(struct controller *c, const char *state, int error)
 				u->reboot.replied && !u->reboot_error ? "true" :
 				u->reboot.replied && u->reboot.result ? "false" : "null", u->reboot_error, u->upgrade.stage,
 				u->upgrade.confirmed, u->upgrade.size, u->upgrade.action, u->upgrade.image, u->upgrade.accepted ? "true" : "false",
-				u->upgrade.verified ? "true" : "false", u->upgrade.error);
+				u->upgrade.verified ? "true" : "false", u->upgrade.error, u->upgrade_held ? "true" : "false");
 		}
 		fputc(']', file);
 	}
@@ -1852,6 +1857,23 @@ static int refresh(struct controller *c)
 			continue;
 		}
 		if (u->phase == ONU_ABSENT || u->phase == ONU_BLOCKED || memcmp(u->identity, table[id].serial, 8)) {
+			struct fttr_upgrade_record record;
+			ret = upgrade_record_load(c, table[id].serial, &record);
+			if (ret != -ENOENT) {
+				if (ret) return ret;
+				ret = cancel(c, id, false);
+				if (ret) return ret;
+				memcpy(u->identity, table[id].serial, 8);
+				u->upgrade_record = record;
+				u->upgrade_held = true;
+				u->phase = ONU_UPGRADE_WAIT;
+				memset(&u->upgrade, 0, sizeof(u->upgrade));
+				u->upgrade.action = record.action; u->upgrade.image = record.image;
+				u->upgrade.size = record.size; u->upgrade.crc = record.crc;
+				u->upgrade.error = -EINPROGRESS;
+				continue;
+			}
+			u->upgrade_held = u->upgrade_marked = false;
 			ret = cancel(c, id, false);
 			if (ret)
 				return ret;
@@ -2111,6 +2133,11 @@ static int admin_request(struct controller *c, const struct fttr_admin_request *
 		return ret;
 	if (memcmp(observed.serial, request->serial, 8))
 		return -ESTALE;
+	if (request->action == FTTR_ADMIN_RESUME && c->upgrade_store >= 0) {
+		ret = fttr_upgrade_store_remove(c->upgrade_store, request->serial);
+		if (ret) return ret;
+		u->upgrade_held = u->upgrade_marked = false;
+	}
 	if (recovery && ((observed.downstream & (1U << 16)) ||
 	    !fttr_miniolt_recovery_needed(c->backend, observed.upstream)))
 		return -EAGAIN;
@@ -2434,18 +2461,63 @@ static int reboot_request(struct controller *c, const struct fttr_admin_request 
 	return -EINPROGRESS;
 }
 
+static int upgrade_record_load(struct controller *c, const uint8_t serial[8], struct fttr_upgrade_record *record)
+{
+	int ret;
+	if (c->upgrade_store < 0) return -ENOENT;
+	ret = fttr_upgrade_store_load(c->upgrade_store, serial, record);
+	if (!ret && (record->backend != (unsigned int)c->backend ||
+	    memcmp(record->host, c->link.host_mac, 6) || memcmp(record->olt, c->link.olt_mac, 6)))
+		ret = -ESTALE;
+	return ret;
+}
+
+static int upgrade_record_mark(struct controller *c, unsigned int id)
+{
+	struct onu *u = &c->onu[id];
+	struct fttr_upgrade_job *job = &u->upgrade;
+	struct fttr_upgrade_record record = {0};
+	int ret;
+
+	if (job->checking || job->waiting || job->stage == FTTR_UPGRADE_END_DELAY ||
+	    (job->stage != FTTR_UPGRADE_START && job->stage != FTTR_UPGRADE_END &&
+	     job->stage != FTTR_UPGRADE_ACTIVATING && job->stage != FTTR_UPGRADE_COMMITTING)) return 0;
+	if (u->upgrade_marked && u->upgrade_record.stage == (unsigned int)job->stage) return 0;
+	memcpy(record.serial, u->identity, 8);
+	memcpy(record.host, c->link.host_mac, 6); memcpy(record.olt, c->link.olt_mac, 6);
+	record.backend = c->backend; record.action = job->action; record.image = job->image;
+	record.stage = job->stage; record.size = job->size; record.crc = job->crc; record.pending = true;
+	memcpy(record.version, job->attributes[job->image], 14);
+	ret = fttr_upgrade_store_save(c->upgrade_store, &record);
+	if (ret) return ret;
+	u->upgrade_record = record;
+	u->upgrade_held = u->upgrade_marked = true;
+	return 0;
+}
+
 static int upgrade_finish(struct controller *c, int result)
 {
 	unsigned int id = c->upgrade.request.id;
 	struct onu *u = &c->onu[id];
 	int32_t reply = result;
-	int ret = 0;
+	int ret = u->upgrade_store_error;
 
+	if (!result && u->upgrade.verified && u->upgrade_held) {
+		u->upgrade_record.pending = false;
+		memcpy(u->upgrade_record.version, u->upgrade.attributes[u->upgrade.image], 14);
+		ret = fttr_upgrade_store_save(c->upgrade_store, &u->upgrade_record);
+		if (ret) {
+			u->upgrade_record.pending = true;
+			u->upgrade.verified = false;
+			fttr_upgrade_cancel(&u->upgrade, ret);
+		}
+	}
 	if (result) fttr_upgrade_cancel(&u->upgrade, result);
 	u->phase = ONU_UPGRADE_WAIT;
 	if (u->grant) {
-		ret = fttr_miniolt_management(c->directory, id, false);
-		if (!ret) u->grant = false;
+		int cleanup = fttr_miniolt_management(c->directory, id, false);
+		if (!cleanup) u->grant = false;
+		if (!ret) ret = cleanup;
 	}
 	free((void *)u->upgrade.data);
 	u->upgrade.data = NULL;
@@ -2474,6 +2546,11 @@ static int upgrade_drive(struct controller *c)
 		return upgrade_finish(c, u->upgrade.error);
 	ret = fttr_upgrade_tick(&u->upgrade, &c->transaction, now_ms());
 	if (ret < 0) return upgrade_finish(c, ret);
+	ret = upgrade_record_mark(c, id);
+	if (ret) {
+		u->upgrade_store_error = ret;
+		return upgrade_finish(c, ret);
+	}
 	ret = fttr_upgrade_send(&u->upgrade, &c->transaction, c->socket, &c->link, now_ms());
 	return ret ? upgrade_finish(c, ret) : 0;
 }
@@ -2521,7 +2598,7 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	*fatal = 0;
 	if (request->version != 3 || request->id >= FTTR_ONUS || request->target ||
 	    memcmp(request->target_serial, (uint8_t[8]){0}, 8) || request->action < FTTR_ADMIN_DOWNLOAD ||
-	    request->action > FTTR_ADMIN_UPGRADE_ABORT ||
+	    request->action > FTTR_ADMIN_UPGRADE_CHECK ||
 	    ((request->action == FTTR_ADMIN_DOWNLOAD) != (image_fd >= 0))) return -EINVAL;
 	if (request->action == FTTR_ADMIN_UPGRADE_ABORT) {
 		if (!c->upgrade.active || c->upgrade.request.id != request->id ||
@@ -2529,6 +2606,7 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 		*fatal = upgrade_finish(c, -ECANCELED);
 		return *fatal;
 	}
+	if (c->upgrade_store < 0) return -ENODATA;
 	if (c->upgrade.active || c->reboot.active || c->move.active) return -EBUSY;
 	u = &c->onu[request->id];
 	if (u->admin_pending || u->phase == ONU_REBOOT_WAIT) return -EBUSY;
@@ -2536,6 +2614,15 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	if (ret) return ret;
 	if (memcmp(observed.serial, request->serial, 8) || memcmp(u->identity, request->serial, 8) ||
 	    !(observed.downstream & (1U << 18)) || (observed.downstream & (1U << 16))) return -ESTALE;
+	ret = upgrade_record_load(c, request->serial, &u->upgrade_record);
+	if (ret && ret != -ENOENT) return ret;
+	u->upgrade_held = !ret;
+	if (request->action == FTTR_ADMIN_UPGRADE_CHECK) {
+		if (ret) return ret;
+		/* An incomplete download has no verified expected new version. */
+		if (u->upgrade_record.action == FTTR_UPGRADE_DOWNLOAD && u->upgrade_record.pending) return -ENODATA;
+		u->upgrade_held = true;
+	} else if (u->upgrade_held && u->upgrade_record.pending) return -EALREADY;
 	if (image_fd >= 0) {
 		ret = upgrade_image(image_fd, &data, &size);
 		if (ret) return ret;
@@ -2548,8 +2635,13 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	}
 	if (ret) { free(data); *fatal = ret; return ret; }
 	u->hardware = observed;
-	ret = fttr_upgrade_start(&u->upgrade, request->id, &c->transaction,
-		request->action - FTTR_ADMIN_DOWNLOAD, data, size);
+	u->upgrade_store_error = 0;
+	u->upgrade_marked = false;
+	ret = request->action == FTTR_ADMIN_UPGRADE_CHECK ?
+		fttr_upgrade_check(&u->upgrade, request->id, &c->transaction, u->upgrade_record.action,
+			u->upgrade_record.image, u->upgrade_record.version) :
+		fttr_upgrade_start(&u->upgrade, request->id, &c->transaction,
+			request->action - FTTR_ADMIN_DOWNLOAD, data, size);
 	if (ret) { free(data); *fatal = ret; return ret; }
 	u->phase = ONU_UPGRADE;
 	c->upgrade.active = true;
@@ -2650,7 +2742,7 @@ static int admin_tick(struct controller *c, int64_t now)
 
 		if (c->move.active && (id == c->move.request.id || id == c->move.request.target))
 			continue;
-		if (u->phase == ONU_REBOOT || u->phase == ONU_REBOOT_WAIT ||
+		if (u->upgrade_held || u->phase == ONU_REBOOT || u->phase == ONU_REBOOT_WAIT ||
 		    u->phase == ONU_UPGRADE || u->phase == ONU_UPGRADE_WAIT)
 			continue;
 		if (scan && !u->admin_pending && !(table[id].downstream & (1U << 16)) &&
@@ -2658,7 +2750,14 @@ static int admin_tick(struct controller *c, int64_t now)
 			struct fttr_admin_request request = { .version = 1, .id = id,
 				.action = FTTR_ADMIN_DEACTIVATE };
 			int fatal;
+			struct fttr_upgrade_record record;
 
+			ret = upgrade_record_load(c, table[id].serial, &record);
+			if (ret != -ENOENT) {
+				if (ret) return ret;
+				u->upgrade_held = true;
+				continue;
+			}
 			memcpy(request.serial, table[id].serial, 8);
 			ret = admin_request(c, &request, true, &fatal);
 			if (fatal || (ret && ret != -ESTALE && ret != -EAGAIN))
@@ -3054,7 +3153,7 @@ static int bootstrap(struct controller *c, int optical, const char *mode, const 
 	BOOT_STEP("configure OMCI envelope", fttr_miniolt_command(c->directory, "omci_link", mac));
 	if (c->backend != FTTR_FPGA1)
 		BOOT_STEP("configure DBA", fttr_miniolt_command(c->directory, "dba", "1\n"));
-	if (c->auth.enabled || c->onu_policy.enabled)
+	if (c->auth.enabled || c->onu_policy.enabled || c->upgrade_store >= 0)
 		BOOT_STEP("clear unverified data grants", clear_auth_grants(c));
 	BOOT_STEP("verify optical calibration", fttr_miniolt_calibrated(optical));
 	BOOT_STEP("initialize optical maintenance", fttr_miniolt_optical_start(&c->optical, now_ms()));
@@ -3095,15 +3194,20 @@ static int shutdown_hardware(struct controller *c)
 int main(int argc, char **argv)
 {
 	static struct controller c = { .directory = -1, .ni = -1, .store = -1, .socket = -1,
-		.control = -1, .onu_policy = { .directory = -1 }, .net = { .fd = -1 }, .optical = { .directory = -1 } };
+		.control = -1, .upgrade_store = -1, .onu_policy = { .directory = -1 }, .net = { .fd = -1 }, .optical = { .directory = -1 } };
 	struct sigaction action = { .sa_handler = stop_signal };
 	bool owned = false, auth_loaded = false;
+	const char *upgrade_path = NULL;
 	unsigned int id;
 	int ret = 0, result;
 	uint16_t seed;
 
 	while (argc >= 3 && (!strcmp(argv[argc - 2], "--services") || !strcmp(argv[argc - 2], "--wifi") ||
-	       !strcmp(argv[argc - 2], "--loid-auth") || !strcmp(argv[argc - 2], "--onu-auth"))) {
+	       !strcmp(argv[argc - 2], "--loid-auth") || !strcmp(argv[argc - 2], "--onu-auth") || !strcmp(argv[argc - 2], "--upgrade-state"))) {
+		if (!strcmp(argv[argc - 2], "--upgrade-state")) {
+			if (upgrade_path) { ret = -EEXIST; goto out; }
+			upgrade_path = argv[argc - 1]; argc -= 2; continue;
+		}
 		if (!strcmp(argv[argc - 2], "--loid-auth")) {
 			if (auth_loaded) { ret = -EEXIST; goto out; }
 			auth_loaded = true;
@@ -3118,7 +3222,7 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if ((argc != 5 && argc != 9) || strlen(argv[4]) >= IFNAMSIZ) {
-		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file] [--onu-auth private-json]\n", argv[0]);
+		fprintf(stderr, "Usage: %s <MiniOLT-dir> <NI-dir> <state-dir> <interface> [optical-dir host-mode nway pon-mode] [--services policy-file] [--wifi policy-file] [--loid-auth private-file] [--onu-auth private-json] [--upgrade-state private-directory]\n", argv[0]);
 		ret = -EINVAL;
 		goto out;
 	}
@@ -3126,6 +3230,10 @@ int main(int argc, char **argv)
 	    (strcmp(argv[7], "0") && strcmp(argv[7], "1")) ||
 	    (strcmp(argv[8], "1") && strcmp(argv[8], "2") && strcmp(argv[8], "3"))))
 		{ ret = -EINVAL; goto out; }
+	if (upgrade_path) {
+		c.upgrade_store = fttr_upgrade_store_open(upgrade_path);
+		if (c.upgrade_store < 0) { ret = c.upgrade_store; goto out; }
+	}
 	c.interface = argv[4];
 	sigaction(SIGTERM, &action, NULL);
 	sigaction(SIGINT, &action, NULL);
@@ -3179,7 +3287,7 @@ int main(int argc, char **argv)
 			goto out;
 	}
 	if (unlinkat(c.store, "status.json", 0) && errno != ENOENT) { ret = -errno; goto out; }
-	if ((c.auth.enabled || c.onu_policy.enabled) && argc == 5) {
+	if ((c.auth.enabled || c.onu_policy.enabled || c.upgrade_store >= 0) && argc == 5) {
 		ret = clear_auth_grants(&c);
 		if (ret)
 			goto out;
@@ -3289,6 +3397,7 @@ out:
 		free(c.wifi_policies);
 		c.wifi_policies = next;
 	}
+	if (c.upgrade_store >= 0) close(c.upgrade_store);
 	if (c.store >= 0) {
 		close(c.store);
 	}
