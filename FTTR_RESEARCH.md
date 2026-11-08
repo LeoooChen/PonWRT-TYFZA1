@@ -210,6 +210,8 @@
 
 96. 修复安装末尾排空竞争导致组号白白隔离：旧learner在新Hash/NI组已安装、迟到旧包使最终检查返回EAGAIN时立即删除新规则；现仅在同代际排空等待时保留未开放安装，八次等待不再分配/刷新请求，后续不同事务号的完整Linux复制决策重新核验后开放同一组。混合host/LAN/PE与共享P6场景保持cookie/动作数量，MTU/代际变化仍拒绝并撤销。旧代码复现、14组相关测试、Image/模块和输入一致性通过，PE不变。这里保留的是活跃安装，不是复用已退休ID；上游屏障和安全ID复用仍待补，未上实机。详见[保留待开放组播规则](port/FTTR.md#a-drain-race-retains-the-unopened-multicast-rule)。
 
+97. 隔离待开放规则与共享组播入口：等待规则原先仍有有效Hash，另一个同代际组开放入口会顺带启用它；现单独关闭其Hash/cache、CPU owner权限和PE cookie epoch，保留组号配方。只有对应完整决策重新核验、排空通过并二次检查后才恢复；挂起/重发失败走整代撤销，后台仅做30秒老化、不刷新待开放Hash。两键共享入口、混合CPU/PE、逐槽age、IO故障及17组回归、Image/模块/四份一致性通过。并对齐main6380aa3，原厂SU/MU256组、9边界及RSSI/NHM回归通过；PE不变、未上实机、未合回main。详见[共享入口隔离](port/FTTR.md#pending-multicast-rules-are-isolated-from-the-shared-gate)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

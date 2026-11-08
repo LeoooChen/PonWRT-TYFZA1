@@ -16,7 +16,7 @@ source = (driver / 'pci.c').read_text()
 start = source.index('\tif (message.category == 2 && message.class == 1 && message.function == 0) {')
 end = source.index('\n\tif (message.category == 2 && message.class == 1 && message.function == 2)', start)
 branch = source[start:end]
-module = root / 'evidence/wireless-study-20261010-continuation/evidence/stock/modules/rtk_wifi6.ko'
+module = Path(sys.argv[1]) if len(sys.argv)>1 else root / 'evidence/wireless-study-20261010-continuation/evidence/stock/modules/rtk_wifi6.ko'
 
 def callback(name, args):
     if name == 'printk':

@@ -6351,6 +6351,45 @@ does not add an upstream producer fence or prove that late MCE/NI DMA/AFT
 packets have disappeared. Full retirement and hardware-ID reuse remain
 unresolved, and no physical device was accessed.
 
+### Pending multicast rules are isolated from the shared gate
+
+The retained-rule wait state needs its own publication barrier: another flow
+in the same multicast epoch can open the shared tuple/PE epoch. A waiting
+rule previously kept a valid Hash and could therefore become active without
+its own fresh complete-recipient decision. The old implementation fails the
+new per-Hash isolation check.
+
+A drain-delayed rule now marks itself waiting, suspends its CPU host owner,
+zeros only its direct PE record epochs, and withdraws its Hash/cache while
+preserving the allocated group/actions/cookies. Another flow may open the
+shared profile, but that cannot revive the waiting rule or its CPU/PE copies.
+When its own complete packet decision matches again, it checks drain state,
+closes the shared tuple during indirect Hash publication, and rechecks epoch,
+writers and drain before restoring its own record epochs and host access.
+Hash/cache suspension or republish failure closes the generation and uses
+the existing delete/retry path. A pure late-copy wait remains suspended.
+
+The worker continues to schedule waiting rules for the normal30-second idle
+expiry, but never refreshes their Hash age as if they had a hardware hit.
+Tests exercise two different keys sharing one profile, per-slot age words,
+local host/LAN/direct PE copies, no extra group allocation during retries,
+matching fresh transactions, suspension/republish IO failures, MTU and epoch
+changes and the actual worker expiry path. Seventeen related tests pass,
+including bridge/flow ownership and packet metadata boundaries.
+
+This turn also merges local main6380aa3's SU-rate retention across MU reports.
+Its actual factory parser comparison passes256 SU/MU cases and nine malformed
+boundaries; RSSI/NHM watchdog comparison passes18928 complete commands plus36
+NHM cases. The supplied original-module path is now an optional positional
+argument to those tests. Image/modules and four changed kernel input
+identities pass; PE firmware is unchanged. Reports are under
+`artifacts/fttr/mcast-shared-gate-*` and `main-6380aa3-ra-feedback-20261108.json`.
+Main's unrelated working-tree changes were not modified.
+
+The suspension state is a live allocation with its lookup withdrawn, not a
+reusable retired hardware ID. It does not establish MCE/DMA/AFT upstream
+retirement or physical delivery behavior. No device was accessed.
+
 ### Independent UNI mode and ANI VLAN filtering
 
 The service CLI and resident policy accept `filter:VID` in the existing VLAN

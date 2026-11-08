@@ -134,7 +134,8 @@ static void rtnl_unlock(void){}
 static void mutex_lock(int *v){assert(!*v);*v=1;}
 static void mutex_unlock(int *v){assert(*v);*v=0;}
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){(void)fe;return (struct rtl_dq_io){};}
-static int rtl_fe_main_age_read(struct rtl_dq_io *io,unsigned int index,unsigned int *value){(void)io;(void)index;*value=age;return 0;}
+static unsigned age_reads;
+static int rtl_fe_main_age_read(struct rtl_dq_io *io,unsigned int index,unsigned int *value){(void)io;(void)index;age_reads++;*value=age;return 0;}
 static int rtl_fe_main_age(struct rtl_dq_io *io,unsigned int index,unsigned int value){(void)io;(void)index;assert(value==1);return 0;}
 static void br_fdb_refresh_offload(struct net_device *d,const u8 *mac,u16 vid,bool source){(void)d;(void)mac;(void)vid;(void)source;refreshed++;}
 static void fe_mcast_process(struct rtl_fe_bridge *b){(void)b;}
@@ -294,6 +295,18 @@ int main(void){
  skb.saved=(struct rtl9617c_bridge_frame){.epon=1,.epon_llid=0,.pon_generation=91};
  fe_bridge_wire(&bridge,&skb,&wire);fe_bridge_capture(&bridge,&skb,&input);
  assert(skb.saved.epon&&skb.saved.epon_llid==0&&skb.saved.pon_generation==91&&!skb.saved.pon_gem);
+ /* Unpublished retained multicast rules must still age out, and their
+  * age table must never be refreshed while another group opened the profile. */
+ struct rtl_fe_flow *waiting=calloc(1,sizeof(*waiting));assert(waiting);
+ waiting->ethernet_source[5]=1;waiting->learned=waiting->mc_waiting=true;waiting->replica_count=1;
+ waiting->input=&lp;waiting->output=&pp;waiting->bridge_index=br.ifindex;
+ waiting->bridge_ingress=lan.ifindex;waiting->mc_epoch=fe.mc_gate.epoch;waiting->lastused=jiffies;
+ list_add_tail(&waiting->list,&fe.flows);fdb_source=&lan;
+ unsigned reads_before=age_reads,queued_before=bridge.work.queued,deleted_before=deleted;
+ age=3;fe_bridge_work(&bridge.work.work);
+ assert(age_reads==reads_before&&deleted==deleted_before&&bridge.work.queued==queued_before+1);
+ jiffies+=30*HZ+1;fe_bridge_work(&bridge.work.work);
+ assert(deleted==deleted_before+1&&age_reads==reads_before);
  puts("Bridge learner: real wire/bridge hooks, VLAN subinterfaces, PCP/DEI, access VID, PPPoE preservation, FDB ageing/movement, STP and link changes passed");
 }
 '''

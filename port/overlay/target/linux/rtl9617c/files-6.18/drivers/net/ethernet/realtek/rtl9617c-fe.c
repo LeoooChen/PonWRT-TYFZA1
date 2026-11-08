@@ -92,7 +92,7 @@ struct rtl_fe_mc_host {
  struct net *net;
  u64 epoch,owner;
  unsigned int bridge,source;
- bool local;
+ bool local, suspended;
 };
 struct rtl_fe_mc_direct {
  struct rtl_fe_flow *flow;
@@ -122,7 +122,7 @@ struct rtl_fe_flow {
  u16 ethernet_protocol;
  u16 source_port,destination_port;
  bool ipv6, bridge;
- bool learned;
+ bool learned, mc_waiting;
  unsigned int bridge_index;
  unsigned int bridge_ingress, bridge_egress;
  u8 bridge_tags;

@@ -12,7 +12,9 @@ setup=(ROOT/'scripts/test_fe_mcast_integration.py').read_text().split("code += r
 scope={'__file__':str(ROOT/'scripts/test_fe_mcast_integration.py')}
 exec(compile(setup,'multicast-integration-fixture','exec'),scope)
 code=scope['code']
-code=code.replace('unsigned int age,age_fail,', 'void (*on_publish)(struct rtl_fe *);unsigned int age,age_fail,')
+code=code.replace('unsigned int age,age_fail,', 'unsigned ages[65536];void (*on_publish)(struct rtl_fe *);unsigned int age,age_fail,')
+code=code.replace('f->age=read_reg(f,0x3938);', 'f->age=read_reg(f,0x3938);for(unsigned slot=0;slot<32;slot++)f->ages[(command&2047)*32+slot]=(read_reg(f,0x3938-(slot/8)*4)>>((slot%8)*4))&15;')
+code=code.replace('} else write_reg(f,0x3938,f->age);', '} else {for(unsigned word=0;word<4;word++){unsigned value=0;for(unsigned slot=0;slot<8;slot++)value|=f->ages[(command&2047)*32+word*8+slot]<<(slot*4);write_reg(f,0x3938-word*4,value);}}')
 code=code.replace('assert(referenced);','assert(referenced);if(f->on_publish)f->on_publish(f);')
 code=code.replace('static void fe_mcast_hw_withdrawn(struct rtl_fe *f){assert(!f->age && !f->groups[1][0] && !f->groups[1][1]);f->drain_requests++;}', 'static void fe_mcast_hw_withdrawn(struct rtl_fe *f);')
 code=code.replace('static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc){(void)fe;(void)flow;for(unsigned i=0;i<mc->count;i++)assert(!mc->direct[i].wifi_id);return 0;}',
@@ -113,6 +115,8 @@ static struct rtl_fe *ext_change;
 static unsigned cpu_invalidations,cpu_pending;
 static bool pending_on_remove;
 static void late_copy(struct rtl_fe *f){f->on_publish=NULL;cpu_pending=1;}
+static void late_copy_cache_error(struct rtl_fe *f){late_copy(f);f->cache_fail=1;}
+static void late_copy_age_error(struct rtl_fe *f){late_copy(f);f->age_fail=1;}
 bool rtl9617c_bridge_mcast_tx_idle(void){return !cpu_pending;}
 void rtl9617c_bridge_mcast_invalidate(void){cpu_invalidations++;if(pending_on_remove){cpu_pending=1;pending_on_remove=false;}}
 static void fe_mcast_invalidate(struct rtl_fe *fe);
@@ -294,9 +298,19 @@ int main(void){
   assert(fe.indexed==waiting_flow&&fe.installs==installed+1&&fe.indexed->mc_group==waiting_group);
   assert(cpu_invalidations==waiting_requests&&!fe.mc_gate.active);
  }
+ assert(!waiting_flow->published && !fe.ages[waiting_flow->hash_index]);
+ struct fe_mcast_packet unrelated=*reopen;unrelated.transaction=++fe_mcast_ticket;
+ unrelated.input.destination_port++;unrelated.output[0].frame.destination_port++;
+ cpu_pending=0;assert(!fe_mcast_learn(&bridge,&unrelated));
+ struct rtl_fe_flow *other_flow=fe.indexed;
+ assert(fe.mc_gate.active && other_flow!=waiting_flow && !waiting_flow->published);
+ assert(!fe.ages[waiting_flow->hash_index] && fe.ages[other_flow->hash_index]==1);
  struct fe_mcast_packet later=*reopen;later.transaction=++fe_mcast_ticket;
+ cpu_pending=1;assert(fe_mcast_learn(&bridge,&later)==-EAGAIN && !waiting_flow->published);
  cpu_pending=0;assert(!fe_mcast_learn(&bridge,&later));fe_mcast_process(&bridge);
- assert(fe.mc_gate.active&&fe.indexed==waiting_flow&&fe.installs==installed+1);
+ assert(waiting_flow->published && fe.ages[waiting_flow->hash_index]==1);
+ assert(!fe_delete(&fe,other_flow));
+ assert(fe.mc_gate.active&&waiting_flow->published&&fe.installs==installed+2);
  assert(fe.multicast.groups[waiting_group].state==RTL_FE_MC_REFERENCED);
  rtl_fe_mc_gate_close(&io,&fe.mc_gate);assert(!fe_delete(&fe,waiting_flow));
  /* Waiting is only for a matching complete recipe, never stale topology.
@@ -314,6 +328,19 @@ int main(void){
   assert(!fe_delete(&fe,waiting_flow));
   assert(fe.multicast.groups[waiting_group].state==RTL_FE_MC_RETIRED);
   fe_mcast_process(&bridge);assert(!fe.indexed);
+ }
+ /* Hash/cache suspension failures must close the generation and retire,
+  * never retain a possibly visible rule as if it had been safely hidden. */
+ for(unsigned failure=0;failure<3;failure++) {
+  fe.event_count=0;skb.dev=&lan;skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.frame=skb.saved;
+  ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+  fe_mcast_capture_select(&bridge,&skb,&shared);skb.dev=&shared;fe_mcast_capture_output(&bridge,&skb);
+  fe_mcast_capture_end(&bridge,ticket,true);reopen=bridge.multicast_pending[ticket%FE_MCAST_PENDING];
+  unsigned long epoch=fe.mc_gate.epoch;
+  fe.on_publish=failure==2?late_copy:failure?late_copy_cache_error:late_copy_age_error;
+  if(failure==2){assert(fe_mcast_learn(&bridge,reopen)==-EAGAIN);cpu_pending=0;fe.age_fail=1;}
+  assert(fe_mcast_learn(&bridge,reopen)==-ETIMEDOUT&&!fe.mc_gate.active&&!fe.indexed);
+  assert(fe.mc_gate.epoch!=epoch);cpu_pending=0;fe_mcast_process(&bridge);
  }
  /* A failed install whose rollback also fails remains learned/deleting,
   * and cannot be bypassed by later publication of a different generation. */
@@ -749,12 +776,25 @@ int main(void){
    struct sk_buff early={.frame=wireless};
    assert(fe_mcast_host_receive(&bridge,&early,cpu_group,0)==-ESTALE);
    for(unsigned n=0;n<8;n++)assert(fe_mcast_learn(&bridge,candidate)==-EAGAIN&&fe.indexed==waiting);
+   unsigned waiting_cookie=0;
+   for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==waiting)waiting_cookie=c;
+   assert(waiting_cookie && !pe_table.record[waiting_cookie].epoch && waiting->mc_host->suspended);
+   struct fe_mcast_packet other=*candidate;other.transaction=++fe_mcast_ticket;
+   other.input.destination_port++;
+   for(unsigned o=0;o<other.count;o++)other.output[o].frame.destination_port++;
+   cpu_pending=0;assert(!fe_mcast_learn(&bridge,&other));
+   struct rtl_fe_flow *other_owner=fe.indexed;
+   assert(fe.mc_gate.active && pe_table.epoch && other_owner!=waiting);
+   assert(!waiting->published&&!fe.ages[waiting->hash_index]&&!pe_table.record[waiting_cookie].epoch);
+   early=(struct sk_buff){.frame=wireless};assert(fe_mcast_host_receive(&bridge,&early,cpu_group,0)==-ESTALE);
    struct fe_mcast_packet fresh=*candidate;fresh.transaction=++fe_mcast_ticket;
-   cpu_pending=0;assert(!fe_mcast_learn(&bridge,&fresh));
+   assert(!fe_mcast_learn(&bridge,&fresh));
+   assert(waiting->published && !waiting->mc_host->suspended && pe_table.record[waiting_cookie].epoch==pe_table.epoch);
    fe_mcast_process(&bridge);
    unsigned retired_after=0;
    for(unsigned c=1;c<256;c++)retired_after+=fe.multicast.groups[c].state!=RTL_FE_MC_FREE;
-   assert(fe.indexed==waiting&&fe.installs==installs_before&&retired_before==retired_after);
+   assert(fe.installs==installs_before+1&&retired_before+2==retired_after);
+   assert(!fe_delete(&fe,other_owner));fe.indexed=waiting;
   } else fe_mcast_process(&bridge);
   assert(fe.indexed&&fe.mc_gate.active&&pe_table.epoch==fe.mc_gate.epoch&&fe.indexed->replica_count==3);
   unsigned cookie=0;

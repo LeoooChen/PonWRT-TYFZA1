@@ -10,7 +10,7 @@ from arm64_module_oracle import ModuleOracle
 from unicorn.arm64_const import UC_ARM64_REG_X4
 
 root = Path(__file__).resolve().parents[1]
-module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+module = Path(sys.argv[1]) if len(sys.argv)>1 else root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
 names = ['halbb_ra_update_mask_watchdog', 'rtw_halbb_raupdate', 'rtw_halbb_raregistered', 'halbb_init_ra_by_rssi', 'halbb_nss_mapping',
          'halbb_hw_mode_mapping', 'halbb_get_opt_giltf', 'halbb_ax_giltf_chk',
          'halbb_chk_bw_under_20', 'halbb_hw_bw_mapping', 'halbb_hw_bw_mode_chk', 'halbb_chk_bw_under_40',

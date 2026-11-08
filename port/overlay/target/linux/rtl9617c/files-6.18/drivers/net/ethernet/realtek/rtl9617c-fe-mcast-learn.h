@@ -210,7 +210,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
   if(direct.pe_destination){spin_unlock_irqrestore(&fe->mc_lock,flags);return -ESTALE;}
   entry=direct.flow?direct.flow->mc_host:NULL;
  } else entry=fe->mc_hosts[group];
- if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && entry &&
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && entry && !entry->suspended &&
     fe->mc_gate.active && !fe->mc_gate.writers && entry->epoch==fe->mc_gate.epoch &&
     (!entry->input.epon || (fe->epon_admitted && entry->input.pon_generation==fe->epon_paths.generation))) {
   host=*entry;get_net(host.net);ret=0;
@@ -256,7 +256,7 @@ static int fe_mcast_host_receive(void *context,struct sk_buff *skb,unsigned int 
    * writer during that work must revoke direct TX before enqueue. */
   spin_lock_irqsave(&fe->mc_lock,flags);
   entry=fe->mc_directs[group] && fe->mc_directs[group]->flow ? fe->mc_directs[group]->flow->mc_host:NULL;
-  ret=entry && entry->owner==host.owner && entry->epoch==host.epoch &&
+  ret=entry && !entry->suspended && entry->owner==host.owner && entry->epoch==host.epoch &&
    !READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && fe->mc_gate.active &&
    !fe->mc_gate.writers && fe->mc_gate.epoch==host.epoch ? 0:-ESTALE;
   spin_unlock_irqrestore(&fe->mc_lock,flags);
@@ -293,7 +293,7 @@ static bool fe_mcast_host_tx_valid(void *context,const struct sk_buff *skb)
  spin_lock_irqsave(&fe->mc_lock,flags);
  direct=fe->mc_directs[saved->multicast_host_group];
  host=direct && direct->flow?direct->flow->mc_host:NULL;
- if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && host &&
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(fe) && host && !host->suspended &&
     !direct->pe_destination && direct->physical && fe->mc_gate.active &&
     !fe->mc_gate.error && !fe->mc_gate.writers && host->epoch==fe->mc_gate.epoch &&
     host->epoch==saved->multicast_epoch && host->owner==saved->multicast_host_owner &&
@@ -315,7 +315,7 @@ static int fe_mcast_host_local(void *context,struct sk_buff *skb,struct net_devi
  if(!saved || !saved->multicast_host_group || saved->multicast_host_group>=RTL_FE_MC_GROUPS)return ret;
  spin_lock_irqsave(&bridge->fe->mc_lock,flags);
  host=bridge->fe->mc_hosts[saved->multicast_host_group];
- if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(bridge->fe) && host && host->local &&
+ if(!READ_ONCE(bridge->stopping) && rtl_fe_enabled(bridge->fe) && host && !host->suspended && host->local &&
     bridge->fe->mc_gate.active && !bridge->fe->mc_gate.writers &&
     host->epoch==bridge->fe->mc_gate.epoch && host->epoch==saved->multicast_epoch &&
     (host->source!=6 || READ_ONCE(bridge->fe->fttr_admitted)) &&
@@ -519,6 +519,33 @@ static int fe_mcast_pon_replica(struct rtl_fe *fe,struct net_device *physical,
  for(i=0;i<replica->tags;i++) {
   replica->tag[i].protocol=result.output.tag[i].tpid;
   replica->tag[i].tci=result.output.tag[i].tci;
+ }
+ return 0;
+}
+
+/* A pending rule must stay invisible even if a different rule opens the
+ * shared profile. Preserve its immutable group/action allocation, but revoke
+ * CPU/PE replicas and withdraw this Hash/cache until full revalidation. */
+static int fe_mcast_wait(struct rtl_fe *fe,struct rtl_fe_flow *flow)
+{
+ struct rtl_dq_io io=fe_io(fe);
+ unsigned long flags;
+ int ret;
+ spin_lock_irqsave(&fe->mc_lock,flags);
+ flow->mc_waiting=true;
+ if(flow->mc_host)flow->mc_host->suspended=true;
+ for(unsigned int c=1;c<RTL_FE_MC_GROUPS;c++) {
+  struct rtl_fe_mc_direct *d=fe->mc_directs[c];
+  if(d && d->flow==flow && d->pe_destination && fe->mc_pe[d->pe_destination-18].table)
+   WRITE_ONCE(fe->mc_pe[d->pe_destination-18].table->record[c].epoch,0);
+ }
+ dma_wmb();
+ spin_unlock_irqrestore(&fe->mc_lock,flags);
+ if(flow->published) {
+  ret=rtl_fe_main_age(&io,flow->hash_index,0);if(ret)return ret;
+  ret=rtl_fe_cache_command(&io,flow->hash_index,flow->crc16,1);if(ret)return ret;
+  flow->published=false;
+  fe_mcast_hw_withdrawn(fe);
  }
  return 0;
 }
@@ -758,7 +785,7 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
   if(i==mc->count && existing->replica_count==mc->count && existing->mtu_owned &&
      fe->mtus[existing->mtu_index].size==data.mtu &&
      rtl_fe_mc_equal(bitmap,fe->multicast.groups[existing->mc_group].bitmap,2)) {
-   if(fe->mc_gate.active)goto out;
+   if(fe->mc_gate.active && !existing->mc_waiting)goto out;
    /* Installed behind the closed gate during an earlier drain race.
     * The complete recipe was just revalidated; publish that same owner. */
    flow=existing;
@@ -792,22 +819,49 @@ static int fe_mcast_learn(struct rtl_fe_bridge *bridge,const struct fe_mcast_pac
  flow->bridge_ingress=packet->input.port;flow->bridge_tags=packet->input.tags;
  memcpy(flow->bridge_tag,packet->input.tag,sizeof(flow->bridge_tag));fe_index_flow(fe,flow);
 publish:
+ if(flow->mc_waiting) {
+  spin_lock_irqsave(&fe->mc_lock,flags);
+  if(fe->mc_gate.error)ret=fe->mc_gate.error;
+  else if(fe->mc_gate.writers || fe->mc_gate.epoch!=packet->epoch)ret=-ESTALE;
+  else if(!rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
+  else {
+   /* Indirect Hash publication cannot run under mc_lock. Close the shared
+    * gate before it so a concurrent policy writer cannot expose a half commit. */
+   rtl_fe_mc_gate_close(&io,&fe->mc_gate);ret=fe->mc_gate.error;
+  }
+  spin_unlock_irqrestore(&fe->mc_lock,flags);
+  if(ret)goto publication_result;
+  flow->published=true;
+  ret=rtl_fe_main_age(&io,flow->hash_index,1);
+  if(ret)goto publication_result;
+ }
  spin_lock_irqsave(&fe->mc_lock,flags);
- /* A closed generation cannot reopen while a CPU copy still owns a
-  * radio request/payload, even if its PCIe descriptor was already published.
-  */
+ /* Both CPU references and post-withdrawal direct-NI ACKs must complete. */
  if(fe->mc_gate.error)ret=fe->mc_gate.error;
  else if(fe->mc_gate.writers || fe->mc_gate.epoch!=packet->epoch)ret=-ESTALE;
  else if(!fe->mc_gate.active && !rtl9617c_bridge_mcast_tx_idle())ret=-EAGAIN;
  else {
+  if(flow->mc_waiting) {
+   for(unsigned int c=1;c<RTL_FE_MC_GROUPS;c++) {
+    struct rtl_fe_mc_direct *d=fe->mc_directs[c];
+    if(d && d->flow==flow && d->pe_destination && fe->mc_pe[d->pe_destination-18].table)
+     WRITE_ONCE(fe->mc_pe[d->pe_destination-18].table->record[c].epoch,d->pe_record.epoch);
+   }
+   if(flow->mc_host)flow->mc_host->suspended=false;
+   flow->mc_waiting=false;flow->lastused=jiffies;
+  }
   fe_mcast_pe_open(fe,packet->epoch);
   ret=rtl_fe_mc_gate_open(&io,&fe->mc_gate,packet->epoch);
  }
  if(ret)fe_mcast_pe_close(fe);
  spin_unlock_irqrestore(&fe->mc_lock,flags);
- /* A late old copy delays opening; preserve the valid immutable group
-  * until another complete packet revalidates it. Real changes/errors retire. */
- if(ret && ret!=-EAGAIN)fe_delete(fe,flow);
+publication_result:
+ /* Drain-only waits keep their group, but not an individually valid Hash.
+  * Any suspension/publication error retains the normal deletion retry. */
+ if(ret==-EAGAIN) {
+  int suspend=fe_mcast_wait(fe,flow);
+  if(suspend){ret=suspend;fe_mcast_invalidate(fe);fe_delete(fe,flow);}
+ } else if(ret){fe_mcast_invalidate(fe);fe_delete(fe,flow);}
 out:
  kfree(mc);return ret;
 }

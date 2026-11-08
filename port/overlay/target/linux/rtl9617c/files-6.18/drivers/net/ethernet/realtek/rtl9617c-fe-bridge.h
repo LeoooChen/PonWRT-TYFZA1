@@ -445,7 +445,7 @@ static void fe_bridge_work(struct work_struct *work)
       __dev_get_by_index(net,flow->bridge_ingress)) {
     fe_delete(fe,flow);continue;
    }
-   if(!rtl_fe_main_age_read(&io,flow->hash_index,&age) && age>1) {
+   if(!flow->mc_waiting && !rtl_fe_main_age_read(&io,flow->hash_index,&age) && age>1) {
     rtl_fe_main_age(&io,flow->hash_index,1);flow->lastused=jiffies;
     br_fdb_refresh_offload(__dev_get_by_index(net,flow->bridge_ingress),flow->ethernet_source,flow->bridge_vid,true);
    } else if(time_after(jiffies,flow->lastused+30*HZ))fe_delete(fe,flow);
@@ -477,7 +477,7 @@ static void fe_bridge_work(struct work_struct *work)
  }
  fe_mcast_process(bridge);
  list_for_each_entry(flow,&fe->flows,list)
-  if(flow->learned && flow->published){active=true;break;}
+  if(flow->learned && (flow->published || flow->mc_waiting)){active=true;break;}
  mutex_unlock(&fe->lock);
  rtnl_unlock();
  if(active && !READ_ONCE(bridge->stopping))queue_delayed_work(system_wq,&bridge->work,HZ);
