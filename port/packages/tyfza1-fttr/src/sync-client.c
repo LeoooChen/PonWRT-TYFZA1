@@ -209,6 +209,73 @@ out:
 	return ret;
 }
 
+static int neighbors_reply(struct json_object *value, const uint8_t peer[6],
+	bool *ack_seen, struct json_object **summary)
+{
+	struct json_object *field, *flag, *data, *previous = NULL, *next;
+	unsigned int reports = 0, restarts = 0;
+	char mac[18], *joined;
+	uint8_t address[6];
+	size_t before = 0, length;
+	bool fresh;
+
+	if (!json_object_object_get_ex(value, "RPCMethod", &field)) {
+		if (!json_object_object_get_ex(value, "Result", &field)) return -EAGAIN;
+		if (!json_object_is_type(field, json_type_int)) return -EBADMSG;
+		if (json_object_get_int64(field) != 1) return -EREMOTEIO;
+		*ack_seen = true; return -EAGAIN;
+	}
+	if (!json_object_is_type(field, json_type_string) ||
+	    (size_t)json_object_get_string_len(field) != strlen(json_object_get_string(field))) return -EBADMSG;
+	if (!strcmp(json_object_get_string(field), "Register")) return -ESTALE;
+	if (strcmp(json_object_get_string(field), "GetWifiNeighbor")) return -EAGAIN;
+	if (json_object_object_get_ex(value, "Result", &field)) {
+		if (!json_object_is_type(field, json_type_int)) return -EBADMSG;
+		if (json_object_get_int64(field) != 1) return -EREMOTEIO;
+		*ack_seen = true;
+	}
+	if (!json_object_object_get_ex(value, "scanResult", &data)) return -EAGAIN;
+	if (!json_object_is_type(data, json_type_string) ||
+	    (size_t)json_object_get_string_len(data) != strlen(json_object_get_string(data))) return -EBADMSG;
+	if (!json_object_object_get_ex(value, "MAC", &field) || !json_object_is_type(field, json_type_string) ||
+	    json_object_get_string_len(field) != 12) return -EBADMSG;
+	for (unsigned int i = 0; i < 6; i++) {
+		mac[3*i] = json_object_get_string(field)[2*i]; mac[3*i+1] = json_object_get_string(field)[2*i+1];
+		mac[3*i+2] = i == 5 ? 0 : ':';
+	}
+	if (fttr_sync_mac_parse(mac, address) || memcmp(address, peer, 6)) return -ESTALE;
+	if (!json_object_object_get_ex(value, "RECVFLAG", &flag) || !json_object_is_type(flag, json_type_string) ||
+	    (size_t)json_object_get_string_len(flag) != strlen(json_object_get_string(flag))) return -EBADMSG;
+	fresh = !strcmp(json_object_get_string(flag), "NEW");
+	if (!fresh && strcmp(json_object_get_string(flag), "REMAINING")) return -EBADMSG;
+	if (!fresh && !*summary) return -EPROTO;
+	if (*summary) {
+		json_object_object_get_ex(*summary, "reports", &field); reports = json_object_get_int(field);
+		json_object_object_get_ex(*summary, "restarts", &field); restarts = json_object_get_int(field) + fresh;
+		json_object_object_get_ex(*summary, "scanResult", &previous);
+		if (!fresh) before = json_object_get_string_len(previous);
+	}
+	length = json_object_get_string_len(data);
+	if (reports >= 64 || length > 65536 - before) return -E2BIG;
+	joined = malloc(before + length + 1);
+	if (!joined) return -ENOMEM;
+	if (before) memcpy(joined, json_object_get_string(previous), before);
+	memcpy(joined + before, json_object_get_string(data), length + 1);
+	next = json_object_new_object();
+	if (!next) { free(joined); return -ENOMEM; }
+	const char *keys[] = { "event", "scanResult", "reports", "restarts", "scan_complete", "identity_authenticated" };
+	for (unsigned int i = 0; i < 6; i++) {
+		field = i == 0 ? json_object_new_string("sync_wifi_neighbors") :
+			i == 1 ? json_object_new_string_len(joined, before + length) :
+			i == 2 ? json_object_new_int(reports + 1) : i == 3 ? json_object_new_int(restarts) : json_object_new_boolean(0);
+		if (!field || json_object_object_add(next, keys[i], field)) {
+			json_object_put(field); json_object_put(next); free(joined); return -ENOMEM;
+		}
+	}
+	free(joined); json_object_put(*summary); *summary = next;
+	return 0;
+}
+
 static int notification_reply(struct json_object *value, const char *method, bool *ack_seen)
 {
 	struct json_object *field;
@@ -502,6 +569,7 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 		goto out;
 	if(settings>=7 && settings<=14) {ret=settings_reply(value,peer,settings,ack_seen,summary,observed);goto out;}
 	if (settings == 16) { ret = stations_reply(value, peer, ack_seen, summary, observed); goto out; }
+	if (settings == 17) { ret = neighbors_reply(value, peer, ack_seen, summary); goto out; }
 	if (settings == 6 || settings == 15) {
 		ret = notification_reply(value, settings == 15 ? "QosSync" : "WanIPChange", ack_seen);
 		goto out;
@@ -707,7 +775,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 16 || (settings == 16 && configuration) || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
+	if (settings > 17 || (settings >= 16 && configuration) || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
@@ -747,7 +815,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			"{\"RPCMethod\":\"WanIPChange\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\",\"%s\":\"%s\"}",
 			source[0], source[1], source[2], source[3], source[4], source[5],
 			family == AF_INET ? "WanIP" : "WanIPv6", address);
-	} else if (settings == 4 || settings == 16) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"%s\"}", settings == 16 ? "GetWifiStaInfo" : "GetWifiRadio");
+	} else if (settings == 4 || settings >= 16) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"%s\"}", settings == 17 ? "GetWifiNeighbor" : settings == 16 ? "GetWifiStaInfo" : "GetWifiRadio");
 	else if (settings == 5) {
 		struct json_object *request=json_object_new_object();
 		if (!request) return -ENOMEM;
@@ -765,7 +833,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], settings, content);
 	if (length < 0 || (size_t)length >= sizeof(payload))
 		return -E2BIG;
-	ret = fttr_sync_pack(source, (settings>=4 && settings<=6) || settings==15 || settings==16?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
+	ret = fttr_sync_pack(source, (settings>=4 && settings<=6) || settings>=15?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
 		payload, length, frame, sizeof(frame));
 	if (ret < 0)
 		return ret;

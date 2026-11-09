@@ -9294,6 +9294,65 @@ before reading the file (`getWifiNeighbor+0x2e4`, `0x450818`); this is not proof
 that all segments arrived. Complete neighbor scan termination/loss handling,
 automatic resident station collection and physical acceptance remain open.
 
+### Original neighbor report collection without a false completion claim
+
+The explicit syncserv client now sends the original `GetWifiNeighbor` query:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa wifi-neighbors
+```
+
+`tools/trace_stock_fttr_neighbors.py` executes the retained builder at
+`0x412198`, the complete controller report branch, its file replacement/append
+decisions and reply encoder. A report carries `MAC`, `RECVFLAG` and the string
+`scanResult`. NEW replaces stored text (including an empty string); REMAINING
+appends verbatim. A repeated REMAINING is appended again by the original
+receiver. It replies with `{"Result":0}` after each report. No total count,
+final flag or snapshot sequence is consumed by this branch. The retained
+manager's fixed two-second delay before reading the file remains insufficient
+to prove completeness; no subordinate producer was found in the retained
+inputs to establish a stronger completion contract.
+
+Native preserves these verified query/report/reply operations and the raw
+text, including records split between reports. It requires a NEW for this
+query before accepting continuation data, verifies the reported MAC and
+Ethernet source, and rejects unknown flags, invalid UTF-8/types and embedded
+NUL. Another NEW replaces the current text and increments `restarts`.
+Automatic discovery's diagnostic summary is cleared before beginning report
+accumulation, so it cannot make an orphan continuation appear valid.
+
+Collection lasts the existing fixed three-second exchange window. A query
+with accepted data and no outstanding transport fragment returns observed
+`scanResult`, `reports`, `restarts`, `scan_complete:false` and
+`identity_authenticated:false`. This is a successful observation window,
+**not** a complete scan or authenticated neighbor inventory. The window is
+not extended by reports. No data, an unfinished transport fragment, malformed
+continuation, new registration, allocation failure or failed per-report reply
+returns an error and discards the output. Cumulative reception is bounded to
+64 reports and64KiB of current text; replacement still consumes report budget.
+Duplicate application reports are not guessed away, since their wire format
+has no identity to distinguish duplicates from equal data. Missing whole
+reports and delayed previous-scan data cannot be reliably detected with the
+verified fields. No scan-result text is used for automatic roaming decisions.
+
+Validation passes32 glibc and31 packaged musl CLI/veth scenarios, including
+NEW/append/replace/empty/duplicate, split text, report fragments, wrong source
+or method, orphan continuation before/after automatic discovery, late data,
+registration change, incomplete fragments after valid data,64-report/64KiB
+bounds, bad data after a valid prefix and reply-send failure. ASan/UBSan covers
+42 allocation/copy failures across first report, replacement and continuation;
+the old internal value remains owned until a replacement is fully built.
+Station33, QosSync38 and EasyMesh19 CLI/12 info/20 resident regressions pass;
+existing station and settings allocation/parser checks also pass.
+The FTTR/FPGA packages rebuild and67 source/header inputs plus four installed
+programs match package staging. Evidence is
+`artifacts/fttr/neighbors-*-20261109.*`. Kernel/PE are unchanged, no device was
+accessed, and full image/physical acceptance is not implied.
+
+Complete neighbor scan semantics, structured neighbor field conversion,
+resident collection and roaming coordination remain incomplete. This addition
+does not resolve the hardware retirement and ID-reuse requirements below.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

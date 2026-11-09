@@ -297,6 +297,8 @@
 
 146. 接入原厂GetWifiStaInfo终端信息：实际执行请求、完整记录消费、64条上限及接收后空JSON响应；新增wifi-stations单播查询，完整StaInfo才返回，逐行核对从设备/终端MAC，保留接口/频段/RSSI/协商速率原值与缺项。超64条明确失败，不复制原厂RSSI/速率缩位；同终端跨BSS分开保留，分片/错误来源/重注册/分配或回发失败不输出半表。33 glibc/32打包musl场景、22分配故障ASan/UBSan、Radio/QoS/常驻回归、整包构建及67源码/四程序一致性通过。内核/PE未变、未实机；邻居查询确认NEW/REMAINING追加及原厂固定等2秒读文件，完整结束/丢段依据仍待补，自动采集和漫游协调未据此宣称完成。详见[无线终端信息](port/FTTR.md#original-downstream-wireless-station-information)。
 
+147. 接入原厂GetWifiNeighbor查询/分段接收/Result0回复：实际执行NEW替换、REMAINING追加、重复/空段/未知标记分支，确认主端没有总段数/终止/快照序号。新增wifi-neighbors按固定3秒窗口收集原文，始终scan_complete:false；要求本次NEW、核对来源/MAC，64段/64KiB上限，缺片/错误续段/重注册/回发或分配失败不输出残留；自动发现旧summary先清空。32 glibc/31打包musl场景、42分配故障ASan/UBSan、终端/QoS/EasyMesh回归及整包/67输入/四程序一致性通过。内核/PE未改、未实机；只完成传输观察能力，完整扫描语义、结构化邻居转换、常驻采集/漫游及硬件退场/ID复用仍待补齐。详见[邻居分段接收](port/FTTR.md#original-neighbor-report-collection-without-a-false-completion-claim)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

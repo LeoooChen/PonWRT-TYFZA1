@@ -12,7 +12,9 @@ int fttr_sync_mac_parse(const char *text, uint8_t mac[6]);
  * 4 GetWifiRadio, 5 SetONURadioInfo, 6 WanIPChange,
  * 7 GetTimeSetting, 8 SetTimeSetting, 9 GetIPTVSetting, 10 SetIPTVSetting,
  * 11 GetIPTVPortInfo, 12 SetIPTVPortInfo, 13 GetWebPassword, 14 SetWebPassword,
- * 15 QosSync, 16 GetWifiStaInfo. Flag2 requires
+ * 15 QosSync, 16 GetWifiStaInfo, 17 GetWifiNeighbor. Neighbor summaries
+ * accumulate NEW/REMAINING reports; callers discard them on any error.
+ * Flag2 requires
  * a separate STATUS0 completion report; Result alone is only an ACK. */
 int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
 		unsigned int settings, bool writing, bool *ack_seen,
