@@ -518,13 +518,20 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	writel(0xff | (6 << 16), ni + 0x2304 + 12 * 9);
 	/* Stock aal_l3_te_init starts CB scanning after credit initialization. */
 	writel(readl(ni + CB_CTRL) | BIT(31), ni + CB_CTRL);
+	if (!(readl(ni + CB_CTRL) & BIT(31))) return -EIO;
 	/* The CB conditions only govern admission when L3 tail-drop is enabled. */
 	writel(readl(ni + 0x9004) | BIT(2), ni + 0x9004);
+	if (!(readl(ni + 0x9004) & BIT(2))) return -EIO;
 	/* CRC is stripped by QM; CPU0 dequeue and normal NI input are enabled. */
 	/* Keep the reset EPP wait setting, as the vendor RMW sequence does. */
 	writel(0x8462ff01, ni + ES_CTRL);
+	/* Verify CPU/NI admission, CRC handling and relocation mode, leaving
+	 * counter increments and the EPP wait timer outside this check. */
+	if ((readl(ni + ES_CTRL) & 0xb300ffffU) != (0x8462ff01U & 0xb300ffffU)) return -EIO;
 	writel(readl(ni + 0x610c) | 0xffffU, ni + 0x610c);
+	if ((readl(ni + 0x610c) & 0xffffU) != 0xffffU) return -EIO;
 	writel(readl(ni + RMU_CTRL) | BIT(31), ni + RMU_CTRL);
+	if (!(readl(ni + RMU_CTRL) & BIT(31))) return -EIO;
 	rx->deepq_configured = true;
 	return 0;
 }

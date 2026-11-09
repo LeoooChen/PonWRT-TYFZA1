@@ -545,13 +545,19 @@ static int rtl_engine_start(struct rtl_xram *priv)
 			rtl_update(priv, 0x2300, BIT(6), priv->p6.configured ? BIT(6) : 0);
 		}
 		ret = rtl_dma_tx_start(&priv->dma);
-		if (ret)
+		if (ret) {
+			rtl_dma_tx_stop(&priv->dma);
 			return ret;
+		}
 	}
 	if (priv->qm_rx) {
 		ret = rtl_qm_rx_start(&priv->qm, priv->port);
 		if (ret) {
-			rtl_dma_tx_stop(&priv->dma);
+			/* Start can fail after publishing buffers or enabling only part
+			 * of QM. Close those producers before leaving the engine unused;
+			 * stop_error/reset_error retain any unconfirmed hardware ownership. */
+			rtl_qm_rx_stop(&priv->qm);
+			if (priv->dma_tx) rtl_dma_tx_stop(&priv->dma);
 			return ret;
 		}
 		for (port = 0; port < ARRAY_SIZE(priv->ports); port++)

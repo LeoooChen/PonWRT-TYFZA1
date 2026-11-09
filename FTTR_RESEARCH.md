@@ -341,6 +341,8 @@
 
 168. 接入原厂ChannelAutoSelect：执行原builder、16槽在线/指定MAC分派和pending23回复；新增channel-auto单设备及all auto发现后逐台触发，每目标一次，部分NACK/超时/重注册仍收集余下结果，整体失败，空列表ENODEV。只报告ACK、channel_verified:false，不以立即读回/原pending清除宣称选频完成；发现列表及结果分配检查防止残表驱动批量操作。主机/打包musl各25网络场景含16设备、87分配故障ASan/UBSan，26 WAN/37常驻回归、整包/67输入/四程序一致通过；内核/PE未改、未实机，真实选频/漫游及完整硬件退场仍未完成。详见[原厂自动选频触发](port/FTTR.md#original-automatic-channel-selection-trigger)。
 
+169. 补齐共享引擎启动失败清理与最终使能检查：DMA核对VP/global enable，QM核对CB扫描/taildrop/ES业务字段/端口/RMU后才ready；engine在DMA失败后stop、QM失败后先关闭QM再按需停DMA，保留原错误和已有清理失败归属，不启动NAPI/timer或增加引用。11cf0b9实际函数已复现假成功/遗漏清理；12 QM、8 engine及DMA末端故障/重试、九回归含4096混合提交、原厂DMA与166调用QM/CB/P6对照，Image/模块/三输入一致通过。PE未改、未实机；不以控制位读回证明全链路退场或ID复用。详见[共享引擎启动清理](port/FTTR.md#shared-engine-startup-closes-partially-enabled-dma-and-qm)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -142,7 +142,9 @@ int rtl_dma_tx_start(struct rtl_dma_tx *tx)
 	/* The direct mode consumes Ethernet bytes, and DMA-AFT/MAC supplies FCS. */
 	writel((64 << 4) | BIT(0), base + AFT_CTRL);
 	writel(BIT(0), vp + VP_ENABLE);
+	if (!(readl(vp + VP_ENABLE) & BIT(0))) return -EIO;
 	writel(BIT(0) | (3 << 2) | BIT(4), base + CTRL);
+	if (!(readl(base + CTRL) & CTRL_ENABLE)) return -EIO;
 	return 0;
 }
 

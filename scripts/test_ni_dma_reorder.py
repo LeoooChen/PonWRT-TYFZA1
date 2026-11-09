@@ -14,9 +14,12 @@ root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--before", action="store_true")
 parser.add_argument("--stock", type=Path, help="execute the original board module initialization")
+parser.add_argument("--revision", help="run current assertions against an earlier driver")
 args = parser.parse_args()
 drivers = root / "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek"
 source = (drivers / "rtl9617c-dma.c").read_text()
+if args.revision:
+    source = subprocess.check_output(['git','show',args.revision+':'+str((drivers/'rtl9617c-dma.c').relative_to(root))],cwd=root,text=True)
 if args.before:
     source = subprocess.check_output(["git", "show", "8119f3c:" + str((drivers / "rtl9617c-dma.c").relative_to(root))], cwd=root, text=True)
 header = (drivers / "rtl9617c-dma.h").read_text()
@@ -78,9 +81,12 @@ typedef uint32_t u32,__le32;typedef uint64_t u64;typedef uintptr_t dma_addr_t;
 #define lower_32_bits(v) ((u32)(v))
 static u32 dma[1024],reo[1024];
 static bool fail_access;
+static unsigned reject_enable;
 static unsigned reo_writes,reo_reads,reset_writes,drop_reset;
 static void writel(u32 v,void *p){
  if(++reset_writes==drop_reset)return;
+ if((reject_enable==1&&p==dma+(0x100+8*0xa0)/4&&v==1) ||
+    (reject_enable==2&&p==dma&&v==0x1d))return;
  uintptr_t a=(uintptr_t)p;
  if(a>=(uintptr_t)reo&&a<(uintptr_t)(reo+1024)){
   unsigned off=a-(uintptr_t)reo;
@@ -122,6 +128,15 @@ int main(void){
   free(tx.memory);
  }
 #ifndef EXPECT_BEFORE
+ for(unsigned failure=1;failure<=2;failure++) {
+  struct rtl_dma_tx tx={.vp=8,.port=0,.registers=dma,.axi_reorder=reo,.memory_dma=0x04000000};
+  tx.memory=malloc(MEMORY_BYTES);assert(tx.memory);memset(dma,0,sizeof(dma));
+  fail_access=false;drop_reset=0;reject_enable=failure;
+  assert(rtl_dma_tx_start(&tx)==-EIO&&tx.hardware_owned);
+  if(failure==1)assert(!(dma[0]&1)); /* never enable global DMA after failed VP enable */
+  reject_enable=0;assert(!rtl_dma_tx_start(&tx)&&tx.hardware_owned);
+  free(tx.memory);
+ }
  for(unsigned failure=1;failure<=6;failure++) {
   struct rtl_dma_tx tx={.vp=8,.port=0,.registers=dma,.axi_reorder=reo,.memory_dma=0x04000000};
   tx.memory=malloc(MEMORY_BYTES);assert(tx.memory);memset(tx.memory,0xa5,MEMORY_BYTES);

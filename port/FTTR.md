@@ -10209,6 +10209,39 @@ four stripped/staged programs match; evidence is
 `artifacts/fttr/channel-auto-*-20261110.*`. Kernel/PE are unchanged by this feature,
 and no physical device or actual RF channel selection was exercised.
 
+### Shared-engine startup closes partially enabled DMA and QM
+
+DMA startup now checks the final VP and global enable bits before reporting
+success. QM startup checks CB scanning, tail-drop admission, the CPU/NI/CRC/
+relocation ES fields, port admission and RMU receive enable before publishing
+`deepq_configured`. Counter increments and EPP wait-timer bits are not used as
+readiness predicates. Old `11cf0b9` reproduces false startup success when these
+enable writes are rejected.
+
+`rtl_engine_start` now invokes the corresponding stop after a failed DMA start;
+after a failed QM start it closes QM and then stops DMA when present. This is
+required because initialization may already have published buffers or enabled
+part of the fabric. It retains the original startup error; existing `stop_error`,
+`reset_error` and hardware ownership retain any failed cleanup. The engine gets
+no reference, starts no NAPI/timer and admits no successful open on failure.
+An eventual retry runs the existing checked reset/start sequence. A QM-only
+configuration never stops an unconfigured DMA object.
+
+The actual startup suffixes and engine/refcount functions pass12 QM enable/
+cleanup/retry scenarios and8 DMA/QM partial-start combinations, including failed
+cleanup. DMA tests additionally cover both final enable failures and recovery.
+Nine related suites pass, including45 QM reset cases,62 stop/free cases,729
+refill cases,4096 mixed LAN/OMCI/lookup submissions, P6 gates and Wi-Fi lifetime.
+The original DMA initialization and target QM/CB/P6 contract execute successfully;
+the latter records166 calls with modeled register/table boundaries. ASan/UBSan,
+Image/modules and three compiled-source identities pass. Evidence is
+`artifacts/fttr/engine-start-*-20261110.*` and the retained comparison directory
+`artifacts/fttr/engine-start-original-20261110/`.
+
+PE firmware is unchanged and no physical device was accessed. Successful
+enable/disable readback remains a control-state check; complete MCE/AFT/AXI/
+MiniOLT retirement and safe hardware-ID reuse are still unproven.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
