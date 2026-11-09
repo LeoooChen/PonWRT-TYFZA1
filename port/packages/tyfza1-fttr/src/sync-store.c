@@ -61,7 +61,7 @@ static void filename(const uint8_t peer[6], struct json_object *record, char nam
 int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t peer[6],
 	uint16_t ethertype, struct json_object *policy, struct json_object **record, unsigned int *attempted)
 {
-	struct json_object *value, *registration, *copy, *wifi = NULL, *mesh = NULL, *radios = NULL, *time = NULL, *iptv = NULL, *revision, *stored = NULL, *mask;
+	struct json_object *value, *registration, *copy, *wifi = NULL, *mesh = NULL, *radios = NULL, *time = NULL, *iptv = NULL, *ports = NULL, *revision, *stored = NULL, *mask;
 	unsigned int allowed;
 	char name[64], mac[13];
 	int fd, ret;
@@ -76,7 +76,9 @@ int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t p
 	json_object_object_get_ex(policy,"Radios",&radios);
  json_object_object_get_ex(policy,"Time",&time);
  json_object_object_get_ex(policy,"IPTV",&iptv);
+ json_object_object_get_ex(policy,"IPTVPorts",&ports);
 	allowed = (1U << (wifi ? json_object_array_length(wifi) : 0)) - 1;
+	if(ports)allowed|=1U<<21;
 	if(iptv)allowed|=1U<<20;
 	if(time)allowed|=1U<<19;
 	if (mesh) allowed |= 1U << 16;
@@ -91,7 +93,7 @@ int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t p
 	}
 	value = json_object_new_object();
 	snprintf(mac, sizeof(mac), "%02X%02X%02X%02X%02X%02X", source[0], source[1], source[2], source[3], source[4], source[5]);
-	json_object_object_add(value, "version", json_object_new_int(iptv ? 5 : time ? 4 : radios ? 3 : mesh ? 2 : 1));
+	json_object_object_add(value, "version", json_object_new_int(ports ? 6 : iptv ? 5 : time ? 4 : radios ? 3 : mesh ? 2 : 1));
 	json_object_object_add(value, "source", json_object_new_string(mac));
 	snprintf(mac, sizeof(mac), "%02X%02X%02X%02X%02X%02X", peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
 	json_object_object_add(value, "peer", json_object_new_string(mac));
@@ -103,6 +105,7 @@ int fttr_sync_store_load(int directory, const uint8_t source[6], const uint8_t p
 	if (radios) json_object_object_add(value,"radios",json_object_get(radios));
  if(time)json_object_object_add(value,"time",json_object_get(time));
  if(iptv)json_object_object_add(value,"iptv",json_object_get(iptv));
+ if(ports)json_object_object_add(value,"iptvports",json_object_get(ports));
 	json_object_object_add(value, "attempted", json_object_new_int(0));
 	filename(peer, value, name);
 	fd = openat(directory, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);

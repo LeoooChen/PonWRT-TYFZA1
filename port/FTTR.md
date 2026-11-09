@@ -8985,6 +8985,59 @@ musl fttr-sync/fttr-sync-policy compile successfully; reports are
 `artifacts/fttr/iptv-*-20261109.*`. Kernel and PE are unchanged; no physical device
 or actual IPTV forwarding path was accessed.
 
+### Separate IPTV logical-port RPCs
+
+The original `GetIPTVPortInfo` and `SetIPTVPortInfo` methods are now available:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa iptv-ports
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa iptv-ports-apply /etc/fttr-iptv-ports.json
+```
+
+The private write document uses two strings, for example:
+
+```json
+{"IPTVLanPort":"1,3","IPTVVlanId":"100"}
+```
+
+This protocol uses numeric logical port IDs, unlike `SetIPTVSetting`'s LAN1..4
+labels. The original manager converts interface names through its port mapping
+before saving this numeric list; native input therefore requires the explicit
+peer's logical IDs. It does not assume that logical ID1 is a particular physical
+socket. Empty lists are accepted, duplicate IDs and malformed/noncanonical
+numbers are refused, and the original32-byte storage limits the string to31
+bytes. VLAN is a canonical decimal string0..4094. The native validator bounds
+logical IDs to positive signed32 values; this is a representation bound, not a
+claim that the subordinate implements every such port.
+
+`trace_stock_fttr_iptv_port.py` executes the actual controller builders, Ethernet
+encoder and pending25 reply-to-MIB parser across24 port/VLAN combinations. The
+reader saves only `IPTVLanPort` at the original MIB row offset723; it does not
+consume `IPTVVlanId`. Native application consequently queries before writing,
+sends once and independently compares the returned ports, with
+`ports_match`/`readable_fields_match` separate from `vlan_verified:false` and
+`traffic_verified:false`. Even a successful Set ACK plus matching ports does
+not verify the requested VLAN or actual IPTV delivery. The original envelope
+has no transaction ID, so same-source delayed replies retain the known limit.
+
+Resident policy uses `IPTVPorts` and executes after optional Time, before
+EasyMesh. It is mutually exclusive with `IPTV` on the same peer to avoid two
+protocols overwriting its IPTV configuration. Record version6 pins both strings
+to the Revision and fsyncs attempted bit21 before transmission. Recovery reads
+ports without replaying Set; it explicitly leaves VLAN unverified. Same-Revision
+VLAN drift is still rejected even though the remote query cannot verify it.
+Policies without IPTVPorts keep their prior record version.
+
+Validation includes the24 original builder/parser cases,30 actual CLI/resident
+AF_PACKET/veth cases,26 field checks and ASan/UBSan. Cases include cleared lists,
+nontrivial numeric ports, wrong replies, timeout/NACK/readback mismatch,
+re-registration, fsync failure, SIGKILL/restart, Ready0, conflicting policies,
+Revision drift and WiFi/Radio/Time ordering. Existing Time, IPTV, Radio, EasyMesh
+and durable-store regressions pass. Host fttr-sync and musl fttr-sync/
+fttr-sync-policy build successfully; reports are
+`artifacts/fttr/iptv-port-*-20261109.*`. Kernel/PE and physical devices were not
+changed or exercised.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

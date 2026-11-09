@@ -14,8 +14,9 @@ static int decode(const char *text,size_t length,unsigned settings,bool *ack){
  const uint8_t peer[6]={2,0,0,0,0,1};
  struct fttr_sync_message m={.payload=(const uint8_t*)text,.length=length};
  struct json_object *summary=NULL,*observed=NULL;
- int ret=fttr_sync_reply_decode(&m,peer,settings,(settings==8 || settings==10),ack,&summary,&observed);
+ int ret=fttr_sync_reply_decode(&m,peer,settings,(settings==8 || settings==10 || settings==12),ack,&summary,&observed);
  if(!ret && (settings==7 || settings==9)){assert(summary&&observed&&!(settings==9?fttr_sync_iptv_validate(observed):fttr_sync_time_validate(observed)));}
+ else if(!ret && settings==11)assert(summary&&observed);
  else assert(!summary&&!observed);
  json_object_put(summary);json_object_put(observed);return ret;
 }
@@ -73,7 +74,22 @@ int main(void){
  assert(decode(text,strlen(text),9,&ack)==-EBADMSG);json_object_put(obj);
  const char *partial="{\"Result\":1,\"MAC\":\"020000000001\",\"IPTVEnable\":1}";
  assert(decode(partial,strlen(partial),9,&ack)==-EAGAIN);
- puts("Time/IPTV parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
+ const char *portreply="{\"Result\":1,\"MAC\":\"020000000001\",\"IPTVLanPort\":\"1,3\"}";
+ assert(!decode(portreply,strlen(portreply),11,&ack));assert(!decode("{\"Result\":1}",12,12,&ack));
+ const char *badports[]={"01","0","-1","1,1","1,","1,,2","LAN1","2147483648","1;2"};
+ for(unsigned i=0;i<sizeof(badports)/sizeof(badports[0]);i++) {
+  struct json_object *obj=json_tokener_parse(portreply);
+  json_object_object_add(obj,"IPTVLanPort",json_object_new_string(badports[i]));
+  const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
+  assert(decode(text,strlen(text),11,&ack)==-EBADMSG);json_object_put(obj);
+ }
+ struct json_object *desired=json_tokener_parse("{\"IPTVLanPort\":\"1,3\",\"IPTVVlanId\":\"100\"}");
+ obj=json_tokener_parse("{\"IPTVLanPort\":\"1,3\",\"IPTVVlanId\":\"200\"}");
+ assert(!fttr_sync_iptv_ports_check(obj,desired,true));
+ json_object_object_add(obj,"IPTVLanPort",json_object_new_string("1"));
+ assert(fttr_sync_iptv_ports_check(obj,desired,true)==-EUCLEAN);
+ json_object_put(obj);json_object_put(desired);
+ puts("Time/IPTV/port parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
