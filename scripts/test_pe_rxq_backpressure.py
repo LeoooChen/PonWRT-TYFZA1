@@ -595,6 +595,38 @@ for identity in range(21):
  assert bytes(r.u.mem_read(address,len(expected_payloads[identity])))==expected_payloads[identity]
 r.put(VP+0x1c,1042&1023);r.capture();r.inventory()
 
+# RX shift may put the decapsulated Ethernet address on either halfword
+# alignment. Move exactly its twelve address bytes, preserving LLC type,
+# payload, neighbouring subframes and outer headers after full admission.
+for shift in (0, 2, 4, 6):
+ for aggregate in (False, True):
+  r=reorder_peer(); header=bytearray(data_frame(0x123,2)[:34])
+  llc=data_frame(0x123,2)[34:-12]+bytes(range(32))
+  if aggregate:
+   header[24]=0x80
+   sub=dst+peer+struct.pack('!H',len(llc))+llc
+   frame=bytes(header)+sub+bytes((-len(sub))&3)+sub+bytes(12)
+  else: frame=bytes(header)+llc+bytes(12)
+  at,raw=r.arrive(frame,True)
+  raw=bytearray(raw[:36]+bytes(shift)+frame)
+  struct.pack_into('<I',raw,0,(struct.unpack_from('<I',raw)[0]&~0x3fff)|len(raw))
+  struct.pack_into('<I',raw,4,struct.unpack_from('<I',raw,4)[0]|(shift//2)<<14)
+  r.u.mem_write(at,bytes(raw));r.capture();stores=[]
+  hook=r.u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,a,size,value,data:stores.append((a&0x1fffffff,size)),begin=at,end=at+len(raw)-1)
+  r.process();r.u.hook_del(hook)
+  count=2 if aggregate else 1
+  assert r.get(MB+90*4)==count and not r.get(MB+94*4)
+  expected=bytearray(raw)
+  for i in range(count):
+   address=r.get(NI+i*8);offset=address-at
+   expected[offset:offset+12]=dst+peer
+   assert bytes(r.u.mem_read(address,12+len(llc)-6))==dst+peer+llc[6:]
+   writes=[(a,size) for a,size in stores if address<=a<address+12]
+   assert len(writes)==(3 if not(address&3) else 4),writes
+   assert sum(size for a,size in writes)==12,writes
+  assert bytes(r.u.mem_read(at,len(raw)))==bytes(expected)
+  r.put(VP+0x1c,count);r.capture();r.inventory()
+
 # No BA, an outside-window SN, replay PN, or a BAR retain ARM ownership.
 for case in ('no_ba','outside_window','replay','BAR','PS_Poll','other_tid','bad_LLC'):
  r=reorder_peer(window=0 if case=='no_ba' else 64)
