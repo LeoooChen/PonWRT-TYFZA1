@@ -323,6 +323,8 @@
 
 159. 修复上行DMA残留分配被误判为已启动：新增uplink_ready，stop先撤就绪，失败start/stop保留旧内存与寄存器快照，再次start先完成清理，VP启停读回确认后才发布就绪/释放。6cd836b生产函数已复现失败加载后再次start假成功；两VP共12故障/恢复、ARM游标重建→链接PE的40尾缓冲区代际场景及514库存、原厂4096完成对照、十一回归与Image/模块/两输入一致通过。PE未改、未实机；预取保留规则不变，完整生产者/下游屏障和ID安全复用仍未证明。详见[上行就绪归属](port/FTTR.md#uplink-allocation-is-distinct-from-a-successfully-running-ni-queue)。
 
+160. 修复上行队列重启遗漏工作环NI完成序号：原先只换算两个tail，未覆盖仍在工作环及越过ARM阻塞点的乱序提交；现在PE暂停时遍历READ→WRITE，按旧读游标距离换算31位end，保留owner/ARM状态/ID和环外记录。a694877实际ARM函数→链接PE已复现提前归还；84工作环/阻塞/回绕与40尾保留场景、514库存、启停ASan/UBSan及九项回归、Image/模块/输入一致通过。PE未改、未实机；完整生产者/下游退场和ID复用仍待证明。详见[上行工作环重建](port/FTTR.md#rebase-pending-work-ring-completions-when-restarting-uplink-dma)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

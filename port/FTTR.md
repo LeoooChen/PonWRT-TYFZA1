@@ -9912,6 +9912,34 @@ accessed. This fixes retry readiness and checks the existing tail preservation;
 it does not establish complete upstream/downstream packet retirement or safe
 hardware-ID reuse.
 
+### Rebase pending work-ring completions when restarting uplink DMA
+
+Queue reload must translate all NI completion records into the new cursor
+epoch. The previous `uplink_counter_start` translated only the two retained
+tail buffers. A paused PE may still own completed payloads in its work ring;
+lookahead can also submit NI frames beyond an ARM-blocked process cursor.
+Keeping their old end sequences while resetting the read cursor could return
+payloads before the original two-descriptor retention interval elapsed.
+
+The paused restart now walks WORK_READ through WORK_WRITE and rebases every
+NI-pending record by its signed31-bit distance from the old completion cursor.
+It preserves the NI ownership bit, ARM completion and lookup hints, buffer IDs,
+ring cursors and entries outside the captured interval. No payload is released
+by rebasing; the existing PE completion/recycling path decides when to return it.
+
+`test_ni_uplink_tail_restart.py` executes the native ARM helper followed by the
+linked production PE. The old `a694877` helper reproduces an early buffer return
+when restarting cursor0 at1. The fix passes84 work-ring cases covering wrap,
+ARM blockage, submissions beyond WORK_PROCESS,31/32-bit old cursor boundaries,
+and exact delayed return of all514 buffers, plus the previous40 tail cases.
+The start/stop ASan/UBSan test and nine related suites pass, including full linked
+RXQ/BA/pause and251 FTTR NI/PE drain cases. Image/modules and the changed source
+identity pass; artifacts are `artifacts/fttr/uplink-work-*-20261109.*`.
+
+PE firmware is unchanged; no physical device was accessed. This repairs the
+native restart bookkeeping while retaining the original prefetch rule. Full
+producer/downstream retirement and safe hardware-ID reuse remain unproven.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

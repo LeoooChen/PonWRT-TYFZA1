@@ -15,12 +15,10 @@ code=r'''
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include "rx-geometry.h"
 typedef uint32_t u32;typedef unsigned char u8;
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
-#define RTL_AX_NI_TX_MASK 1023
-#define RTL_AX_NI_TX_DEPTH 10
-#define RTL_AX_NI_TX_BYTES 8192
 #define GFP_KERNEL 0
 #define lower_32_bits(n) ((u32)(n))
 struct rtl_ax_tx {void *dma_device,*rx,*hw;struct {bool uplink_ready;void *uplink_memory,*vp,*dma;u32 uplink_dma,vp_saved[5],vp_index;}ni;};
@@ -109,5 +107,5 @@ int main(void){
 '''
 with tempfile.TemporaryDirectory() as d:
  p=Path(d);(p/'test.c').write_text(code)
- subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(p/'test.c'),'-o',str(p/'test')],check=True)
+ subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'),str(p/'test.c'),'-o',str(p/'test')],check=True)
  subprocess.run([str(p/'test')],check=True)

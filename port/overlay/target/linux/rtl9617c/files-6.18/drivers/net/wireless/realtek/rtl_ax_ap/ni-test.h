@@ -252,12 +252,23 @@ static void uplink_counter_start(struct rtl_ax_tx *tx, u32 start)
 {
 	u8 *memory = rtl_ax_rx_pe_memory(tx->rx);
 	u32 old_read = get_unaligned_le32(memory + PE_PROBE_MAILBOX + 364);
+	u32 read = get_unaligned_le32(memory + PE_PROBE_MAILBOX + RTL_AX_RX_WORK_READ * 4);
+	u32 write = get_unaligned_le32(memory + PE_PROBE_MAILBOX + RTL_AX_RX_WORK_WRITE * 4);
 	/* A queue-base reload starts a new cursor epoch. Preserve each held
 	 * payload's distance from the old read cursor in the new epoch. */
 	for (unsigned int i = 0; i < 2; i++) {
-		u8 *held = memory + 0x17810 + i * 8;
+		u8 *held = memory + RTL_AX_RX_NI_TAIL + i * 8;
 		if (get_unaligned_le32(held))
 			put_unaligned_le32((start - (old_read - get_unaligned_le32(held + 4))) & 0x7fffffff, held + 4);
+	}
+	/* PE is paused, but completed NI payloads may still be in the work
+	 * ring. Lookahead can submit beyond WORK_PROCESS while ARM holds an
+	 * earlier slot, so visit every captured entry through WORK_WRITE. */
+	for (; read != write; read = (read + 1) & (RTL_AX_RX_ENTRIES - 1)) {
+		u8 *status = memory + RTL_AX_RX_WORK_STATUS + read * 4;
+		u32 owner = get_unaligned_le32(status);
+		if (owner & BIT(31))
+			put_unaligned_le32(BIT(31) | ((start - (old_read - (owner & 0x7fffffff))) & 0x7fffffff), status);
 	}
 	put_unaligned_le32(start, memory + PE_PROBE_MAILBOX + 360);
 	put_unaligned_le32(start, memory + PE_PROBE_MAILBOX + 364);
