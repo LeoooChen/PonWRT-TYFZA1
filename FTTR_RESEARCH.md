@@ -258,6 +258,8 @@
 
 120. 接入原厂WanIPChange显式通知：执行IPv4/IPv6构造、以太网封装及method12待定ACK分派，原生按目标单播发送一次，数值地址校验、3秒期限、错来源/错方法隔离和重新注册中止，输出仅报告ACK、不宣称路由生效。6原厂报文/3回复及26CLI/veth场景通过；Radio回归、双架构构建通过。另执行32组原厂Radio带宽写入/回读块，确认MIB1319区分40M与Auto20M40M，无需放宽比较。已对齐main80b82e6并通过其iperf feed检查；无内核/PE修改、未实机。自动WAN事件/重新注册后通知生命周期、完整网关/漫游、硬件退场和ID复用仍待完成。详见[WAN地址通知](port/FTTR.md#original-wan-address-notification)。
 
+121. 补齐HE BSS Color的共享BSSID CAM生命周期：核对原厂HAL→role_info→CAM及独立端口寄存器更新，复现原生CAM总写0而端口非0的缺漏；AP/mesh启动、STA关联及所有站点创建/删除现在保留当前颜色。动态切换等待CAM ACK后更新快照/寄存器，当前所属角色成功写入会保存最新AID/HE，失败不覆盖；更新失败立即关闭硬件调度，即使PE暂停超时也请求接口退场。256原厂编码/寄存器、128更新故障重试、32768站点写入、384实际CAM配方及128动态生命周期场景通过，STA/BA/双CAM密钥/AP-mesh/FE事务回归与Image/模块、三输入一致检查通过。PE未变、未实机。这是多VIF依赖审查中发现的现有硬件身份修复；多VIF的角色/MBID/密钥/序列/BCMC隔离仍未接入，完整退场/ID复用和TSPEC仍待补齐。详见[BSSID颜色生命周期](port/FTTR.md#he-bss-color-in-shared-bssid-cam-lifecycle)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

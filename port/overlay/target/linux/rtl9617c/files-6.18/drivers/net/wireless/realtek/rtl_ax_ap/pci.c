@@ -234,7 +234,7 @@ struct rtl_ax_ap {
 	u32 ra_last_ppdu_bytes;
 	u8 role_stage, role_type;
 	int role_result;
-	u8 role_cam[60];
+	u8 role_cam[60], bss_color;
 	struct rtl_ax_port0 port0;
 	bool beacon_enabled;
 	u32 beacon_bytes, beacon_header[4], beacon_last_stats[2];
@@ -629,6 +629,39 @@ static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
 				    data, bytes, false, done_ack);
 }
 
+/* Every address-CAM command also writes the shared BSSID CAM. Preserve the
+ * current BSS identity when adding/removing a peer, including legacy peers. */
+static int rtl_ax_cam_write(struct rtl_ax_ap *radio, u8 cam[60])
+{
+	int ret;
+
+	cam[53] = radio->bss_color & 0x3f;
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, 60, true);
+	/* Color-only updates must retain the most recent association/AID/HE
+	 * attributes of the owner (AP self0, single STA1). */
+	if (!ret && (rtl_ax_ap_read32(cam + 32) & 127) == (radio->sta_role ? 1U : 0U))
+		memcpy(radio->role_cam, cam, 60);
+	return ret;
+}
+
+static int rtl_ax_bss_color_update(struct rtl_ax_ap *radio, unsigned int color)
+{
+	u8 cam[60];
+	int ret;
+
+	if (color > 63) return -EINVAL;
+	memcpy(cam, radio->role_cam, sizeof(cam));
+	cam[53] = color;
+	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	if (ret) return ret;
+	memcpy(radio->role_cam, cam, sizeof(cam));
+	radio->bss_color = color;
+	mutex_lock(&radio->command_mutex);
+	rtl_ax_port0_color(&radio->io, color);
+	mutex_unlock(&radio->command_mutex);
+	return 0;
+}
+
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid)
 {
 	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
@@ -829,8 +862,7 @@ update_join:
 	radio->role_stage = 3;
 	radio->role_type = role_type;
 update_cam:
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0,
-			     radio->role_cam, sizeof(radio->role_cam), true);
+	ret = rtl_ax_cam_write(radio, radio->role_cam);
 	if (!ret) {
 		radio->role_stage = 4;
 		ret = rtl_ax_station_tables(radio, 0);

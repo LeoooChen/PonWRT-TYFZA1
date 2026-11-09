@@ -18,10 +18,13 @@ static int rtl_ax_client_update(struct rtl_ax_ap *radio, struct ieee80211_vif *v
 		vif->cfg.aid, associated, true);
 	if (associated && (radio->sta_join & BIT(12)))
 		rtl_ax_store32(cam + 32, RTL_AX_CLIENT_MACID | BIT(14));
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	radio->bss_color = associated && vif->bss_conf.he_bss_color.enabled ?
+		vif->bss_conf.he_bss_color.color : 0;
+	ret = rtl_ax_cam_write(radio, cam);
 	if (ret) return ret;
 	memcpy(radio->role_cam, cam, sizeof(cam));
 	mutex_lock(&radio->command_mutex);
+	rtl_ax_port0_color(&radio->io, radio->bss_color);
 	/* Factory STA: BSSID match and TSF sync, no beacon transmission. */
 	rtl_ax_port0_field(&radio->io, 0xc400, 0x13c1f, associated ? 0x1281c : 4);
 	rtl_ax_port0_field(&radio->io, 0xc414, 0xffffff,
@@ -59,7 +62,7 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 		memcpy(cam, radio->role_cam, sizeof(cam));
 		cam[8] &= ~1;
 		cam[52] &= ~1;
-		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+		ret = rtl_ax_cam_write(radio, cam);
 		if (ret) return ret;
 	}
 	rtl_ax_role_unpause(unpause, RTL_AX_CLIENT_MACID);
@@ -75,9 +78,10 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 	rtl_ax_store32(command, RTL_AX_CLIENT_MACID | 0x2000);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, 4, true);
 	if (ret) goto failed;
+	radio->bss_color = 0;
 	eth_zero_addr(radio->sta_bssid);
 	rtl_ax_client_cam(cam, RTL_AX_CLIENT_MACID, vif->addr, radio->sta_bssid, 0, false, true);
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	ret = rtl_ax_cam_write(radio, cam);
 	if (!ret) ret = rtl_ax_station_tables(radio, RTL_AX_CLIENT_MACID);
 	if (!ret) ret = rtl_ax_client_update(radio, vif, false);
 	if (!ret) {

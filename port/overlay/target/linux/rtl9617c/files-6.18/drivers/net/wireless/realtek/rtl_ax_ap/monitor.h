@@ -305,6 +305,7 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
   ret=rtl_ax_tx_bcmc_stop(radio->tx);
   if(ret)return ret;
  }
+	radio->bss_color = conf->he_bss_color.enabled ? conf->he_bss_color.color : 0;
 	ret = rtl_ax_self_role_prepare(radio, vif->addr, conf->beacon_int, conf->dtim_period);
 	if (!ret && radio->security_roles[0].valid) {
 		u8 dctl[68];
@@ -592,8 +593,6 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		rtl_ax_client_cfg_changed(hw, vif, changed);
 		if (radio->retired_stations[RTL_AX_CLIENT_MACID].pending) return;
-		if (changed & BSS_CHANGED_HE_BSS_COLOR)
-			rtl_ax_port0_color(&radio->io, conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
 	} else if (vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_MESH_POINT) return;
 	if (changed & BSS_CHANGED_ERP_SLOT) {
 		mutex_lock(&radio->command_mutex);
@@ -621,10 +620,24 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 			return;
 		}
 	}
+	if ((changed & BSS_CHANGED_HE_BSS_COLOR) &&
+	    (radio->ap_started || radio->sta_associated)) {
+		int ret = rtl_ax_bss_color_update(radio,
+			conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
+
+		if (ret) {
+			radio->ap_result = ret;
+			/* ACK loss leaves CAM state uncertain. Stop scheduling while
+			 * cfg80211 completes the asynchronous interface teardown. */
+			rtl_ax_tx_dfs_block(radio->tx, true);
+			rtl_ax_tx_pause(radio->tx);
+			dev_err(&radio->pdev->dev, "BSSID CAM color update failed: %d\n", ret);
+			cfg80211_stop_iface(hw->wiphy, ieee80211_vif_to_wdev(vif), GFP_KERNEL);
+			return;
+		}
+	}
 	if (!radio->ap_started)
 		return;
-	if (changed & BSS_CHANGED_HE_BSS_COLOR)
-		rtl_ax_port0_color(&radio->io, conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
 	if (changed & BSS_CHANGED_BEACON) {
 		radio->ap_result = rtl_ax_ap_template(hw, vif, conf);
 		if (radio->ap_result)
@@ -787,7 +800,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 			radio->retired_stations[macid].peer, radio->retired_stations[macid].aid, false, false);
 	else rtl_ax_peer_cam(cam, macid, radio->retired_stations[macid].self,
 		radio->retired_stations[macid].peer, radio->retired_stations[macid].aid, false);
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	ret = rtl_ax_cam_write(radio, cam);
 	if (!ret) {
 		radio->ra_registered[macid] = false;
 		if (radio->traffic_peer == macid) radio->traffic_peer = 0;
@@ -1035,10 +1048,12 @@ connected:
 	__set_bit(id, radio->station_ids);
 	memset(&radio->tx_ba[id], 0, sizeof(radio->tx_ba[id]));
 	ether_addr_copy(radio->tx_ba[id].address, sta->addr);
+	if (client)
+		radio->bss_color = vif->bss_conf.he_bss_color.enabled ? vif->bss_conf.he_bss_color.color : 0;
 	if (client) rtl_ax_client_cam(cam, id, vif->addr, sta->addr, vif->cfg.aid, true, true);
 	else rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, 0, true);
 	if (sta->deflink.he_cap.has_he) rtl_ax_store32(cam + 32, id | BIT(14));
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	ret = rtl_ax_cam_write(radio, cam);
 	if (ret)
 		goto remove;
 	ret = rtl_ax_station_tables(radio, id);
@@ -1058,7 +1073,7 @@ connected:
 	if (client) rtl_ax_client_cam(cam, id, vif->addr, sta->addr, vif->cfg.aid, true, true);
 	else rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, sta->aid, true);
 	if (sta->deflink.he_cap.has_he) rtl_ax_store32(cam + 32, id | BIT(14));
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
+	ret = rtl_ax_cam_write(radio, cam);
 	if (ret)
 		goto remove;
 	rtl_ax_tx_peer_qos(radio->tx, id, sta->wme,

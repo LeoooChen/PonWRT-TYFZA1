@@ -8060,6 +8060,47 @@ this addition. Artifacts are `artifacts/fttr/wan-*-20261109.*`. No kernel/PE cha
 or physical device access occurred. The branch includes main80b82e6; its iperf
 feed regression passes.
 
+### HE BSS Color in shared BSSID CAM lifecycle
+
+The native driver previously updated the port0 BSS Color register while every
+address/BSSID CAM command encoded color0. Creating, associating or removing a
+station therefore rewrote the shared BSSID CAM with a color different from the
+active BSS. The target factory `_hal_stainfo_to_macrinfo` copies the negotiated
+six-bit color for a connected HE role; `role_info_init` and
+`fill_bssid_cam_info` place it in byte53 of the60-byte H2C payload, while
+`set_role_bss_clr` independently updates the port register. Both locations are
+part of the hardware BSS identity.
+
+All native CAM writes now carry the current single-interface BSS Color,
+including legacy peers sharing that BSSID CAM. AP/mesh startup and STA
+association establish it; disconnect/disabled-color uses0. Dynamic color
+changes update the owning CAM and wait for its ACK before committing the saved
+color and port register. Successful AP-self/STA-owner CAM writes refresh the
+saved command, so a later color update retains the latest AID, HE and address
+fields. Failed writes do not replace that saved owner command. On a dynamic
+update failure, hardware scheduling is blocked immediately, then PE/RX pause
+is attempted and cfg80211 is asked to stop the interface. A pause timeout cannot
+leave the scheduler running while asynchronous teardown is pending.
+
+`test_radio_bss_color.py` executes256 target HAL→BSSID-CAM and port-register
+cases across AP/STA, HE/legacy and all64 colors. Actual native command helpers
+pass128 success/ACK-loss/retry transitions,32768 peer write permutations and384
+production role/peer/client CAM recipe combinations, with non-color fields
+preserved. It explicitly reproduces the old encoders' zero-color overwrite and
+checks current-owner AID/HE preservation. The STA lifecycle test executes128
+dynamic AP/STA failure/recovery/disable scenarios, including a failed pause,
+and verifies initial association color. Existing STA/BA release, extended-key
+cleanup, AP/mesh and FE transaction regressions pass under their existing
+sanitizers. Kernel Image/modules build succeeds and all three changed kernel
+inputs match the worktree. Artifacts are `artifacts/fttr/bss-color-*-20261109.*`.
+PE firmware is unchanged; no physical color/airtime/traffic acceptance is claimed.
+
+This fixes an existing hardware identity mismatch found while reviewing
+multi-VIF requirements. Multiple data interfaces remain unsupported: each
+still needs independent role/CAM allocation, beacon/MBID, GTK, sequence and
+BCMC ownership, with matching FE/PE metadata. The single-interface limit was
+not relaxed. Complete hardware retirement/ID reuse and TSPEC remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

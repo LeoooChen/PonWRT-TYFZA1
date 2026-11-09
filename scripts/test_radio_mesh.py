@@ -72,7 +72,7 @@ struct rtl_ax_ap {
  struct {unsigned valid;}security_roles[1];
  unsigned chip,role_stage,role_type,edca_valid;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;
  int role_result,ap_result,command_mutex,command_lock,offload_work,beacon_work,ra_update_work;
- struct port port0;u8 role_cam[60];unsigned receive_acks,done_acks,unmatched_acks;
+ struct port port0;u8 role_cam[60],bss_color;unsigned receive_acks,done_acks,unmatched_acks;
  struct sk_buff *scan_pending;struct ieee80211_hw *hw;u64 scan_received_ns;
  unsigned scan_word0,scan_word1,scan_last_rpl,scan_matched,scan_unmatched;u8 scan_last_bssid[6];
 };
@@ -113,6 +113,7 @@ static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,
 static void rtl_ax_port0_color(struct io *io,unsigned color){(void)io;(void)color;}
 static void rtl_ax_receive_mode(struct io *io,unsigned mode){(void)io;rx_mode=mode;}
 static void rtl_ax_tx_dfs_block(struct tx *tx,bool block){tx->blocked=block;}
+static int rtl_ax_tx_pause(struct tx *tx){tx->blocked=true;return 0;}
 static void rtl_ax_edca_apply(struct rtl_ax_ap *r,struct ieee80211_vif *v,unsigned ac){(void)r;(void)v;(void)ac;}
 """
 code += r"""
@@ -182,6 +183,8 @@ code += function("monitor.h", "rtl_ax_scan_complete_frame")
 
 for name in ("rtl_ax_role_unpause", "rtl_ax_role_create", "rtl_ax_role_join", "rtl_ax_role_cam"):
     code += function("role.h", name)
+code += function("pci.c", "rtl_ax_cam_write")
+code += function("pci.c", "rtl_ax_bss_color_update")
 code += function("pci.c", "rtl_ax_self_role_prepare")
 for name in ("rtl_ax_monitor_add_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_changed"):
     code += function("monitor.h", name)

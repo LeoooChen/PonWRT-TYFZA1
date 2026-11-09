@@ -43,6 +43,7 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define BSS_CHANGED_BSSID 2
 #define BSS_CHANGED_BEACON_INT 4
 #define BSS_CHANGED_BEACON_INFO 8
+#define BSS_CHANGED_BASIC_RATES 512
 #define BSS_CHANGED_HE_BSS_COLOR 16
 #define BSS_CHANGED_ERP_SLOT 32
 #define BSS_CHANGED_BEACON 64
@@ -75,10 +76,10 @@ struct rtl_ax_ap {struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,
  bool ap_started,beacon_enabled;unsigned edca_valid;int ap_result,command_lock;
  struct {bool in_cac,detected;int error;}dfs;
  struct {bool pending,client;u8 self[6],peer[6];} retired_stations[128];
- u8 sta_bssid[6],role_cam[60];unsigned role_stage,role_type;int mesh_sync_work;u32 sta_join;int role_result,offload_result;};
+ u8 sta_bssid[6],role_cam[60],bss_color;unsigned role_stage,role_type;int mesh_sync_work;u32 sta_join;int role_result,offload_result,offload_work;};
 static unsigned calls,fail_at,queued,losses,regs[65536],writes,ap_deletes;
 static bool admission;
-static u32 last_join,last_cam,last_remove;
+static u32 last_join,last_cam,last_remove;static unsigned stopped,last_color,paused,blocked;
 static int boundary(void){return ++calls==fail_at?-ETIMEDOUT:0;}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
@@ -93,7 +94,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned c
  (void)r;(void)q;assert(cat==1&&ack);
  if(cls==8){assert(bytes==4);u32 v=rtl_ax_ap_read32(data);
   assert(fn==4?(v==0x4500||v==0xc500||v==0x2001):(fn==0&&(v==r->sta_join||v==0x04040101)));}
- else {assert(cls==6&&fn==0&&bytes==60);last_cam=rtl_ax_ap_read32(data+32);}
+ else {assert(cls==6&&fn==0&&bytes==60);last_cam=rtl_ax_ap_read32(data+32);last_color=data[53];}
  if(cls==8&&fn==4&&(rtl_ax_ap_read32(data)&0x500)==0x500)last_remove=rtl_ax_ap_read32(data);
  if(cls==8&&fn==0)last_join=rtl_ax_ap_read32(data);
  if(cls==8&&fn==4&&rtl_ax_ap_read32(data)==0x4500)ap_deletes++;
@@ -108,14 +109,20 @@ static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;assert(id==1&&!
 static void ieee80211_connection_loss(struct ieee80211_vif *v){assert(v->type==2);losses++;}
 '''
 common += r'''
+static void rtl_ax_tx_dfs_block(int tx,bool block){(void)tx;assert(block);blocked++;}
+static int rtl_ax_tx_pause(int tx){(void)tx;assert(blocked);paused++;return -ETIMEDOUT;}
+static void rtl_ax_tx_bcmc_close(int tx){(void)tx;}
+static void wiphy_work_queue(void *w,int *work){(void)w;(void)work;}
+
 static int rtl_ax_ap_start(struct ieee80211_hw*h,struct ieee80211_vif*v,struct ieee80211_bss_conf*c){(void)h;(void)v;(void)c;assert(0);return 0;}
 static void rtl_ax_ap_stop(struct ieee80211_hw*h,struct ieee80211_vif*v,struct ieee80211_bss_conf*c){(void)h;(void)v;(void)c;assert(0);}
 static void *ieee80211_vif_to_wdev(struct ieee80211_vif*v){return v;}
-static void cfg80211_stop_iface(void*w,void*v,int g){(void)w;(void)v;(void)g;assert(0);}
+static void cfg80211_stop_iface(void*w,void*v,int g){(void)w;(void)v;(void)g;stopped++;}
 static void rtl_ax_edca_apply(struct rtl_ax_ap *r,struct ieee80211_vif *v,unsigned ac){(void)r;(void)v;(void)ac;assert(0);}
 static int rtl_ax_ap_template(struct ieee80211_hw *h,struct ieee80211_vif *v,struct ieee80211_bss_conf *c){(void)h;(void)v;(void)c;assert(0);return 0;}
 static void rtl_ax_update32(struct rtl_ax_io *io,unsigned reg,unsigned mask,unsigned value){rtl_ax_port0_field(io,reg,mask,value);}
 '''
+common += function((driver/'pci.c').read_text(),'rtl_ax_cam_write') + function((driver/'pci.c').read_text(),'rtl_ax_bss_color_update')
 test = r'''
 int main(void){
  struct ieee80211_vif vif={.type=2,.addr={2,0,0,0,0,1},.cfg={.aid=42},.bss_conf={.beacon_int=100,.dtim_period=2}};
@@ -139,8 +146,10 @@ int main(void){
    assert(r.sta_role&&!r.retired_stations[1].pending&&!r.role_stage);
    assert((regs[0xc400]&0x13c1f)==4);
    memcpy(r.sta_bssid,"\2\0\0\0\0\2",6);vif.cfg.assoc=true;fail_at=0;
+   vif.bss_conf.he_bss_color.enabled=true;vif.bss_conf.he_bss_color.color=37;
    rtl_ax_ap_changed(&hw,&vif,&vif.bss_conf,BSS_CHANGED_ASSOC);
    assert(r.sta_associated && (regs[0xc400]&0x13c1f)==0x1281c);
+   assert(last_color==37&&r.role_cam[53]==37&&r.bss_color==37&&(regs[0xc6a0]&63)==37);
    assert(!(regs[0xc400]&BIT(12)) && regs[0xc427]==2 && (regs[0xc404]&0xfff0000)==400U<<16);
    r.sta_join=0x0606f001;
    rtl_ax_ap_changed(&hw,&vif,&vif.bss_conf,BSS_CHANGED_ASSOC);
@@ -171,6 +180,20 @@ int main(void){
  for(unsigned role_type=2;role_type<=6;role_type+=4){
   struct rtl_ax_ap r={.role_stage=5,.role_type=role_type,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;fail_at=0;
   assert(!rtl_ax_client_prepare(&r,&vif));assert(last_remove==(0x500|(role_type<<13)));
+ }
+ for(unsigned kind=2;kind<=3;kind++)for(unsigned color=0;color<64;color++){
+  struct rtl_ax_ap r={.sta_associated=kind==2,.ap_started=kind==3,.io={write8}};
+  struct ieee80211_hw hw={.radio=&r};r.hw=&hw;
+  struct ieee80211_vif v={.type=kind,.bss_conf={.he_bss_color={true,color}}};
+  r.role_cam[8]=7;r.role_cam[52]=0xfd;r.bss_color=17;regs[0xc6a0]=0xa5a5a5a5;
+  fail_at=calls+1;unsigned before=stopped,old_pause=paused;
+  rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
+  assert(paused==old_pause+1&&stopped==before+1&&r.bss_color==17&&regs[0xc6a0]==0xa5a5a5a5);
+  fail_at=0;rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
+  assert(last_color==color&&r.bss_color==color&&r.role_cam[53]==color&&(regs[0xc6a0]&63)==color);
+  v.bss_conf.he_bss_color.enabled=false;
+  rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
+  assert(!last_color&&!r.bss_color&&!(regs[0xc6a0]&63));
  }
  puts("STA lifecycle: callback registration, BSSID/DTIM failure withdrawal, stock hold400, eight setup faults, AP removal/CAM failure retry, MACID quarantine and beacon-TX disabled passed");
 }

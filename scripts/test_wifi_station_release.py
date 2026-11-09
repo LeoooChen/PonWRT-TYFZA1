@@ -74,8 +74,8 @@ struct rtl_ax_tx {bool pending[128][17];};
 struct ieee80211_key_conf;
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
-struct rtl_ax_ap {unsigned traffic_peer;
- struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
+struct rtl_ax_ap {unsigned traffic_peer;u8 bss_color;
+ struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128],security_ext[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
  struct {u8 address[6],aggregation[16];u16 stopping,flushing;} tx_ba[128];
@@ -139,7 +139,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
   assert(func==27 && !ack && len==24);drop_commands++;
   id=(rtl_ax_ap_read32(p)>>8)&127;assert(rtl_ax_tx_station_pending(r->tx,id,16));
  }else if(cls==8){assert(ack && len==4);role_commands++;assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
- else if(cls==6){assert(ack && len==60);cam_commands++;assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
+ else if(cls==6){assert(ack && len==60);cam_commands++;assert(p[53]==r->bss_color);assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
  else if(cls==10){assert(ack && len==24);security_commands++;}
  else {assert((cls==12 && len==8) || (cls==5 && len==68));}
  if(fail_count && cls==fail_class && func==fail_function){fail_count--;return -ETIMEDOUT;}
@@ -147,6 +147,8 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
 }
 '''
 common += r'''
+static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned q,unsigned c,unsigned cls,unsigned f,const u8 *p,unsigned n,bool recv,bool done){assert(!recv);return rtl_ax_command(r,q,c,cls,f,p,n,done);}
+static int rtl_ax_cam_write(struct rtl_ax_ap *r,u8 cam[60]){cam[53]=r->bss_color&63;return rtl_ax_command(r,1,1,6,0,cam,60,true);}
 static int prepared;
 static unsigned sequence_binds,sequence_unbinds;static int sequence_error,prepare_error;
 static int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;sequence_binds++;return sequence_error;}
@@ -186,7 +188,7 @@ int main(void){
   assert(!rtl_ax_ampdu_action(&hw,&vif,&p));assert(callbacks==1 && drop_commands>drops);
   rpq_complete=true;rtl_ax_cleanup_work(&w,&r.cleanup_work.work);assert(callbacks==1 && !r.tx_ba[7].stopping);
  }
- r.security_roles[7].valid=1;r.security_roles[7].cam[0]=42;set_bit(42,r.security_ids);
+ r.bss_color=37;r.security_roles[7].valid=1;r.security_roles[7].cam[0]=42;set_bit(42,r.security_ids);
  tx.pending[7][16]=true;rpq_complete=false;
  assert(!rtl_ax_station_remove(&hw,&vif,sta));assert(!sta->drv_priv[0].macid && r.retired_stations[7].pending);
  assert(test_bit(7,r.station_ids) && !role_commands && !cam_commands);
@@ -234,7 +236,7 @@ int main(void){
  puts("STA/BA lifetime: delayed RPQ gates completion and MACID reuse; firmware failures retry after STA free; 100 RX BA restarts reuse one slot");
 }
 '''
-names = ('rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
+names = ('rtl_ax_security_clear', 'rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
          'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
 with tempfile.TemporaryDirectory(prefix='wifi-sta-release-', dir=root / 'artifacts') as directory:
     p = Path(directory)

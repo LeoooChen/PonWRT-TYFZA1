@@ -121,6 +121,7 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned queue,unsigned cat,
 }
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned cls,unsigned fn,
  const u8 *data,unsigned len,bool done){return rtl_ax_command_flags(r,q,cat,cls,fn,data,len,false,done);}
+static int rtl_ax_cam_write(struct rtl_ax_ap *r,u8 cam[60]){return rtl_ax_command(r,1,1,6,0,cam,60,true);}
 static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;return 0;}
 static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned i){r->rx_ba[i].valid=false;return 0;}
 static void rtl_ax_peer_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,unsigned aid,bool valid){
