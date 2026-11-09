@@ -715,8 +715,8 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	if (settings == 16) { ret = stations_reply(value, peer, ack_seen, summary, observed); goto out; }
 	if (settings == 17) { ret = neighbors_reply(value, peer, ack_seen, summary); goto out; }
 	if (settings == 18 || settings == 19) { ret = conflicts_reply(value, peer, settings == 19, ack_seen, summary, observed); goto out; }
-	if (settings == 6 || settings == 15) {
-		ret = notification_reply(value, settings == 15 ? "QosSync" : "WanIPChange", ack_seen);
+	if (settings == 6 || settings == 15 || settings == 20) {
+		ret = notification_reply(value, settings == 20 ? "ChannelAutoSelect" : settings == 15 ? "QosSync" : "WanIPChange", ack_seen);
 		goto out;
 	}
 	if (settings==4 || settings==5) {
@@ -920,7 +920,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 19 || (settings >= 16 && configuration) || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
+	if (settings > 20 || (settings >= 16 && configuration) || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
@@ -960,7 +960,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			"{\"RPCMethod\":\"WanIPChange\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\",\"%s\":\"%s\"}",
 			source[0], source[1], source[2], source[3], source[4], source[5],
 			family == AF_INET ? "WanIP" : "WanIPv6", address);
-	} else if (settings == 4 || settings >= 16) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"%s\"}", settings == 19 ? "CheckSSIDNameConflict" : settings == 18 ? "CheckBSSIDConflict" : settings == 17 ? "GetWifiNeighbor" : settings == 16 ? "GetWifiStaInfo" : "GetWifiRadio");
+	} else if (settings == 4 || settings >= 16) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"%s\"}", settings == 20 ? "ChannelAutoSelect" : settings == 19 ? "CheckSSIDNameConflict" : settings == 18 ? "CheckBSSIDConflict" : settings == 17 ? "GetWifiNeighbor" : settings == 16 ? "GetWifiStaInfo" : "GetWifiRadio");
 	else if (settings == 5) {
 		struct json_object *request=json_object_new_object();
 		if (!request) return -ENOMEM;

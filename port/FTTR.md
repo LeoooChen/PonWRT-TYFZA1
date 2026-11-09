@@ -10163,6 +10163,52 @@ PE firmware is unchanged, and no device was accessed. Hardware transaction
 serialization does not establish complete in-flight packet retirement or safe
 reuse of quarantined multicast/GEM identities.
 
+### Original automatic-channel selection trigger
+
+The syncserv client now implements the target `ChannelAutoSelect` operation:
+
+```sh
+fttr-sync fttr-mc 02:00:00:00:00:02 auto 0x88aa channel-auto
+fttr-sync fttr-mc all auto 0x88aa channel-auto
+```
+
+The original builder at `0x412160` emits only the method name. Executing the
+dispatcher at `0x4138c4` verifies it selects online peers among16 slots, either
+matching the specified MAC or selecting every online peer when no target is
+supplied. Each chosen peer receives one request and acquires pending method23.
+The actual reply consumer clears this pending state for Result1 and Result0;
+there is no completed-channel result in that path. Native treats Result0 as
+failure instead of interpreting the cleared pending state as success.
+
+Single-target execution uses the existing explicit/discovered peer and interface
+lease. `all auto` takes a bounded heartbeat discovery snapshot, sends to each
+online MAC once and collects a per-peer result array. One peer's NACK, timeout
+or re-registration does not suppress the remaining results; the command returns
+failure if any target failed. No online target returns `ENODEV`. The discovery
+snapshot is not an authenticated identity or a guarantee that every device on
+the optical tree responded. Each exchange drains old queued replies, matches
+source/method, and accepts both original message directions and fragmentation.
+No timeout causes automatic replay, and concurrent CLI use cannot share the
+same interface lease.
+
+Output exposes `ack_seen`, `error` and `channel_verified:false`. An ACK does not
+prove scanning finished or the channel changed; retaining the old channel may
+be a valid result. No immediate radio readback is mislabeled as completion.
+This command does not enable a periodic channel policy or implement roaming.
+Discovery list and per-peer summary allocations are now checked because a
+partial discovered list cannot drive a claimed all-peer operation.
+
+The exact original request, all/selected/absent-peer dispatcher and three ACK
+cases pass. Native and packaged-musl CLI tests each cover25 veth scenarios,
+including16 online targets, partial failure, no targets, lease exclusion,
+re-registration, malformed and fragmented replies, with exactly one request
+per target. ASan/UBSan cover87 allocation failures through actual discovery and
+single/all trigger helpers. Existing26 WAN notification and37 resident
+controller scenarios pass. Both FTTR packages rebuild, all67 source inputs and
+four stripped/staged programs match; evidence is
+`artifacts/fttr/channel-auto-*-20261110.*`. Kernel/PE are unchanged by this feature,
+and no physical device or actual RF channel selection was exercised.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

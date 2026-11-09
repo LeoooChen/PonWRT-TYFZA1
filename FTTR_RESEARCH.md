@@ -339,6 +339,8 @@
 
 167. 统一NI目的映射与QM AXI属性共享窗口事务：无线/FE原各持局部锁，0x1654/1658数据与索引可串写，7aeaf11原helper并发已复现。新增受限共享事务供radio、FE普通/组播、QM、OAM调用，锁内等待旧访问/写数据/发命令/读回，超时后下一调用不覆盖忙窗口，读失败不发布输出。1024并发事务与读回/超时故障、组播表/owner/route、十一回归（98准备/100恢复/554 ES/729 refill）、原厂源MAC/ITU/EPON/206 PON/40无线路由及板级AXI对照通过；Image/模块/7输入一致与补丁fuzz0重放通过。PE未改、未实机；该项补齐自创框架跨驱动寄存器归属，不代表报文全链路退场或ID安全复用。详见[共享NI窗口](port/FTTR.md#serialize-the-ni-destination-and-axi-attribute-hardware-windows)。
 
+168. 接入原厂ChannelAutoSelect：执行原builder、16槽在线/指定MAC分派和pending23回复；新增channel-auto单设备及all auto发现后逐台触发，每目标一次，部分NACK/超时/重注册仍收集余下结果，整体失败，空列表ENODEV。只报告ACK、channel_verified:false，不以立即读回/原pending清除宣称选频完成；发现列表及结果分配检查防止残表驱动批量操作。主机/打包musl各25网络场景含16设备、87分配故障ASan/UBSan，26 WAN/37常驻回归、整包/67输入/四程序一致通过；内核/PE未改、未实机，真实选频/漫游及完整硬件退场仍未完成。详见[原厂自动选频触发](port/FTTR.md#original-automatic-channel-selection-trigger)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

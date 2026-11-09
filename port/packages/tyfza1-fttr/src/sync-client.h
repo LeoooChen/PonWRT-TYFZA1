@@ -13,7 +13,8 @@ int fttr_sync_mac_parse(const char *text, uint8_t mac[6]);
  * 7 GetTimeSetting, 8 SetTimeSetting, 9 GetIPTVSetting, 10 SetIPTVSetting,
  * 11 GetIPTVPortInfo, 12 SetIPTVPortInfo, 13 GetWebPassword, 14 SetWebPassword,
  * 15 QosSync, 16 GetWifiStaInfo, 17 GetWifiNeighbor,
- * 18 CheckBSSIDConflict, 19 CheckSSIDNameConflict. Neighbor summaries
+ * 18 CheckBSSIDConflict, 19 CheckSSIDNameConflict, 20 ChannelAutoSelect.
+ * ChannelAutoSelect has only an ACK, not a completed-channel report. Neighbor summaries
  * accumulate NEW/REMAINING reports; callers discard them on any error.
  * Flag2 requires
  * a separate STATUS0 completion report; Result alone is only an ACK. */
