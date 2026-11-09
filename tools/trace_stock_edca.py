@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute the original TYFZA1 EDCA wrapper, address selector and writer."""
 from pathlib import Path
+import argparse
 import hashlib
 import json
 import struct
@@ -8,6 +9,10 @@ from arm64_module_oracle import ModuleOracle
 
 root = Path(__file__).resolve().parents[1]
 module = root / 'evidence/wireless-study-20261009-104746/evidence/stock/modules/rtk_wifi6.ko'
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--module',type=Path,default=module)
+parser.add_argument('--output',type=Path,default=root/'manifests/radio-stock-EDCA.json')
+args=parser.parse_args();module=args.module
 names = ['rtw_hal_mac_set_edca', 'set_hw_edca_param', 'get_edca_addr', 'check_mac_en']
 adapter, ops, io, hal, common, param = [0x6000000 + n * 0x10000 for n in range(6)]
 records = []
@@ -49,7 +54,7 @@ for chip, sifs in [('8852c', 16), ('8192xb', 10)]:
                         'ECW_min': ecw_min, 'ECW_max': ecw_max, 'TXOP_32us': txop,
                         'wrapper_packed': hex(packed), 'original_parameter': original_param.hex(),
                         'writes': list(operations)})
-target = root / 'manifests/radio-stock-EDCA.json'
+target = args.output
 target.write_text(json.dumps({'scope': __doc__, 'original_sha256': hashlib.sha256(module.read_bytes()).hexdigest(),
                               'executed_functions': names, 'records': records}, indent=2) + '\n')
 for row in records:

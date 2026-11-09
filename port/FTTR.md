@@ -8774,6 +8774,37 @@ TSPEC policy and mixed AP/STA/multi-channel operation are not implemented.
 Wi-Fi ID reuse still lacks a proven full upstream packet-retirement barrier;
 existing quarantines and the documented whole-PE pause-ACK simulation gap remain.
 
+### Per-VIF EDCA requests on shared WMM0
+
+The target VAP topology shares WMM0; its role EDCA command writes that shared
+bank. Native mac80211 callbacks previously retained only one global parameter
+set, so a slot-time notification on another VIF could combine the wrong AIFSN/
+contention window with that VIF's slot duration. Each VIF now retains its four
+requests, computed words and nonwrapping request order. The shared AC selects
+the most recent request from an active VIF. Slot-time changes recompute only
+that VIF's own request without replacing a newer owner's request. Stop/removal
+restores the most recent surviving request; restart restores that VIF's saved
+request subject to the same ordering. This request ownership policy is the
+native mac80211 adaptation, not a claim that the factory implements a Linux
+VIF queue.
+
+Dynamic WMM's temporary BE override keeps the latest requested BE/BK restore
+values behind it. A config update or interface removal while WMM is enabled
+therefore cannot be undone by restoring a stale snapshot when WMM exits. The
+last active VIF restores the baseline and clears temporary WMM/quota state;
+the next activation captures a fresh baseline. Unsupported contention-window,
+TXOP/AIFS encodings and sequence exhaustion return explicit errors.
+
+Actual callback tests cover both chips and all four ACs, different VIF requests,
+slot changes, stop/restart/removal, first/last-owner baseline handling, dynamic
+WMM enter/exit and overflow. Eight actual target wrapper/address/write results
+match native callbacks. AP/mesh, STA/BA, BSSID color and DFS regressions pass;
+Image/modules builds and three changed source hashes match. Reports are
+`artifacts/fttr/edca-*-20261109.*`; PE code is unchanged. Per-BSSID CAM colors and
+the shared port-color register retain their existing factory-backed behavior.
+This does not implement per-VIF hardware WMM queues, airtime fairness or TSPEC;
+full physical acceptance and hardware retirement remain outstanding.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

@@ -265,6 +265,8 @@ static void rtl_ax_vif_unreserve(struct rtl_ax_ap *radio, struct ieee80211_vif *
   __clear_bit(id,radio->station_ids);
 }
 
+static void rtl_ax_edca_active(struct rtl_ax_ap *radio,struct ieee80211_vif *vif,bool active);
+
 static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
@@ -294,6 +296,7 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 	struct rtl_ax_vif *native = (void *)vif->drv_priv;
  ret=rtl_ax_vif_reserve(radio,vif);if(ret)return ret;
 	native->generation=++radio->vif_generation;
+ memset(native->edca,0,sizeof(native->edca));native->edca_active=true;
 	ret = rtl_ax_tx_sequence_bind(radio->tx, vif);
 	if (ret) {rtl_ax_vif_unreserve(radio,vif);return ret;}
 	if (vif->type == NL80211_IFTYPE_STATION) {
@@ -447,6 +450,7 @@ unlock:
 		wiphy_delayed_work_queue(hw->wiphy, &radio->mesh_sync_work,
 			usecs_to_jiffies(conf->beacon_int * 1024));
 	}
+	if(!ret)rtl_ax_edca_active(radio,vif,true);
 	if(!ret && vif->type==NL80211_IFTYPE_AP)wiphy_work_queue(hw->wiphy,&radio->offload_work);
 	return ret;
 }
@@ -624,6 +628,7 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct ieee80211_bss_conf *conf)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+ rtl_ax_edca_active(radio,vif,false);
 	unsigned long flags;
 	unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
 
@@ -666,6 +671,7 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret;
  if(vif->type==NL80211_IFTYPE_MONITOR)return;
+ rtl_ax_edca_active(radio,vif,false);
 	unsigned int self=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
 	if(self<128 && radio->vif_owner[self]==vif)radio->vif_owner[self]=NULL;
  if(vif->type!=NL80211_IFTYPE_STATION)rtl_ax_vif_unreserve(radio,vif);
@@ -701,32 +707,87 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 	}
 }
 
-static void rtl_ax_edca_apply(struct rtl_ax_ap *radio, struct ieee80211_vif *vif, unsigned int ac)
+/* Wiphy protects VIF lifetime; command_mutex serializes shared WMM0 and
+ * dynamic EDCA overrides. All VAPs share the original hardware AC bank. */
+static void rtl_ax_edca_select(struct rtl_ax_ap *radio,unsigned int ac)
 {
-	static const u16 addresses[] = { 0xc30c, 0xc308, 0xc300, 0xc304 };
-	const struct ieee80211_tx_queue_params *params = &radio->edca[ac];
-	unsigned int sifs = radio->chip == RTL_AX_8852C ? 16 : 10;
-	unsigned int slot = vif->bss_conf.use_short_slot || radio->chip == RTL_AX_8852C ? 9 : 20;
-
-	/* Actual rtw_hal_mac_set_edca@1b1e04 -> set_hw_edca_param@1ea960:
-	 * SCC MAC band0/WMM0, TXOP[26:16], ECWmax[15:12], ECWmin[11:8], AIFS us[7:0]. */
-	radio->edca_words[ac] = (params->txop & 0x7ff) << 16 |
-		ilog2(params->cw_max + 1) << 12 | ilog2(params->cw_min + 1) << 8 |
-		(sifs + params->aifs * slot);
-	rtl_ax_write32(radio, addresses[ac], radio->edca_words[ac]);
+ static const u16 addresses[]={0xc30c,0xc308,0xc300,0xc304};
+ const struct rtl_ax_vif_edca *latest=NULL;
+ for(unsigned int i=0;i<128;i++)if(radio->vif_owner[i]) {
+  const struct rtl_ax_vif *native=(void *)radio->vif_owner[i]->drv_priv;
+  const struct rtl_ax_vif_edca *candidate=&native->edca[ac];
+  if(native->edca_active && candidate->order && (!latest || candidate->order>latest->order))latest=candidate;
+ }
+ if(!(radio->edca_initial_valid&BIT(ac)))return;
+ u32 word=latest?latest->word:radio->edca_initial[ac];
+ radio->edca_words[ac]=word;
+ if(latest)radio->edca_valid|=BIT(ac);else radio->edca_valid&=~BIT(ac);
+ if(radio->traffic_wmm.enabled && ac>=2) {
+  /* Preserve the newest requested BE/BK state behind the temporary WMM
+   * override, so its later exit never restores a removed VIF's setting. */
+  radio->traffic_edca_saved[ac-2]=word;
+  if(ac==2)return;
+ }
+ rtl_ax_write32(radio,addresses[ac],word);
 }
 
-static int rtl_ax_ap_conf_tx(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-	unsigned int link_id, u16 ac, const struct ieee80211_tx_queue_params *params)
+static void rtl_ax_edca_apply(struct rtl_ax_ap *radio,struct ieee80211_vif *vif,unsigned int ac)
 {
-	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+ struct rtl_ax_vif *native=(void *)vif->drv_priv;
+ struct rtl_ax_vif_edca *request=&native->edca[ac];
+ unsigned int sifs=radio->chip==RTL_AX_8852C?16:10;
+ unsigned int slot=vif->bss_conf.use_short_slot || radio->chip==RTL_AX_8852C?9:20;
+ if(!request->order)return;
+ request->word=request->cw_txop | (sifs+request->aifs*slot);
+ rtl_ax_edca_select(radio,ac);
+}
 
-	mutex_lock(&radio->command_mutex);
-	radio->edca[ac] = *params;
-	radio->edca_valid |= BIT(ac);
-	rtl_ax_edca_apply(radio, vif, ac);
-	mutex_unlock(&radio->command_mutex);
-	return 0;
+static void rtl_ax_edca_active(struct rtl_ax_ap *radio,struct ieee80211_vif *vif,bool active)
+{
+ struct rtl_ax_vif *native=(void *)vif->drv_priv;
+ mutex_lock(&radio->command_mutex);
+ native->edca_active=active;
+ if(active)for(unsigned int ac=0;ac<IEEE80211_NUM_ACS;ac++)if(native->edca[ac].order && !(radio->edca_initial_valid&BIT(ac))) {
+  static const u16 addresses[]={0xc30c,0xc308,0xc300,0xc304};
+  radio->edca_initial[ac]=radio->io.read32(radio->io.ctx,addresses[ac]);
+  radio->edca_initial_valid|=BIT(ac);
+ }
+ bool any=false;
+ for(unsigned int i=0;i<128;i++)if(radio->vif_owner[i] && ((struct rtl_ax_vif *)radio->vif_owner[i]->drv_priv)->edca_active)any=true;
+ if(!any && radio->traffic_wmm.enabled) {
+  rtl_ax_write32(radio,0xc300,radio->traffic_edca_saved[0]);
+  rtl_ax_write32(radio,0xc304,radio->traffic_edca_saved[1]);
+  radio->traffic_wmm.enabled=false;radio->traffic_wmm.timeout=0;radio->traffic_wmm.streams=1;
+  rtl_ax_tx_wmm(radio->tx,0);
+ }
+ for(unsigned int ac=0;ac<IEEE80211_NUM_ACS;ac++)rtl_ax_edca_select(radio,ac);
+ if(!any)radio->edca_initial_valid=0;
+ mutex_unlock(&radio->command_mutex);
+}
+
+static int rtl_ax_ap_conf_tx(struct ieee80211_hw *hw,struct ieee80211_vif *vif,
+ unsigned int link_id,u16 ac,const struct ieee80211_tx_queue_params *params)
+{
+ static const u16 addresses[]={0xc30c,0xc308,0xc300,0xc304};
+ struct rtl_ax_ap *radio=rtl_ax_monitor_radio(hw);
+ struct rtl_ax_vif *native=(void *)vif->drv_priv;
+ unsigned int sifs=radio->chip==RTL_AX_8852C?16:10;
+ /* Reject parameters that cannot be represented by the original fields. */
+ if(ac>=IEEE80211_NUM_ACS || params->cw_min>params->cw_max || params->cw_max>32767 ||
+    !is_power_of_2(params->cw_min+1) || !is_power_of_2(params->cw_max+1) || params->txop>2047 ||
+    sifs+params->aifs*(radio->chip==RTL_AX_8852C?9:20)>255)return -EINVAL;
+ mutex_lock(&radio->command_mutex);
+ if(radio->edca_order==~0U){mutex_unlock(&radio->command_mutex);return -EOVERFLOW;}
+ if(!(radio->edca_initial_valid&BIT(ac))) {
+  radio->edca_initial[ac]=radio->traffic_wmm.enabled && ac>=2 ? radio->traffic_edca_saved[ac-2] :
+   radio->io.read32(radio->io.ctx,addresses[ac]);
+  radio->edca_initial_valid|=BIT(ac);
+ }
+ native->edca[ac]=(struct rtl_ax_vif_edca){.order=++radio->edca_order,.aifs=params->aifs,
+  .cw_txop=(u32)params->txop<<16 | ilog2(params->cw_max+1)<<12 | ilog2(params->cw_min+1)<<8};
+ rtl_ax_edca_apply(radio,vif,ac);
+ mutex_unlock(&radio->command_mutex);
+ return 0;
 }
 
 static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -747,7 +808,7 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	if (changed & BSS_CHANGED_ERP_SLOT) {
 		mutex_lock(&radio->command_mutex);
 		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
-			if (radio->edca_valid & BIT(ac))
+			if (((struct rtl_ax_vif *)vif->drv_priv)->edca[ac].order)
 				rtl_ax_edca_apply(radio, vif, ac);
 		mutex_unlock(&radio->command_mutex);
 	}

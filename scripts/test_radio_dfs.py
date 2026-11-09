@@ -210,6 +210,7 @@ static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,
  (void)vif;(void)conf;if(inject_radar){hw->radio->dfs.detected=true;rtl_ax_tx_dfs_block(hw->radio->tx,true);}return 0;
 }
 static int rtl_ax_port0_beacon(const struct rtl_ax_io *p,unsigned mbid,bool enable){assert(!mbid);rtl_ax_update32(p,0xc400,BIT(12),enable?BIT(12):0);return 0;}
+static void rtl_ax_edca_active(struct rtl_ax_ap *r,struct ieee80211_vif *v,bool active){(void)r;(void)v;(void)active;}
 static void rtl_ax_port0_color(const struct rtl_ax_io *p,unsigned v){(void)p;(void)v;}
 static void rtl_ax_receive_mode(const struct rtl_ax_io *p,unsigned v){(void)p;(void)v;}
 '''

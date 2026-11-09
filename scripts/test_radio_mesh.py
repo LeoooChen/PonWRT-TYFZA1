@@ -130,6 +130,7 @@ static void rtl_ax_port0_color(struct io *io,unsigned color){(void)io;(void)colo
 static void rtl_ax_receive_mode(struct io *io,unsigned mode){(void)io;rx_mode=mode;}
 static void rtl_ax_tx_dfs_block(struct tx *tx,bool block){tx->blocked=block;}
 static int rtl_ax_tx_pause(struct tx *tx){tx->blocked=true;return 0;}
+static void rtl_ax_edca_active(struct rtl_ax_ap *r,struct ieee80211_vif *v,bool active){(void)r;(void)v;(void)active;}
 static void rtl_ax_edca_apply(struct rtl_ax_ap *r,struct ieee80211_vif *v,unsigned ac){(void)r;(void)v;(void)ac;}
 """
 code += r"""

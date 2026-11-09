@@ -15,9 +15,15 @@ struct rtl_ax_self_role {
  int result;
  u8 cam[60];
 };
+struct rtl_ax_vif_edca {
+ u32 order, cw_txop, word;
+ u8 aifs;
+};
 struct rtl_ax_vif {
 	struct rtl_ax_role_identity identity;
  u32 generation;
+ bool edca_active;
+ struct rtl_ax_vif_edca edca[4];
 };
 
 static inline void rtl_ax_identity_maintain(u8 out[4], const struct rtl_ax_role_identity *identity)

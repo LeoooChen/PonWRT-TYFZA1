@@ -204,7 +204,8 @@ struct rtl_ax_ap {
 	struct { u8 macid, tid, cam; bool valid, deleting; } rx_ba[128 * 8];
 	u64 rx_ba_started, rx_ba_stopped;
 	int rx_ba_result;
-	struct ieee80211_tx_queue_params edca[IEEE80211_NUM_ACS];
+	u32 edca_order, edca_initial[IEEE80211_NUM_ACS];
+ u8 edca_initial_valid;
 	u32 edca_words[IEEE80211_NUM_ACS];
 	u8 edca_valid;
 	u64 mac80211_packets, tx_unimplemented;
