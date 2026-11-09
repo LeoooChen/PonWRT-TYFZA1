@@ -31,6 +31,11 @@ common = r'''
 #include <string.h>
 #include "rtl9617c-wifi-format.h"
 typedef unsigned int u32;
+#define READ_ONCE(x) (x)
+#define WRITE_ONCE(x,v) ((x)=(v))
+#define rcu_read_lock() ((void)0)
+#define rcu_read_unlock() ((void)0)
+#define rcu_dereference(p) (p)
 #define __rcu
 #define ASSERT_RTNL() ((void)0)
 #define netdev_priv(p) (p)
@@ -38,13 +43,14 @@ typedef unsigned int u32;
 #define rcu_access_pointer(p) (p)
 #define rcu_assign_pointer(p,v) ((p)=(v))
 struct net_device {unsigned int refs;};
-struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;};
-struct rtl_fe_port {struct net_device *netdev;unsigned int wifi_id,llid;};
+struct sk_buff {unsigned int consumed;};
+struct rtl9617c_ni_wifi_endpoint {struct net_device *netdev;bool closing;};
+struct rtl_fe_port {struct net_device *netdev;unsigned int wifi_id,llid;bool wifi_closing;};
 struct rtl_fe {int lock,flush_error;struct rtl_fe_port ports[64];unsigned int count,flushes;};
 struct rtl_qm_rx {struct rtl9617c_ni_wifi_endpoint *wifi[61];};
 struct napi_struct {unsigned int enabled;struct {unsigned int held,rx_count,rx_list;} gro;};
 struct rtl_dma {void *registers;unsigned int vp,write;};
-struct rtl_xram {bool dma_tx,qm_rx,removing;struct rtl_fe *fe;struct rtl_qm_rx qm;
+struct rtl_xram {struct net_device *netdev;bool dma_tx,qm_rx,removing;struct rtl_fe *fe;struct rtl_qm_rx qm;
  struct rtl_dma dma;struct napi_struct napi;unsigned int engine_users,drained;int tx_lock;};
 struct device {struct rtl_xram *private;};
 static struct rtl_xram *current;
@@ -63,7 +69,7 @@ static int rtl_engine_get(struct rtl_xram *p){p->engine_users++;return 0;}
 static void rtl_engine_put(struct rtl_xram *p){assert(p->engine_users);p->engine_users--;}
 static void dev_hold(struct net_device *d){d->refs++;}
 static void dev_put(struct net_device *d){assert(d->refs>1 && !current->napi.gro.held && !current->napi.gro.rx_count);d->refs--;}
-static int rtl_fe_flush_port(struct rtl_fe *f,struct net_device *d){assert(fe_port(f,d));f->flushes++;return f->flush_error;}
+static int rtl_fe_flush_port(struct rtl_fe *f,struct net_device *d){assert(fe_port(f,d));f->flushes++;fe_port(f,d)->wifi_closing=true;return f->flush_error;}
 #define spin_lock_irqsave(lock,flags) do{(void)(lock);(flags)=0;assert(!locked);locked=1;}while(0)
 #define spin_unlock_irqrestore(lock,flags) do{(void)(lock);(void)(flags);assert(locked);locked=0;}while(0)
 static u32 readl(void *p){u32 v;memcpy(&v,p,4);assert(locked);return v;}
@@ -86,6 +92,8 @@ static void netif_receive_skb_list(unsigned int *list){
  assert(list==&current->napi.gro.rx_list && !current->napi.enabled && bh_disabled);
  assert(!current->napi.gro.held && current->napi.gro.rx_count==3);
 }
+static unsigned lookups;
+static int rtl_dma_tx_wifi(struct rtl_dma *d,struct net_device *n,struct sk_buff *s,unsigned id){(void)d;(void)n;assert(locked&&id);s->consumed++;lookups++;return 0;}
 static void synchronize_net(void){assert(!locked && !bh_disabled);syncs++;}
 '''
 test = r'''
@@ -95,16 +103,25 @@ int main(void){
  struct device ni={&p};struct net_device dev[60]={};struct rtl9617c_ni_wifi_endpoint ep[60];
  current=&p;p.dma.registers=registers;p.dma.vp=8;p.dma.write=7;registers[(0x100+8*0xa0+0x1c)/4]=7;
  for(unsigned int i=0;i<60;i++){dev[i].refs=1;ep[i].netdev=&dev[i];}
- int id=rtl9617c_ni_wifi_attach(&ni,&ep[0]);assert(id==1 && dev[0].refs==2 && p.engine_users==1);
+ int id=rtl9617c_ni_wifi_attach(&ni,&ep[0]);assert(id==1 && dev[0].refs==2 && p.engine_users==1 && !ep[0].closing);
+ assert(rtl9617c_ni_wifi_id(&ni,&dev[0])==1);
+ assert(rtl9617c_ni_wifi_detach(&ni,0)==-EINVAL);assert(rtl9617c_ni_wifi_detach(&ni,61)==-EINVAL);assert(!rtl9617c_ni_wifi_detach(&ni,60));
+ struct sk_buff packet={};
+ assert(!rtl9617c_ni_wifi_lookup(&ni,&packet,1)&&packet.consumed==1);
+ assert(rtl9617c_ni_wifi_lookup(&ni,&packet,0)==-EINVAL);
+ assert(rtl9617c_ni_wifi_lookup(&ni,&packet,61)==-EINVAL);
+ assert(rtl9617c_ni_wifi_lookup(&ni,&packet,60)==-ENODEV);
  struct rtl_fe_port *block_owner=fe_port(&f,&dev[0]);assert(block_owner && block_owner->wifi_id==1);
  assert(!rtl9617c_ni_wifi_detach(&ni,1) && !p.qm.wifi[1] && dev[0].refs==1 && !p.engine_users);
  assert(rtl9617c_ni_wifi_attach(&ni,&ep[1])==1);
  assert(rtl9617c_ni_wifi_attach(&ni,&ep[0])==2);
- assert(fe_port(&f,&dev[0])==block_owner && block_owner->wifi_id==2);
+ assert(fe_port(&f,&dev[0])==block_owner && block_owner->wifi_id==2 && !block_owner->wifi_closing);
  registers[(0x100+8*0xa0+0x1c)/4]=6;
  unsigned int old_drained=p.drained;
  assert(rtl9617c_ni_wifi_detach(&ni,2)==-ETIMEDOUT);
- assert(p.qm.wifi[2]==&ep[0] && dev[0].refs==2 && p.engine_users==2 && p.drained==old_drained);
+ assert(p.qm.wifi[2]==&ep[0] && dev[0].refs==2 && p.engine_users==2 && p.drained==old_drained && ep[0].closing);
+ assert(rtl9617c_ni_wifi_id(&ni,&dev[0])==-ENODEV);
+ assert(rtl9617c_ni_wifi_lookup(&ni,&packet,2)==-ENODEV && lookups==1 && packet.consumed==1);
  registers[(0x100+8*0xa0+0x1c)/4]=7;
  f.flush_error=-EIO;assert(rtl9617c_ni_wifi_detach(&ni,2)==-EIO);
  assert(p.qm.wifi[2]==&ep[0] && dev[0].refs==2 && p.drained==old_drained);
@@ -113,17 +130,17 @@ int main(void){
  for(unsigned int i=0;i<60;i++)assert(rtl9617c_ni_wifi_attach(&ni,&ep[i])==(int)i+1);
  assert(rtl9617c_ni_wifi_attach(&ni,&ep[0])==-ENOSPC);
  for(unsigned int i=0;i<60;i++)assert(!rtl9617c_ni_wifi_detach(&ni,i+1));
- assert(!p.engine_users && p.drained==63 && syncs==63 && f.count==60);
+ assert(!p.engine_users && p.drained==63 && syncs==128 && f.count==60);
  assert(rescheduled==63 && gro_flushes==63 && !irq_masked);
  for(unsigned int i=0;i<60;i++)assert(dev[i].refs==1 && !p.qm.wifi[i+1]);
  p.dma_tx=false;assert(rtl9617c_ni_wifi_attach(&ni,&ep[0])==-EOPNOTSUPP && !p.engine_users);
- puts("Wi-Fi lifetime: 60 IDs/capacity; queue timeout retains ID/ref; retry drains before reuse; DOWN/UP preserves flow-block owner");
+ puts("Wi-Fi lifetime: 60 IDs/capacity; queue timeout retains ID/ref; failed drain hides ID; retry drains before reuse; DOWN/UP preserves flow-block owner");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='wifi-lifetime-', dir=root / 'artifacts') as directory:
     path = Path(directory)
     (path / 'test.c').write_text(common + function(fe, 'rtl_fe_add_wifi_port') +
-                               function(xram, 'rtl9617c_ni_wifi_attach') +
+                               function(xram, 'rtl9617c_ni_wifi_lookup') + function(xram, 'rtl9617c_ni_wifi_attach') + function(xram, 'rtl9617c_ni_wifi_id') +
                                function(xram, 'rtl9617c_ni_wifi_detach') + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-Wno-misleading-indentation', '-g',
                     '-fsanitize=address,undefined', '-I', str(drivers), str(path / 'test.c'),
@@ -132,7 +149,7 @@ with tempfile.TemporaryDirectory(prefix='wifi-lifetime-', dir=root / 'artifacts'
 (root / 'logs/wifi-lifecycle-contract.json').write_text(json.dumps({
     'xram_source_sha256': hashlib.sha256(xram.encode()).hexdigest(),
     'FE_source_sha256': hashlib.sha256(fe.encode()).hexdigest(),
-    'interfaces': 60, 'NI_drains_and_RCU_grace_periods': 63,
+    'interfaces': 60, 'NI_drains': 63, 'RCU_grace_periods': 128,
     'queue_timeout_retains_ID_and_netdev': True, 'DOWN_UP_preserves_flow_block': True,
     'IRQ_during_NAPI_disable_followed_by_rescheduled_poll': True,
     'held_GRO_and_normal_list_flushed_before_VIF_release': True,

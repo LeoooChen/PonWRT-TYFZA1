@@ -143,6 +143,8 @@ static struct rtl_wifi_port *wifi_port(struct net_device *netdev)
 	return NULL;
 }
 
+static int wifi_del(struct rtl_wifi_port *port);
+
 static int wifi_add(struct net_device *netdev)
 {
 	struct rtl_wifi_port *port;
@@ -151,9 +153,10 @@ static int wifi_add(struct net_device *netdev)
 	port = wifi_port(netdev);
 	if (port) {
 		if (port->hooked) return 0;
-		ret = nf_register_net_hook(dev_net(netdev), &port->hook);
-		port->hooked = !ret;
-		return ret;
+		/* A failed DOWN/UNREGISTER kept the old endpoint and FE state.
+		 * Complete that withdrawal before publishing a new ingress hook. */
+		ret = wifi_del(port);
+		if (ret) return ret;
 	}
 	port = kzalloc(sizeof(*port), GFP_KERNEL);
 	if (!port) return -ENOMEM;
@@ -180,7 +183,7 @@ static int wifi_add(struct net_device *netdev)
 	return 0;
 }
 
-static void wifi_del(struct rtl_wifi_port *port)
+static int wifi_del(struct rtl_wifi_port *port)
 {
 	int ret;
 	if (port->hooked) {
@@ -190,10 +193,11 @@ static void wifi_del(struct rtl_wifi_port *port)
 	ret = rtl9617c_ni_wifi_detach(wifi_ni, port->id);
 	if (ret) {
 		netdev_err(port->endpoint.netdev, "NI queue drain failed: %d; interface ID%u retained\n", ret, port->id);
-		return;
+		return ret;
 	}
 	list_del(&port->list);
 	kfree(port);
+	return 0;
 }
 
 static int wifi_event(struct notifier_block *notifier, unsigned long event, void *ptr)

@@ -1008,9 +1008,16 @@ int rtl9617c_ni_wifi_lookup(struct device *dev, struct sk_buff *skb, unsigned in
 	unsigned long flags;
 	int ret;
 
+	if (!id || id > RTL_WIFI_ID_MAX) return -EINVAL;
+	rcu_read_lock();
+	struct rtl9617c_ni_wifi_endpoint *endpoint = rcu_dereference(priv->qm.wifi[id]);
+	if (!endpoint || READ_ONCE(endpoint->closing)) {
+		rcu_read_unlock(); return -ENODEV;
+	}
 	spin_lock_irqsave(&priv->tx_lock, flags);
 	ret = rtl_dma_tx_wifi(&priv->dma, priv->netdev, skb, id);
 	spin_unlock_irqrestore(&priv->tx_lock, flags);
+	rcu_read_unlock();
 	return ret;
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_lookup);
@@ -1031,6 +1038,7 @@ int rtl9617c_ni_wifi_attach(struct device *dev, struct rtl9617c_ni_wifi_endpoint
 	ret = rtl_fe_add_wifi_port(priv->fe, endpoint->netdev, id);
 	if (ret) { rtl_engine_put(priv); return ret; }
 	dev_hold(endpoint->netdev);
+	WRITE_ONCE(endpoint->closing, false);
 	rcu_assign_pointer(priv->qm.wifi[id], endpoint);
 	return id;
 }
@@ -1044,7 +1052,7 @@ int rtl9617c_ni_wifi_id(struct device *dev, struct net_device *netdev)
 	rcu_read_lock();
 	for (id = 1; id <= RTL_WIFI_ID_MAX; id++) {
 		struct rtl9617c_ni_wifi_endpoint *endpoint = rcu_dereference(priv->qm.wifi[id]);
-		if (endpoint && endpoint->netdev == netdev) { ret = id; break; }
+		if (endpoint && endpoint->netdev == netdev && !READ_ONCE(endpoint->closing)) { ret = id; break; }
 	}
 	rcu_read_unlock();
 	return ret;
@@ -1054,12 +1062,19 @@ EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_id);
 int rtl9617c_ni_wifi_detach(struct device *dev, unsigned int id)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
-	struct rtl9617c_ni_wifi_endpoint *endpoint = rcu_access_pointer(priv->qm.wifi[id]);
+	struct rtl9617c_ni_wifi_endpoint *endpoint;
 	u32 status;
 	unsigned long flags;
 	int ret;
 
 	ASSERT_RTNL();
+	if (!id || id > RTL_WIFI_ID_MAX) return -EINVAL;
+	endpoint = rcu_access_pointer(priv->qm.wifi[id]);
+	if (!endpoint) return 0;
+	WRITE_ONCE(endpoint->closing, true);
+	/* Join ingress submitters and RX callbacks before withdrawal can fail.
+	 * A retained endpoint must not become usable just because IFF_UP returns. */
+	synchronize_net();
 	/* The caller has removed its ingress hook. Withdraw rules, drain copied
 	 * NI submissions and old EPPs, then release the ID and netdev reference. */
 	/* Keep the flow-block owner across NETDEV_DOWN/UP; UNREGISTER retires it. */

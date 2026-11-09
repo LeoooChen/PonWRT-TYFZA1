@@ -60,7 +60,7 @@ static void __clear_bit(unsigned i,unsigned long *b){b[i/64]&=~(1UL<<(i%64));}
 struct rb_node {int unused;};
 struct net_device {bool running,carrier;};
 struct rtl_fe;
-struct rtl_fe_port {struct rtl_fe *fe;struct net_device *netdev;unsigned source,destination,llid,wifi_id;bool retired;};
+struct rtl_fe_port {struct rtl_fe *fe;struct net_device *netdev;unsigned source,destination,llid,wifi_id;bool retired,wifi_closing;};
 struct rtl_fe_wifi_peer {unsigned destination,macid;u64 policy_generation;u8 address[6];struct rtl9617c_wifi_policy policy;};
 static bool netif_running(struct net_device *d){return d->running;}
 static bool netif_carrier_ok(struct net_device *d){return d->carrier;}
@@ -151,6 +151,12 @@ int main(void){
  fe.memory=calloc(1,RTL_FE_MEMORY_BYTES);assert(fe.memory);
  INIT_LIST_HEAD(&fe.flows);INIT_LIST_HEAD(&fe.retries);
  for(unsigned i=0;i<4;i++)fe.reg[(0x1704+i*4)/4]=0x8100;
+ for(unsigned closed=0;closed<3;closed++) {
+  struct rtl_fe_port *p=closed==0?&input:closed==1?&out:&fttr;
+  p->wifi_closing=true;
+  assert(fe_install(&input,rule,123)==-EAGAIN && list_empty(&fe.flows));
+  p->wifi_closing=false;
+ }
  fe.reg[0xaa60/4]=0x2f0ff;
  fe.reg[0xa1c0/4]=0x24009b;
  fe.map[1]=fe.map[129]=1;fe.map[70]=fe.map[198]=8;fe.reg[0x1600/4]=0x80;

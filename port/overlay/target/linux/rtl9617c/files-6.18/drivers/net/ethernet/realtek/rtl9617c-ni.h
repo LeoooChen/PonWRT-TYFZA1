@@ -37,6 +37,8 @@ struct rtl9617c_ni_wifi_endpoint {
 	struct net_device *netdev;
 	void (*receive)(struct rtl9617c_ni_wifi_endpoint *endpoint, struct napi_struct *napi,
 			struct sk_buff *skb, bool forwarded);
+	/* Closed before fallible FE/DMA withdrawal; retained on failure. */
+	bool closing;
 };
 
 int rtl9617c_ni_wifi_attach(struct device *dev, struct rtl9617c_ni_wifi_endpoint *endpoint);

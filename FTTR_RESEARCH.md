@@ -293,6 +293,8 @@
 
 144. 补齐原厂QosSync传输与常驻发送归属：执行控制器实际构造/编码/pending18回复，确认透传ahsapd.qos对象并强制字符串SyncFromMaster="1"，没有独立回读。新增qos-sync私有文件入口及常驻QoS，按WiFi→Radios→Time→IPTV/Ports→WebPassword→QoS→EasyMesh执行；Ready0不写，version8/bit23发送前持久化，重启保留结果未知并停止后续策略，不猜查询或自动重放。38 glibc/37打包musl网络场景、1976字节边界、输入不变/分配故障ASan/UBSan及六类既有管理回归通过；整包/FPGA伴随包重编与staging、67源码和四程序一致性、musl UCI联动通过。内核/PE未改、main仍为76ad78c、未实机；实际从端QoS安装/本地事件导入/硬件调度映射、全链路退场和ID复用仍未完成。详见[QoS同步](port/FTTR.md#original-qossync-transport-and-durable-send-ownership)。
 
+145. 修复Wi-Fi退场失败后重新UP提前恢复准入：旧notifier已实际复现；端点先closing并等待network grace period，再执行可失败的FE/DMA清理，失败保留关闭/ID/引用，重新UP先重试完整detach才注册新hook。ID查询/CPU提交/QM普通与组播Wi-Fi投递拒绝关闭端点；FE按netdev清理全部退休代际，关闭期间拒绝新peer路由及单播/组播规则，成功重新attach后恢复。原厂无线撤销分支反汇编确认先删流后移映射（原厂忽略删流错误），现成原厂收发/映射执行通过。60-ID生命周期、36 FE失败组合、672 QM报文、完整learner/M2U及11项回归、Image/模块/五输入一致检查通过。PE未变、未实机；成功detach后的上游迟到包与Wi-Fi ID安全复用仍未由此解决。详见[失败退场门控](port/FTTR.md#failed-wi-fi-withdrawal-stays-closed-across-interface-reopen)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -120,14 +120,14 @@ int main(void){
   assert(rtl9617c_bridge_host_group(pol<<18,dst<<3|src<<9)==
    ((dst==16&&(src<=4||src==6||src==7||src==18)&&(pol&256))?pol&255:0));
  for(unsigned full=0;full<2;full++)for(unsigned tags=0;tags<3;tags++)
- for(unsigned cos=0;cos<8;cos++)for(unsigned fault=0;fault<10;fault++) {
+ for(unsigned cos=0;cos<8;cos++)for(unsigned fault=0;fault<14;fault++) {
   struct net_device owner={.running=true};struct napi_struct napi={.dev=&owner};
   struct rtl9617c_ni_wifi_endpoint radio={.netdev=&input,.receive=radio_receive};
   struct rtl9617c_ni_endpoint p6={.receive=p6_receive},pon={.receive=pon_receive};
   struct rtl_qm_rx rx={.pon=&pon,.fttr=&p6,.memory_dma=0x04000000,.ring_dma=0x06000000,.device=&owner};active=&rx;
   rx.memory=calloc(1,RTL_QM_MEMORY_BYTES);rx.ring_memory=calloc(1,8192);rx.ni=calloc(1,65536);
   rx.lan[0]=rx.lan[4]=&input;rx.wifi[1]=&radio;input.running=true;
-  retired=host_calls=local_calls=gro_calls=radio_calls=0;reject_host=fault==1;direct_copy=fault>=5&&fault<8;epon_copy=fault==8;
+  retired=host_calls=local_calls=gro_calls=radio_calls=0;reject_host=fault==1;direct_copy=(fault>=5&&fault<8)||fault==10;epon_copy=fault==8;
   ethernet_copy=fault==9;
   expect_source=cos%5==4?18:cos%5==3?7:cos%5==2?6:cos%5==1?4:0;
   if(fault==2 && expect_source==18)expect_source=0; /* Ordinary radio misses tested by Wi-Fi RX fixture. */
@@ -135,20 +135,25 @@ int main(void){
   if(fault==6)rx.wifi[1]=NULL;
   if(fault==7)radio.netdev=&owner; /* A reused ID must not redirect a stale copy. */
   if(fault==8)expect_source=7;
+  if(fault>=10)radio.closing=true;
+  if(fault==11 || fault==13)expect_source=18;
+  if(fault==12)expect_source=0;
   memset(expected,0x55,sizeof(expected));expected[0]=1;expected[6]=2;expected[12]=tags?0x81:8;expected[13]=0;
   for(unsigned t=0;t<tags;t++){expected[14+4*t]=0xb1;expected[15+4*t]=0x23;expected[16+4*t]=t+1<tags?0x81:8;expected[17+4*t]=0;}
-  unsigned header=full?16:8,pol=fault==2?0:256+expect_group;
+  unsigned header=full?16:8,pol=(fault==2||fault>=12)?0:256+expect_group;
   u8 *data=rx.memory+8192+RTL_QM_HEADROOM;
   put(__builtin_bswap32(pol<<18|(full?BIT(31):0)),data);
   put(__builtin_bswap32((expected_length+(full?8:0))<<15|expect_source<<9|16<<3|cos),data+4);
   memcpy(data+header,expected,expected_length);
+  if(fault==12)memcpy(data+16,expected,expected_length);
+  if(fault==13 && full)put(__builtin_bswap32(1),data+12);
   put(rx.memory_dma+8192+(fault==3?0x14:0x54),rx.ring_memory+cos*1024);
   /* An EPP payload resembling a radio ID must not steal a host copy. */
-  put(fault==2?0:1<<14,rx.ring_memory+cos*1024+4);
+  put(fault==12?(1<<14)|(expected_length+16):fault==2||fault==13?0:1<<14,rx.ring_memory+cos*1024+4);
   put(8,rx.ni+EPP_WRITE+cos*4);
   assert(rtl_qm_rx_poll(&rx,&napi,1)==1&&!live&&retired==1);
-  assert(host_calls==(fault<2||fault>=4)&&local_calls==(fault==0||fault==8)&&gro_calls==(fault==2)&&radio_calls==(fault==5||fault==9));
-  assert(owner.stats.rx_dropped==(fault==1||fault==4||fault==6||fault==7)&&owner.stats.rx_errors==(fault==3));
+  assert(host_calls==(fault<2||(fault>=4&&fault<12))&&local_calls==(fault==0||fault==8)&&gro_calls==(fault==2)&&radio_calls==(fault==5||fault==9));
+  assert(owner.stats.rx_dropped==(fault==1||fault==4||fault==6||fault==7||fault==10||fault==11||fault==12||fault==13)&&owner.stats.rx_errors==(fault==3));
   free(rx.memory);free(rx.ring_memory);free(rx.ni);cases++;
  }
  printf("QM host copies: %u actual poll cases, 2M decoder inputs, VLAN/COS, both headers, early credit, stale drop and ordinary miss separation passed\n",cases);

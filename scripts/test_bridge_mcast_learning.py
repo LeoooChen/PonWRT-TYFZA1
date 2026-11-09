@@ -608,6 +608,7 @@ int main(void){
    assert(fe_mcast_host_receive(&bridge,&delayed,group,18)==-ESTALE);
    assert(fe_mcast_host_local(&bridge,&delayed,&br,0)==-ESTALE);
    assert(!rtl_fe_flush_port(&fe,&wifi));
+  wp.wifi_closing=false; /* Model the next successful NI attach. */
   } else {fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));}
   struct fe_mcast_packet bad={.net=&net,.bridge=10,.epoch=fe.mc_gate.epoch,.input=wireless};
   bad.input.multicast_epoch=fe.mc_gate.epoch;bad.input.wifi_id=3;
@@ -680,6 +681,7 @@ int main(void){
   assert(cpu_invalidations>invalidations&&!fe_mcast_host_tx_valid(&bridge,&queued));
   assert(fe_mcast_host_receive(&bridge,&copy,cookie[1],source)==-ESTALE);
   assert(!rtl_fe_flush_port(&fe,&wifi));
+  wp.wifi_closing=false; /* Model the next successful NI attach. */
   assert(!fe.mc_directs[cookie[0]]->flow&&!fe.mc_directs[cookie[1]]->flow);
   retired_cookie=cookie[0];
  }
@@ -721,6 +723,7 @@ int main(void){
   ap.iftype=NL80211_IFTYPE_AP;assert(fe_mcast_host_receive(&bridge,&copy,cookie,source)==-ESTALE);ap.iftype=NL80211_IFTYPE_STATION;
   wifi.features=NETIF_F_HW_VLAN_CTAG_TX;assert(fe_mcast_host_receive(&bridge,&copy,cookie,source)==-ESTALE);wifi.features=0;
   assert(!rtl_fe_flush_port(&fe,&wifi));
+  wp.wifi_closing=false; /* Model the next successful NI attach. */
   if(scenario==4) {
    /* A COS-dependent output VLAN cannot be learned from COS6 alone. */
    wifi_vlan.vlan.egress_priority_map[2]=3<<13;

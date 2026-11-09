@@ -17,7 +17,8 @@ code += r'''
 #define list_for_each_entry(p,h,m) for(struct list_head *c=(h)->next;c!=(h) && ((p)=container_of(c,__typeof__(*(p)),m));c=c->next)
 static void mutex_lock(int *p){assert(!*p);*p=1;}static void mutex_unlock(int *p){assert(*p);*p=0;}
 static void fe_mcast_invalidate(struct rtl_fe *f){assert(f->lock);}
-'''+''.join(fn(n) for n in ('fe_port','fe_wifi_client','fe_wifi_peer','rtl_fe_wifi_peer_route'))
+static void fe_mcast_pe_forget_port(struct rtl_fe *f,struct net_device *d){assert(f->lock);(void)d;}
+'''+''.join(fn(n) for n in ('fe_port','fe_wifi_client','fe_wifi_peer','fe_wifi_forget_port','rtl_fe_wifi_peer_route','rtl_fe_flush_port'))
 code+=r'''
 static struct rtl_fe_flow *flow(struct rtl_fe *fe,struct rtl_fe_port *in,struct rtl_fe_port *out,unsigned index,bool deleting){
  struct rtl_fe_flow *f=calloc(1,sizeof(*f));assert(f);f->input=in;f->output=out;f->hash_index=index;f->crc16=100+index;
@@ -26,7 +27,7 @@ static struct rtl_fe_flow *flow(struct rtl_fe *fe,struct rtl_fe_port *in,struct 
  return f;
 }
 int main(void){unsigned cases=0;
- for(unsigned retired=0;retired<2;retired++)for(unsigned where=0;where<3;where++)for(unsigned fault=0;fault<3;fault++){
+ for(unsigned flush=0;flush<2;flush++)for(unsigned retired=0;retired<2;retired++)for(unsigned where=0;where<3;where++)for(unsigned fault=0;fault<3;fault++){
   static struct rtl_fe fe;memset(&fe,0,sizeof(fe));fe.memory=calloc(1,RTL_FE_MEMORY_BYTES);assert(fe.memory);
   INIT_LIST_HEAD(&fe.ports);INIT_LIST_HEAD(&fe.flows);INIT_LIST_HEAD(&fe.retries);INIT_LIST_HEAD(&fe.wifi_peers);
   struct net_device a={},b={},absent={};const u8 mac[6]={2};
@@ -38,16 +39,21 @@ int main(void){unsigned cases=0;
   /* Retired generations may coexist with a new active FE port. */
   if(retired)list_add_tail(&replacement.list,&fe.ports);
   fe.age_fail=fault==1;fe.cache_fail=fault==2;
-  int ret=rtl_fe_wifi_peer_route(&fe,&a,mac,0);
+  int ret=flush?rtl_fe_flush_port(&fe,&a):rtl_fe_wifi_peer_route(&fe,&a,mac,0);
   assert(ret==(fault?-ETIMEDOUT:0));
   if(fault){assert(pending->published&&pending->deleting&&test_bit(0,fe.hashes)&&!fe.deletes&&!list_empty(&fe.retries));
-   assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,0));}
+   assert(!(flush?rtl_fe_flush_port(&fe,&a):rtl_fe_wifi_peer_route(&fe,&a,mac,0)));}
   assert(!test_bit(0,fe.hashes)&&fe.deletes==1&&list_empty(&fe.retries));
   assert(foreign->published&&test_bit(1,fe.hashes));
+  if(flush){assert((retired?replacement.wifi_closing:old.wifi_closing));assert(rtl_fe_wifi_peer_route(&fe,&a,mac,19)==-EAGAIN);}
   for(unsigned i=0;i<fe.event_count;i++)assert(fe.events[i]!=1); /* never re-enable a deleting rule */
   unsigned before=fe.event_count;assert(!rtl_fe_wifi_peer_route(&fe,&absent,mac,0)&&fe.event_count==before);
   assert(rtl_fe_wifi_peer_route(&fe,&absent,mac,19)==-ENODEV);
-  if(retired){list_del(&replacement.list);assert(rtl_fe_wifi_peer_route(&fe,&a,mac,19)==-ENODEV);assert(!rtl_fe_wifi_peer_route(&fe,&a,mac,0));}
+  if(retired){list_del(&replacement.list);assert(rtl_fe_wifi_peer_route(&fe,&a,mac,19)==-ENODEV);assert(!(flush?rtl_fe_flush_port(&fe,&a):rtl_fe_wifi_peer_route(&fe,&a,mac,0)));}
+  if(flush && retired){
+   pending=flow(&fe,&other,&old,2,true);fe.age_fail=1;assert(rtl_fe_flush_port(&fe,&a)==-ETIMEDOUT);
+   assert(pending->published && !rtl_fe_flush_port(&fe,&a) && !test_bit(2,fe.hashes));
+  }
   assert(!fe_delete(&fe,foreign));assert(list_empty(&fe.flows));free(fe.memory);cases++;
  }
  printf("Actual FE deletion: %u active/retired/input/output/replica Hash/cache faults, replacement generation, no re-publication and absent-port retirement PASS\n",cases);

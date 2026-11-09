@@ -9180,6 +9180,61 @@ complete kernel/rootfs/FIT image. No kernel/PE production code changed and no
 physical device was accessed. Actual subordinate policy installation, local
 configuration event import and native hardware scheduler mapping remain open.
 
+### Failed Wi-Fi withdrawal stays closed across interface reopen
+
+The previous notifier retained an endpoint when FE withdrawal or the shared
+CPU DMA cursor wait failed, but a later AP/STA UP event immediately registered
+its ingress hook again. The current running netdev also made that endpoint
+eligible for CPU EPP delivery. A retained UNREGISTER generation could meanwhile
+be missed by `rtl_fe_flush_port`, which looked up only the active port. The
+actual old notifier reproduces the premature reopen in
+`scripts/test_wifi_notifier.py --before` (the fixture reads the known
+pre-fix source at `e109480`).
+
+The endpoint now enters closing before fallible withdrawal, followed by a
+network grace period joining admitted CPU submissions and RX callbacks. Closing
+endpoints are excluded from NI ID lookup, new CPU NI submissions, ordinary
+Wi-Fi EPP hits/misses and the Wi-Fi portions of multicast host-copy delivery.
+Failures retain the ID, netdev reference and closed state. Reopening completes
+the previous detach before creating a new endpoint and registering its ingress
+hook. Invalid detach IDs fail explicitly and an already absent ID is idempotent.
+
+FE port flush now deletes matching input/output/replica flows across every
+retained generation of the netdev. An active Wi-Fi port is also marked closing
+under the FE mutex, rejecting new peer-route publication and new unicast or
+multicast rules until the next successful NI attach. This prevents another
+producer from republishing rules while failed cleanup is retained. Existing
+flow-block ownership across DOWN/UP remains intact; ordinary LAN/PON port
+flushes do not acquire the Wi-Fi gate.
+
+Target FC disassembly at `rtk_fc_eventHandler_netDev+0x2a0` (`0x91f20`) confirms
+the wireless branch calls flow deletion by wireless index before the helper
+that removes its mapping; the original branch ignores the deletion result.
+Native preserves that ordering while retaining failed cleanup ownership.
+The existing target CPU receive/registration oracle also verifies that a
+wireless copy requires the current active mapping and a running device.
+Neither observation supplies a hardware drain fence. An attempted full event
+oracle failed to reach this branch and was removed, not counted as validation.
+
+Validation includes old-notifier reproduction, actual notifier add/delete
+retry across AP/STA/mesh/monitor transitions,60-ID endpoint capacity/lifetime
+checks with ASan/UBSan,36 active/retired FE Hash/cache fault combinations and
+new-rule rejection for closed inputs/outputs/replicas. Actual QM polling covers
+672 host/ordinary-copy cases including closing endpoints, both HeaderA forms,
+VLAN/COS and EPP credit/return ownership. Bridge host completion, complete
+multicast learning/M2U, peer-route publication, radio withdrawal, NI restore,
+multicast binding and retained Ethernet/VLAN/PPPoE frame regressions pass.
+Image/modules compile and all five changed kernel source inputs match the
+compiled tree. Reports are `artifacts/fttr/wifi-withdraw-*-20261109.*` and
+`wifi-reopen-before-20261109.log`. PE is unchanged; no device was accessed.
+
+This closes a failed-withdrawal admission bug. Successful detach still uses
+the existing CPU cursor/EPP drain, which does not prove MCE/AFT or downstream
+retirement. Wi-Fi ID reuse after successful detach, including a delayed packet
+arriving after a new endpoint is attached, remains an explicit unresolved
+requirement. No additional reuse permission or full-drain claim follows from
+the closing flag.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

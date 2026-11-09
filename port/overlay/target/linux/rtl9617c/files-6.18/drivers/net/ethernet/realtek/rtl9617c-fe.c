@@ -66,7 +66,7 @@ struct rtl_fe_port {
  struct rtl_fe *fe;
  struct net_device *netdev;
  unsigned int source, destination, llid, wifi_id, bindings;
- bool retired;
+ bool retired, wifi_closing;
 };
 struct rtl_fe_wifi_peer {
  struct list_head list;
@@ -1241,6 +1241,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  int ret;
 
  if(port->retired)return -ENODEV;
+ if(data.input->wifi_closing || data.output->wifi_closing)return -EAGAIN;
  if((data.input->netdev==fe->fttr_netdev || data.output->netdev==fe->fttr_netdev) &&
     !fe->fttr_admitted)return -EAGAIN;
  if((data.input->source==7 || data.output->source==7) && !fe->pon_requested)return -EAGAIN;
@@ -1249,7 +1250,7 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  if(data.multicast)for(i=0;i<data.multicast->count;i++) {
   struct rtl_fe_port *replica=data.multicast->port[i];
   if(replica->source==7 && !fe->pon_requested)return -EAGAIN;
-  if(replica->retired || !netif_running(replica->netdev) || !netif_carrier_ok(replica->netdev))return -EAGAIN;
+  if(replica->retired || replica->wifi_closing || !netif_running(replica->netdev) || !netif_carrier_ok(replica->netdev))return -EAGAIN;
   if(replica->netdev==fe->fttr_netdev && !fe->fttr_admitted)return -EAGAIN;
   if(data.multicast->replica[i].destination==6 &&
      (!data.multicast_learned || !is_broadcast_ether_addr(data.destination)) &&
@@ -1771,7 +1772,7 @@ int rtl_fe_add_wifi_port(struct rtl_fe *fe,struct net_device *netdev,unsigned in
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
  /* Wi-Fi DMA puts its interface ID in both POL_ID and metadata low8. */
- if(port){port->wifi_id=id;port->llid=id;}
+ if(port){port->wifi_id=id;port->llid=id;port->wifi_closing=false;}
  mutex_unlock(&fe->lock);
  if(port)return 0;
  ret=rtl_fe_add_port(fe,netdev,RTL_WIFI_SOURCE,16,id);
@@ -1810,6 +1811,7 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
  }
  port=fe_port(fe,netdev);
  if(!port || !port->wifi_id){ret=destination?-ENODEV:0;goto unlock;}
+ if(destination && port->wifi_closing){ret=-EAGAIN;goto unlock;}
  peer=fe_wifi_peer(fe,port,address);
  /* A peer/key route may be replaced even when no unicast Hash exists.
   * Revoke queued multicast cookies before changing that identity. */
@@ -1884,14 +1886,21 @@ int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
  if(!fe)return 0;
  mutex_lock(&fe->lock);
  port=fe_port(fe,netdev);
+ if(port && port->wifi_id)port->wifi_closing=true;
  fe_mcast_invalidate(fe);
  fe_mcast_pe_forget_port(fe,netdev);
  fe_wifi_forget_port(fe,port);
- list_for_each_entry_safe(flow,next,&fe->flows,list)
-  if(fe_flow_port(flow,port)) {
-   ret=fe_delete(fe,flow);
-   if(ret){fe->error=ret;break;}
-  }
+ /* UNREGISTER may already have retired the flow-block port. Match every
+  * retained generation by its netdev before releasing the NI endpoint. */
+ list_for_each_entry_safe(flow,next,&fe->flows,list) {
+  bool owned=flow->input->netdev==netdev || flow->output->netdev==netdev;
+  unsigned int i;
+  for(i=0;!owned && i<flow->replica_count;i++)
+   owned=flow->replica_ports[i]->netdev==netdev;
+  if(!owned)continue;
+  ret=fe_delete(fe,flow);
+  if(ret){fe->error=ret;break;}
+ }
  mutex_unlock(&fe->lock);
  return ret;
 }

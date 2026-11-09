@@ -721,7 +721,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
 					struct rtl9617c_ni_wifi_endpoint *endpoint=saved && saved->wifi_id && saved->wifi_id<=RTL_WIFI_ID_MAX ?
 						rcu_dereference(rx->wifi[saved->wifi_id]):NULL;
-					if (endpoint && endpoint->netdev==skb->dev && netif_running(endpoint->netdev))
+					if (endpoint && !READ_ONCE(endpoint->closing) && endpoint->netdev==skb->dev && netif_running(endpoint->netdev))
 						endpoint->receive(endpoint,napi,skb,true);
 					else {dev->stats.rx_dropped++;dev_kfree_skb_any(skb);}
 					rcu_read_unlock();continue;
@@ -741,7 +741,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 					const struct rtl9617c_bridge_frame *saved=skb_ext_find(skb,SKB_EXT_RTL9617C_BRIDGE);
 					struct rtl9617c_ni_wifi_endpoint *endpoint=saved && saved->wifi_id && saved->wifi_id<=RTL_WIFI_ID_MAX ?
 						rcu_dereference(rx->wifi[saved->wifi_id]):NULL;
-					if (!endpoint || endpoint->netdev!=skb->dev || !netif_running(endpoint->netdev)) {
+					if (!endpoint || READ_ONCE(endpoint->closing) || endpoint->netdev!=skb->dev || !netif_running(endpoint->netdev)) {
 						dev->stats.rx_dropped++;dev_kfree_skb_any(skb);rcu_read_unlock();continue;
 					}
 				}
@@ -754,7 +754,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				struct rtl9617c_ni_wifi_endpoint *endpoint;
 				rcu_read_lock();
 				endpoint = wifi_id <= RTL_WIFI_ID_MAX ? rcu_dereference(rx->wifi[wifi_id]) : NULL;
-				if (endpoint && netif_running(endpoint->netdev)) {
+				if (endpoint && !READ_ONCE(endpoint->closing) && netif_running(endpoint->netdev)) {
 					u64 dispatch = begin ? ktime_get_ns() : 0;
 					if (begin) rx->wifi_copy_ns += dispatch - copied;
 					rx->wifi_forwarded += wifi_forwarded;

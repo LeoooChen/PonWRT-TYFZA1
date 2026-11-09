@@ -91,6 +91,7 @@ code+='int main(void){'+initial+r'''
    }
    if(scenario==8){fe.age_fail=1;assert(rtl_fe_flush_port(&fe,&wifi)==-ETIMEDOUT&&!fe.mc_gate.active);}
    assert(!rtl_fe_flush_port(&fe,&wifi));
+  wp.wifi_closing=false; /* Model the next successful NI attach. */
    struct sk_buff stale={.frame=frame};assert(fe_mcast_host_receive(&bridge,&stale,cookie[1],hairpin?18:0)==-ESTALE);
   }
   memcpy(members[0].eth_addr,(u8[]){2,1,2,3,4,5},6);assert(!net.refs);
