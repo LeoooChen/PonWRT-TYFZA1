@@ -9940,6 +9940,54 @@ PE firmware is unchanged; no physical device was accessed. This repairs the
 native restart bookkeeping while retaining the original prefetch rule. Full
 producer/downstream retirement and safe hardware-ID reuse remain unproven.
 
+### Original BSSID and SSID conflict report queries
+
+The independent syncserv client now exposes two original diagnostics:
+
+```sh
+fttr-sync fttr-mc 02:00:00:00:00:02 auto 0x88aa bssid-conflicts
+fttr-sync fttr-mc 02:00:00:00:00:02 auto 0x88aa ssid-conflicts
+```
+
+The retained controller builders at `0x4120f0` and `0x412128` emit only
+`RPCMethod:CheckBSSIDConflict` or `CheckSSIDNameConflict`. The executed report
+consumer uses **lowercase `mac`** for the reporting device and an `ApInfo` array
+with `onuMac`, `onuModel`, `rfband`, `wlanMac`, `ssidIndex`, `ssid`. The target
+writes these fields to its per-device diagnostic file and sends an empty JSON
+response. Empty, one/two-row, integer-valued field and trailing-field cases
+are executed in `trace_stock_fttr_conflicts.py`; JSON/file operations and remote
+reports are modeled. The original receiver loses AP rows when `ApInfo` is not
+the last top-level field. Native lookup uses the field name and does not copy
+that defect or the original lossy comma-separated intermediate file.
+
+The native query binds both Ethernet source and report `mac` to the selected
+peer, accepts only the matching method and a complete bounded `ApInfo`, and
+responds with the original empty object. A row may identify another ONU's AP;
+its addresses are validated but not restricted to the reporting peer. All six
+fields must be present; string/integer values are preserved, without assigning
+unproven band/index meanings. Embedded NUL, invalid addresses/types and malformed
+tail rows fail the entire report. The local64-row bound rejects larger lists
+without truncation. Fragment loss, re-registration, NACK, incomplete ACK-only
+responses and reply-send failure produce no partial output. Unknown fields are
+excluded, and JSON preserves punctuation/newlines in SSIDs.
+
+Output includes `ApInfo`, `report_complete:true`, `scan_verified:false` and
+`identity_authenticated:false`. Report completion means the full response
+object was received; it does not establish physical scan coverage, diagnose
+interference, authorize roaming or authenticate the subordinate. There is no
+automatic remediation or periodic conflict policy in this change.
+
+Validation covers37 host and36 packaged-musl CLI/veth scenarios for each method,
+including discovery, both message directions, fragmented64-row reports, empty
+reports, wrong source/method, lower-case identity, other-ONU rows, numeric values,
+SSID punctuation and failure paths. ASan/UBSan exercise27 allocation/copy failures
+and every missing/invalid row field. Existing station, neighbor allocation and
+resident controller regressions pass. The FTTR and FPGA companion packages
+rebuild; all67 source inputs and four stripped/staged programs match. Evidence
+is `artifacts/fttr/*conflicts*-20261109.*`. Kernel/PE are unchanged by these
+diagnostics, and no physical device was accessed. Full gateway/roaming policy,
+subordinate capability validation and packet retirement remain incomplete.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

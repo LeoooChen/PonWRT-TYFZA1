@@ -325,6 +325,8 @@
 
 160. 修复上行队列重启遗漏工作环NI完成序号：原先只换算两个tail，未覆盖仍在工作环及越过ARM阻塞点的乱序提交；现在PE暂停时遍历READ→WRITE，按旧读游标距离换算31位end，保留owner/ARM状态/ID和环外记录。a694877实际ARM函数→链接PE已复现提前归还；84工作环/阻塞/回绕与40尾保留场景、514库存、启停ASan/UBSan及九项回归、Image/模块/输入一致通过。PE未改、未实机；完整生产者/下游退场和ID复用仍待证明。详见[上行工作环重建](port/FTTR.md#rebase-pending-work-ring-completions-when-restarting-uplink-dma)。
 
+161. 接入原厂CheckBSSIDConflict/CheckSSIDNameConflict诊断：实际执行两请求及完整ApInfo接收/逐设备文件/空JSON回复，确认报告身份字段为小写mac，记录可描述其他ONU；保留六字段与数字原值，按字段名解析修正原厂顶层尾字段导致丢表，完整对象才发布，64条上限明确拒绝不截断。每项37主机/36打包musl网络场景、27分配故障及逐字段缺失/类型ASan/UBSan，终端/邻居/常驻回归与整包/67输入/四程序一致通过。大写MAC的早期夹具已作废并按原字段重跑。该项完成查询传输与完整报告，不宣称实际扫描/冲突/漫游验证；内核/PE未改、未实机，完整生产者退场、ID复用与其他原厂策略仍未完成。详见[原厂冲突报告](port/FTTR.md#original-bssid-and-ssid-conflict-report-queries)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

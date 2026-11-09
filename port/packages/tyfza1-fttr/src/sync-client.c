@@ -209,6 +209,75 @@ out:
 	return ret;
 }
 
+static int conflicts_reply(struct json_object *value, const uint8_t peer[6], bool ssid,
+	bool *ack_seen, struct json_object **summary, struct json_object **observed)
+{
+	const char *method = ssid ? "CheckSSIDNameConflict" : "CheckBSSIDConflict";
+	static const char *const names[] = { "onuMac", "onuModel", "rfband", "wlanMac", "ssidIndex", "ssid" };
+	struct json_object *field, *rows, *filtered = NULL, *result = NULL;
+	char text[18]; uint8_t address[6];
+	int ret = -EBADMSG;
+
+	if (json_object_object_get_ex(value, "RPCMethod", &field)) {
+		if (!json_object_is_type(field, json_type_string) ||
+		    (size_t)json_object_get_string_len(field) != strlen(json_object_get_string(field))) return ret;
+		if (!strcmp(json_object_get_string(field), "Register")) return -ESTALE;
+		if (strcmp(json_object_get_string(field), method)) return -EAGAIN;
+	} else return -EAGAIN;
+	if (json_object_object_get_ex(value, "Result", &field)) {
+		if (!json_object_is_type(field, json_type_int)) return ret;
+		if (json_object_get_int64(field) != 1) return -EREMOTEIO;
+		*ack_seen = true;
+	}
+	if (!json_object_object_get_ex(value, "ApInfo", &rows)) return -EAGAIN;
+	/* Local report bound; never truncate a larger original AP list. Rows may
+	 * describe other ONUs, so bind the report MAC, not each row, to the peer. */
+	if (!json_object_is_type(rows, json_type_array) || json_object_array_length(rows) > 64) return ret;
+	if (!json_object_object_get_ex(value, "mac", &field) || !json_object_is_type(field, json_type_string) ||
+	    json_object_get_string_len(field) != 12) return ret;
+	for (unsigned int i = 0; i < 6; i++) {
+		text[3*i] = json_object_get_string(field)[2*i]; text[3*i+1] = json_object_get_string(field)[2*i+1]; text[3*i+2] = i == 5 ? 0 : ':';
+	}
+	if (fttr_sync_mac_parse(text, address)) return ret;
+	if (memcmp(address, peer, 6)) return -ESTALE;
+	filtered = json_object_new_array();
+	if (!filtered) return -ENOMEM;
+	for (size_t i = 0; i < json_object_array_length(rows); i++) {
+		struct json_object *row = json_object_array_get_idx(rows, i), *copy;
+		if (!json_object_is_type(row, json_type_object)) goto out;
+		copy = json_object_new_object();
+		if (!copy) { ret = -ENOMEM; goto out; }
+		if (json_object_array_add(filtered, copy)) { json_object_put(copy); ret = -ENOMEM; goto out; }
+		for (unsigned int j = 0; j < sizeof(names)/sizeof(*names); j++) {
+			if (!json_object_object_get_ex(row, names[j], &field) ||
+			    (!json_object_is_type(field, json_type_string) && !json_object_is_type(field, json_type_int)) ||
+			    (json_object_is_type(field, json_type_string) && (json_object_get_string_len(field) > 256 ||
+			     (size_t)json_object_get_string_len(field) != strlen(json_object_get_string(field))))) goto out;
+			if (j == 0 || j == 3) {
+				if (!json_object_is_type(field, json_type_string) || json_object_get_string_len(field) != 12) goto out;
+				for (unsigned int b = 0; b < 6; b++) {
+					text[3*b] = json_object_get_string(field)[2*b]; text[3*b+1] = json_object_get_string(field)[2*b+1]; text[3*b+2] = b == 5 ? 0 : ':';
+				}
+				if (fttr_sync_mac_parse(text, address)) goto out;
+			}
+			struct json_object *held = json_object_get(field);
+			if (json_object_object_add(copy, names[j], held)) { json_object_put(held); ret = -ENOMEM; goto out; }
+		}
+	}
+	result = json_object_new_object();
+	if (!result) { ret = -ENOMEM; goto out; }
+	const char *keys[] = { "event", "ApInfo", "report_complete", "scan_verified", "identity_authenticated" };
+	for (unsigned int i = 0; i < 5; i++) {
+		field = i == 0 ? json_object_new_string(ssid ? "sync_ssid_conflicts" : "sync_bssid_conflicts") :
+			i == 1 ? json_object_get(filtered) : json_object_new_boolean(i == 2);
+		if (!field || json_object_object_add(result, keys[i], field)) { json_object_put(field); ret = -ENOMEM; goto out; }
+	}
+	if (observed) *observed = json_object_get(filtered);
+	*summary = result; result = NULL; ret = 0;
+out:
+	json_object_put(result); json_object_put(filtered); return ret;
+}
+
 static int neighbors_reply(struct json_object *value, const uint8_t peer[6],
 	bool *ack_seen, struct json_object **summary)
 {
@@ -645,6 +714,7 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	if(settings>=7 && settings<=14) {ret=settings_reply(value,peer,settings,ack_seen,summary,observed);goto out;}
 	if (settings == 16) { ret = stations_reply(value, peer, ack_seen, summary, observed); goto out; }
 	if (settings == 17) { ret = neighbors_reply(value, peer, ack_seen, summary); goto out; }
+	if (settings == 18 || settings == 19) { ret = conflicts_reply(value, peer, settings == 19, ack_seen, summary, observed); goto out; }
 	if (settings == 6 || settings == 15) {
 		ret = notification_reply(value, settings == 15 ? "QosSync" : "WanIPChange", ack_seen);
 		goto out;
@@ -850,7 +920,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 17 || (settings >= 16 && configuration) || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
+	if (settings > 19 || (settings >= 16 && configuration) || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
@@ -890,7 +960,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			"{\"RPCMethod\":\"WanIPChange\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\",\"%s\":\"%s\"}",
 			source[0], source[1], source[2], source[3], source[4], source[5],
 			family == AF_INET ? "WanIP" : "WanIPv6", address);
-	} else if (settings == 4 || settings >= 16) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"%s\"}", settings == 17 ? "GetWifiNeighbor" : settings == 16 ? "GetWifiStaInfo" : "GetWifiRadio");
+	} else if (settings == 4 || settings >= 16) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"%s\"}", settings == 19 ? "CheckSSIDNameConflict" : settings == 18 ? "CheckBSSIDConflict" : settings == 17 ? "GetWifiNeighbor" : settings == 16 ? "GetWifiStaInfo" : "GetWifiRadio");
 	else if (settings == 5) {
 		struct json_object *request=json_object_new_object();
 		if (!request) return -ENOMEM;
