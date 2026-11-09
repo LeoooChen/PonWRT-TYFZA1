@@ -235,9 +235,8 @@ struct rtl_ax_ap {
 	u64 ra_ppdu_reports;
 	u8 ra_last_ppdu[64];
 	u32 ra_last_ppdu_bytes;
-	u8 role_stage, role_type;
-	int role_result;
-	u8 role_cam[60], bss_color;
+	struct rtl_ax_self_role self_roles[128];
+	u8 role_owner[128];
 	struct rtl_ax_cam_owners cam_owners;
 	struct rtl_ax_role_identity identities[128];
 	struct rtl_ax_port0 port0;
@@ -639,37 +638,36 @@ static int rtl_ax_command(struct rtl_ax_ap *radio, unsigned int buffer_class,
  * current BSS identity when adding/removing a peer, including legacy peers. */
 static int rtl_ax_cam_write(struct rtl_ax_ap *radio, u8 cam[60])
 {
-	int ret;
+ unsigned int macid=cam[32]&127;
+ struct rtl_ax_self_role *owner=&radio->self_roles[radio->role_owner[macid]];
+ int ret;
 
-	rtl_ax_identity_cam(cam, &radio->identities[cam[32] & 127]);
-	ret = rtl_ax_cam_prepare(&radio->cam_owners, cam);
-	if (ret) return ret == -ENOENT ? 0 : ret;
-	cam[53] = radio->bss_color & 0x3f;
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, 60, true);
-	/* Color-only updates must retain the most recent association/AID/HE
-	 * attributes of the owner (AP self0, single STA1). */
-	if (!ret && (rtl_ax_ap_read32(cam + 32) & 127) == (radio->sta_role ? 1U : 0U))
-		memcpy(radio->role_cam, cam, 60);
-	if (!ret) rtl_ax_cam_complete(&radio->cam_owners, cam);
-	return ret;
+ rtl_ax_identity_cam(cam,&radio->identities[macid]);
+ ret=rtl_ax_cam_prepare(&radio->cam_owners,cam);
+ if(ret)return ret==-ENOENT?0:ret;
+ cam[53]=owner->color&63;
+ ret=rtl_ax_command(radio,RTL_AX_H2C_DATA,1,6,0,cam,60,true);
+ if(!ret && macid==radio->role_owner[macid])memcpy(owner->cam,cam,60);
+ if(!ret)rtl_ax_cam_complete(&radio->cam_owners,cam);
+ return ret;
 }
 
-static int rtl_ax_bss_color_update(struct rtl_ax_ap *radio, unsigned int color)
+static int rtl_ax_bss_color_update(struct rtl_ax_ap *radio,unsigned int macid,unsigned int color)
 {
-	u8 cam[60];
-	int ret;
+ struct rtl_ax_self_role *owner;
+ u8 cam[60];
+ int ret;
 
-	if (color > 63) return -EINVAL;
-	memcpy(cam, radio->role_cam, sizeof(cam));
-	cam[53] = color;
-	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, sizeof(cam), true);
-	if (ret) return ret;
-	memcpy(radio->role_cam, cam, sizeof(cam));
-	radio->bss_color = color;
-	mutex_lock(&radio->command_mutex);
-	rtl_ax_port0_color(&radio->io, color);
-	mutex_unlock(&radio->command_mutex);
-	return 0;
+ if(macid>=128 || color>63)return -EINVAL;
+ owner=&radio->self_roles[macid];
+ memcpy(cam,owner->cam,sizeof(cam));cam[53]=color;
+ ret=rtl_ax_command(radio,RTL_AX_H2C_DATA,1,6,0,cam,sizeof(cam),true);
+ if(ret)return ret;
+ memcpy(owner->cam,cam,sizeof(cam));owner->color=color;
+ mutex_lock(&radio->command_mutex);
+ rtl_ax_port0_color(&radio->io,color);
+ mutex_unlock(&radio->command_mutex);
+ return 0;
 }
 
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev, unsigned int macid)
@@ -852,57 +850,105 @@ int rtl_ax_mac_drop_bcmc(struct pci_dev *pdev)
  return rtl_ax_port0_drop_mbid(pci_get_drvdata(pdev),0);
 }
 
-static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
+/* No vif pointer survives into retry work. A self role can be retired only
+ * after its peers and keys; firmware removal and CAM erasure are separate. */
+static int rtl_ax_self_role_release(struct rtl_ax_ap *radio,unsigned int macid)
+{
+ struct rtl_ax_self_role *owner;
+ const struct rtl_ax_role_identity *identity;
+ u8 command[4],cam[60];
+ int ret;
+
+ if(macid>=128)return -EINVAL;
+ owner=&radio->self_roles[macid];identity=&radio->identities[macid];
+ if(test_bit(macid,radio->station_ids) && radio->role_owner[macid]!=macid)return -EBUSY;
+ owner->retiring=true;
+ for(unsigned int i=0;i<128;i++)
+  if(i!=macid && test_bit(i,radio->station_ids) && radio->role_owner[i]==macid)return -EBUSY;
+ if(radio->security_roles[macid].valid)return -EBUSY;
+ for(unsigned int i=0;i<RTL_AX_SECURITY_ENTRIES;i++)
+  if(radio->security_unlink[i]==macid+1)return -EBUSY;
+ ret=rtl_ax_tx_group_stop(radio->tx,macid,identity->port,identity->mbid);
+ if(ret)return ret;
+ if(owner->stage) {
+  rtl_ax_store32(command,macid|0x500|(u32)owner->type<<13);
+  ret=rtl_ax_command(radio,RTL_AX_H2C_CMD,1,8,4,command,4,true);
+  if(ret)return ret;
+  owner->stage=0;
+ }
+ if(radio->cam_owners.role[macid].reserved) {
+  memcpy(cam,owner->cam,60);
+  /* A timed-out first CAM write has no confirmed snapshot. */
+  cam[32]=macid;cam[8]&=~1;cam[52]&=~1;
+  ret=rtl_ax_cam_write(radio,cam);
+  if(ret)return ret;
+ }
+ __clear_bit(macid,radio->station_ids);
+ memset(owner,0,sizeof(*owner));
+ return 0;
+}
+
+static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const struct rtl_ax_role_identity *requested, const u8 *address,
 	unsigned int interval, unsigned int dtim)
 {
 	u8 unpause[32], create[4], join[4], cam[60];
 	bool owns_transport = !radio->monitor_started;
-	bool mesh = radio->ap_vif && radio->ap_vif->type == NL80211_IFTYPE_MESH_POINT;
-	u8 role_type = mesh ? 6 : 2;
-	struct rtl_ax_role_identity *identity = &radio->identities[0];
+	bool mesh=requested->type==6;
+	unsigned int macid=requested->macid;
+	struct rtl_ax_self_role *owner;
+	struct rtl_ax_role_identity *identity;
 	int ret;
 
-	/* Probe has not yet registered the wiphy. Keep the C2H receive ring
-	 * available for original receive/done acknowledgements. */
-	*identity = radio->ap_vif ? ((struct rtl_ax_vif *)radio->ap_vif->drv_priv)->identity :
-		(struct rtl_ax_role_identity){ .type = role_type };
-	role_type = identity->type;
-	rtl_ax_role_unpause(unpause, identity->macid);
-	rtl_ax_role_create(create, 0, mesh);
-	rtl_ax_identity_maintain(create, identity);
-	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1, mesh);
-	rtl_ax_identity_join(join, identity);
-	rtl_ax_role_cam(cam, 0, address);
+	if(macid>=128 || requested->port || requested->mbid>7 ||
+	   (requested->type!=2 && requested->type!=3 && requested->type!=6))return -EINVAL;
+	owner=&radio->self_roles[macid];identity=&radio->identities[macid];
+ if(owner->retiring){
+  u8 color=owner->color;
+  ret=rtl_ax_self_role_release(radio,macid);if(ret)return ret;
+  owner->color=color;
+ }
+	/* An occupied peer/another interface cannot be overwritten by a self role. */
+	if(test_bit(macid,radio->station_ids) && (!owner->stage || radio->role_owner[macid]!=macid))return -EBUSY;
+	if(owner->stage && (identity->port!=requested->port || identity->mbid!=requested->mbid))return -EBUSY;
+	*identity=*requested;radio->role_owner[macid]=macid;
+	rtl_ax_role_unpause(unpause,macid);
+	rtl_ax_role_create(create,macid,mesh);rtl_ax_identity_maintain(create,identity);
+	rtl_ax_role_join(join,macid,radio->chip==RTL_AX_8852C?3:1,mesh);rtl_ax_identity_join(join,identity);
+	rtl_ax_role_cam(cam,macid,address);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
-	if (radio->role_stage >= 4 && radio->role_type == role_type)
+	if (owner->stage >= 4 && owner->type == requested->type)
 		goto update_cam;
 	/* Original _change_role updates existing AP/mesh roles with JOIN + CAM. */
-	if (radio->role_stage >= 2)
+	if (owner->stage >= 2)
 		goto update_join;
 	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 9, 8,
 				   unpause, sizeof(unpause), true, false);
 	if (ret)
 		goto stop;
-	radio->role_stage = 1;
+	owner->stage = 1;
+	owner->type=requested->type;
+	__set_bit(macid,radio->station_ids);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4,
 			     create, sizeof(create), true);
-	if (ret)
+	if (ret) {
+		owner->retiring=true;
 		goto stop;
-	radio->role_stage = 2;
+	}
+	owner->stage = 2;
 update_join:
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0,
 			     join, sizeof(join), true);
 	if (ret)
 		goto stop;
-	radio->role_stage = 3;
-	radio->role_type = role_type;
+	owner->stage = 3;
+	owner->type = requested->type;
 update_cam:
 	ret = rtl_ax_cam_write(radio, cam);
 	if (!ret) {
-		radio->role_stage = 4;
-		ret = rtl_ax_station_tables(radio, 0);
+		owner->stage = 4;
+		ret = rtl_ax_station_tables(radio,macid);
 	}
 	if (!ret) {
 		if (identity->mbid) {
@@ -915,17 +961,17 @@ update_cam:
 		}
 		radio->port0.result = ret;
 		if (!ret)
-			radio->role_stage = 5;
+			owner->stage = 5;
 	}
 stop:
-	radio->role_result = ret;
+	owner->result = ret;
 	if (owns_transport) {
 		rtl_ax_rx_close(radio->rx);
 		rtl_ax_hci_pause(&radio->io);
 		pci_clear_master(radio->pdev);
 	}
-	dev_info(&radio->pdev->dev, "native AP self-role stage=%u result=%d receive_acks=%llu done_acks=%llu\n",
-		 radio->role_stage, ret, radio->receive_acks, radio->done_acks);
+	dev_info(&radio->pdev->dev, "native AP self-role MACID%u stage=%u result=%d receive_acks=%llu done_acks=%llu\n",
+		 macid, owner->stage, ret, radio->receive_acks, radio->done_acks);
 	return ret;
 }
 
@@ -1290,7 +1336,7 @@ static ssize_t radio_state_show(struct device *dev,
 		radio->bb_base_ready ? "applied" : "off", radio->radio_base_ready ? "applied" : "off",
 		radio->fem_ready ? "base-and-FEM" : "pending",
 		radio->radio_passes[0], radio->radio_passes[1],
-		radio->bb_dm.ic_ready ? "applied" : "pending", radio->role_stage,
+		radio->bb_dm.ic_ready ? "applied" : "pending", radio->self_roles[0].stage,
 		radio->hw ? "AP-and-monitor" : "pending");
 }
 static DEVICE_ATTR_RO(radio_state);
@@ -2638,9 +2684,9 @@ static ssize_t radio_role_show(struct device *dev,
 	unsigned int bytes, i;
 
 	bytes = sysfs_emit(buffer, "AP_self_role_stage=%u result=%d receive_acks=%llu done_acks=%llu unmatched_acks=%llu\nCAM=",
-		radio->role_stage, radio->role_result, radio->receive_acks, radio->done_acks, radio->unmatched_acks);
-	for (i = 0; i < sizeof(radio->role_cam); i++)
-		bytes += sysfs_emit_at(buffer, bytes, "%02x", radio->role_cam[i]);
+		radio->self_roles[0].stage, radio->self_roles[0].result, radio->receive_acks, radio->done_acks, radio->unmatched_acks);
+	for (i = 0; i < sizeof(radio->self_roles[0].cam); i++)
+		bytes += sysfs_emit_at(buffer, bytes, "%02x", radio->self_roles[0].cam[i]);
 	return bytes + sysfs_emit_at(buffer, bytes, "\n");
 }
 static DEVICE_ATTR_RO(radio_role);
@@ -2975,7 +3021,7 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		goto stop;
 	if (prepare_ap_role) {
-		ret = rtl_ax_self_role_prepare(radio, radio->flash_calibration.wlan_address, 100, 1);
+		ret = rtl_ax_self_role_prepare(radio,&(struct rtl_ax_role_identity){.type=2},radio->flash_calibration.wlan_address,100,1);
 		if (ret)
 			goto stop;
 	}

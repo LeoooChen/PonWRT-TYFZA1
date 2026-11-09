@@ -63,7 +63,8 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define eth_zero_addr(a) memset(a,0,6)
 static void rtl_ax_store32(u8 *p,u32 x){memcpy(p,&x,4);}
 static u32 rtl_ax_ap_read32(const u8 *p){u32 x;memcpy(&x,p,4);return x;}
-static bool bitmap_empty(const bool *p,unsigned n){for(unsigned i=0;i<n;i++)if(p[i])return false;return true;}
+static bool test_bit(unsigned i,bool *p){return p[i];}
+#define __clear_bit(i,p) ((p)[i]=false)
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;u8 bssid[6];
  struct {bool enabled;unsigned color;}he_bss_color;bool enable_beacon;};
 #include "''' + str(driver / 'role-identity.h') + r'''"
@@ -73,12 +74,12 @@ struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];int type;u8 addr[6];struct {
 struct rtl_ax_ap;
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 struct rtl_ax_io {void(*write8)(void *,unsigned,u8);};
-struct rtl_ax_ap {u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
+struct rtl_ax_ap {struct rtl_ax_self_role self_roles[128];u8 role_owner[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
  bool sta_role,sta_associated,scanning,station_ids[128],peer_authorized[128];
  bool ap_started,beacon_enabled;unsigned edca_valid;int ap_result,command_lock;
  struct {bool in_cac,detected;int error;}dfs;
  struct {bool pending,client;u8 self[6],peer[6];} retired_stations[128];
- u8 sta_bssid[6],role_cam[60],bss_color;unsigned role_stage,role_type;int mesh_sync_work;u32 sta_join;int role_result,offload_result,offload_work;};
+ u8 sta_bssid[6];int mesh_sync_work;u32 sta_join;int offload_result,offload_work;};
 static unsigned calls,fail_at,queued,losses,regs[65536],writes,ap_deletes;
 static bool admission;
 static u32 last_join,last_cam,last_remove;static unsigned stopped,last_color,paused,blocked,cam_commands;
@@ -132,7 +133,7 @@ int main(void){
  struct rtl_ax_ap held={.station_ids={[7]=true}};
  assert(rtl_ax_client_prepare(&held,&vif)==-EBUSY&&!calls);
  for(unsigned fault=0;fault<=8;fault++){
-  struct rtl_ax_ap r={.role_stage=5,.role_type=2,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;r.cam_owners.role[0].reserved=true;r.cam_owners.bssid[0].references=1;
+  struct rtl_ax_ap r={.self_roles={{.stage=5,.type=2}},.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;r.cam_owners.role[0].reserved=true;r.cam_owners.bssid[0].references=1;
   calls=queued=losses=writes=ap_deletes=0;fail_at=fault;memset(regs,0xa5,sizeof(regs));
   int result=rtl_ax_client_prepare(&r,&vif);
   assert(result==(fault?-ETIMEDOUT:0));
@@ -141,20 +142,20 @@ int main(void){
   else if(fault){
    assert(!r.sta_role&&!r.station_ids[1]);
    if(fault==2){
-    assert(!r.role_stage&&ap_deletes==1&&r.cam_owners.role[0].reserved);fail_at=0;
+    assert(!r.self_roles[0].stage&&ap_deletes==1&&r.cam_owners.role[0].reserved);fail_at=0;
     unsigned before=cam_commands;
     assert(!rtl_ax_client_prepare(&r,&vif)&&ap_deletes==1);
     assert(cam_commands==before+3&&!r.cam_owners.role[0].reserved&&r.cam_owners.role[1].reserved);
    }
   }
   else {
-   assert(r.sta_role&&!r.retired_stations[1].pending&&!r.role_stage);
+   assert(r.sta_role&&!r.retired_stations[1].pending&&!r.self_roles[0].stage);
    assert((regs[0xc400]&0x13c1f)==4);
    memcpy(r.sta_bssid,"\2\0\0\0\0\2",6);vif.cfg.assoc=true;fail_at=0;
    vif.bss_conf.he_bss_color.enabled=true;vif.bss_conf.he_bss_color.color=37;
    rtl_ax_ap_changed(&hw,&vif,&vif.bss_conf,BSS_CHANGED_ASSOC);
    assert(r.sta_associated && (regs[0xc400]&0x13c1f)==0x1281c);
-   assert(last_color==37&&r.role_cam[53]==37&&r.bss_color==37&&(regs[0xc6a0]&63)==37);
+   assert(last_color==37&&r.self_roles[1].cam[53]==37&&r.self_roles[1].color==37&&(regs[0xc6a0]&63)==37);
    assert(!(regs[0xc400]&BIT(12)) && regs[0xc427]==2 && (regs[0xc404]&0xfff0000)==400U<<16);
    r.sta_join=0x0606f001;
    rtl_ax_ap_changed(&hw,&vif,&vif.bss_conf,BSS_CHANGED_ASSOC);
@@ -183,22 +184,22 @@ int main(void){
   }
  }
  for(unsigned role_type=2;role_type<=6;role_type+=4){
-  struct rtl_ax_ap r={.role_stage=5,.role_type=role_type,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;fail_at=0;r.cam_owners.role[0].reserved=true;r.cam_owners.bssid[0].references=1;
+  struct rtl_ax_ap r={.self_roles={{.stage=5,.type=role_type}},.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;fail_at=0;r.cam_owners.role[0].reserved=true;r.cam_owners.bssid[0].references=1;
   assert(!rtl_ax_client_prepare(&r,&vif));assert(last_remove==(0x500|(role_type<<13)));
  }
  for(unsigned kind=2;kind<=3;kind++)for(unsigned color=0;color<64;color++){
   struct rtl_ax_ap r={.sta_associated=kind==2,.ap_started=kind==3,.io={write8}};
   struct ieee80211_hw hw={.radio=&r};r.hw=&hw;
-  struct ieee80211_vif v={.type=kind,.bss_conf={.he_bss_color={true,color}}};
-  r.role_cam[8]=7;r.role_cam[52]=0xfd;r.bss_color=17;regs[0xc6a0]=0xa5a5a5a5;
+  struct ieee80211_vif v={.drv_priv={{{.macid=1}}},.type=kind,.bss_conf={.he_bss_color={true,color}}};
+  r.self_roles[1].cam[8]=7;r.self_roles[1].cam[52]=0xfd;r.self_roles[1].color=17;regs[0xc6a0]=0xa5a5a5a5;
   fail_at=calls+1;unsigned before=stopped,old_pause=paused;
   rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
-  assert(paused==old_pause+1&&stopped==before+1&&r.bss_color==17&&regs[0xc6a0]==0xa5a5a5a5);
+  assert(paused==old_pause+1&&stopped==before+1&&r.self_roles[1].color==17&&regs[0xc6a0]==0xa5a5a5a5);
   fail_at=0;rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
-  assert(last_color==color&&r.bss_color==color&&r.role_cam[53]==color&&(regs[0xc6a0]&63)==color);
+  assert(last_color==color&&r.self_roles[1].color==color&&r.self_roles[1].cam[53]==color&&(regs[0xc6a0]&63)==color);
   v.bss_conf.he_bss_color.enabled=false;
   rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
-  assert(!last_color&&!r.bss_color&&!(regs[0xc6a0]&63));
+  assert(!last_color&&!r.self_roles[1].color&&!(regs[0xc6a0]&63));
  }
  puts("STA lifecycle: callback registration, BSSID/DTIM failure withdrawal, stock hold400, eight setup faults, AP removal/CAM failure retry, MACID quarantine and beacon-TX disabled passed");
 }

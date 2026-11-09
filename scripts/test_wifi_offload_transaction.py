@@ -95,7 +95,7 @@ struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struc
 struct rtl_ax_tx {struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
-struct rtl_ax_ap {u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
+struct rtl_ax_ap {struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  struct ieee80211_key_conf *security_keys[128];unsigned security_unlink[128];bool ra_registered[128];
@@ -169,6 +169,7 @@ static void wiphy_work_queue(struct wiphy *w,struct wiphy_work *work){(void)w;qu
 static int rtl_ax_port0_drop_mbid(struct rtl_ax_ap *r,unsigned id){r->mbid_drop_pending&=~BIT(id);return 0;}
 static bool rtl_ax_security_cleanup(struct rtl_ax_ap *r){(void)r;return false;}
 static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
+static int rtl_ax_self_role_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;return 0;}
 static int rtl_ax_station_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static unsigned ba_callbacks;
 static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;assert(!active_tx->ni.route_peers[1]);return 0;}

@@ -8493,6 +8493,49 @@ reports are `artifacts/fttr/bcmc-vif-*-20261109.*`. No physical device was acces
 DTIM timing, actual wireless encryption/airtime, full VIF operation and safe
 hardware-ID reuse remain unverified or incomplete.
 
+### Retained self-role state by MACID
+
+Self-role creation now accepts the explicit interface identity all the way
+through firmware CREATE/JOIN, address CAM and initial station tables. Previously
+JOIN/beacon fields were prepared for a nonzero self-MACID while the CAM/table
+and lifecycle stages still used root0. The radio now retains stage, type, color,
+result and acknowledged CAM independently for every self-MACID. Each peer stores
+its owning self-MACID so its CAM updates inherit the correct BSSID color. STA1
+uses a distinct record from the probed root0 role.
+
+Self MACIDs share the same reservation bitmap as peer MACIDs, preventing peer
+allocation from taking an active self slot. An existing peer cannot be converted
+or deleted through the self-role path. Uncertain CREATE completion retains the
+reservation and original role type; a retry first removes that uncertain role
+before creating it again. Removal waits for associated peers, keys/pending key
+unlinks and group WPs, then separately records firmware removal and CAM erase.
+A successful role removal followed by failed CAM erase retries only the erase.
+The first CAM timeout can have no saved payload; cleanup still supplies the
+reserved MACID and the CAM allocator's retained indices/table geometry.
+
+remove_interface starts this teardown and leaves a pointer-free retained record
+for the existing cleanup worker. A later add_interface finishes any pending
+self-role teardown before reusing IDs. AP/mesh creation requests preserve their
+color across a failed-create cleanup/rebuild. AP→STA handoff clears the probed
+root reservation only after its CAM cleanup and retains STA ownership separately.
+
+The actual self-role functions are exercised with root0, VAP41 and VAP63 together
+on both chip configurations, including each CREATE/JOIN/CAM error, peer/key
+holds, CAM-only retry and independent snapshots. Additional first-CAM-failure
+and removal-failure tests cover absent snapshots and retries after VIF memory
+is no longer needed. BSSID color tests verify peer7 inherits owner41 while
+owner63 retains its distinct color and CAM. Existing STA/BA, key cleanup,
+AP/Mesh, FE and factory-backed DFS regressions pass. Image/modules build succeeds
+and four changed-source identities match; reports are
+`artifacts/fttr/self-role-*-20261109.*`. PE firmware is unchanged.
+
+The public interface count remains one. AP active/beacon state, asynchronous
+work routing and actual interface allocation are still partly global; port0
+color-register sharing and full multi-VIF scheduling require further work.
+This change implements independent firmware-role ownership, not a claim of
+complete multi-SSID operation or physical packet retirement. No physical device
+was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

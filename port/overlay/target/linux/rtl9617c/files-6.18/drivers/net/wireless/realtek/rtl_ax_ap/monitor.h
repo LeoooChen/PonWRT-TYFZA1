@@ -201,6 +201,10 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 
 		if (ret) return ret;
 	}
+	for(unsigned int i=0;i<128;i++)if(radio->self_roles[i].retiring) {
+		ret=rtl_ax_self_role_release(radio,i);
+		if(ret)return ret;
+	}
 	struct rtl_ax_vif *native = (void *)vif->drv_priv;
 	native->identity = (struct rtl_ax_role_identity){
 		.macid = vif->type == NL80211_IFTYPE_STATION ? RTL_AX_CLIENT_MACID : 0,
@@ -314,8 +318,9 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
    ((struct rtl_ax_vif *)vif->drv_priv)->identity.port,((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid);
   if(ret)return ret;
  }
-	radio->bss_color = conf->he_bss_color.enabled ? conf->he_bss_color.color : 0;
-	ret = rtl_ax_self_role_prepare(radio, vif->addr, conf->beacon_int, conf->dtim_period);
+	const struct rtl_ax_role_identity *identity=&((struct rtl_ax_vif *)vif->drv_priv)->identity;
+	radio->self_roles[identity->macid].color=conf->he_bss_color.enabled?conf->he_bss_color.color:0;
+	ret = rtl_ax_self_role_prepare(radio,identity,vif->addr, conf->beacon_int, conf->dtim_period);
 	unsigned int self = ((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
 	if (!ret && radio->security_roles[self].valid) {
 		u8 dctl[68];
@@ -574,6 +579,13 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 		if (vif->type == NL80211_IFTYPE_MESH_POINT && radio->ap_started)
 			rtl_ax_ap_stop(hw, vif, &vif->bss_conf);
 		radio->ap_vif = NULL;
+		unsigned int id=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
+		ret=rtl_ax_self_role_release(radio,id);
+		if(ret) {
+			radio->self_roles[id].result=ret;
+			dev_err(&radio->pdev->dev,"self-role MACID%u release failed: %d\n",id,ret);
+			wiphy_delayed_work_queue(hw->wiphy,&radio->cleanup_work,HZ);
+		}
 	}
 }
 
@@ -647,7 +659,7 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	}
 	if ((changed & BSS_CHANGED_HE_BSS_COLOR) &&
 	    (radio->ap_started || radio->sta_associated)) {
-		int ret = rtl_ax_bss_color_update(radio,
+		int ret = rtl_ax_bss_color_update(radio,((struct rtl_ax_vif *)vif->drv_priv)->identity.macid,
 			conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
 
 		if (ret) {
@@ -976,6 +988,7 @@ static void rtl_ax_cleanup_work(struct wiphy *wiphy, struct wiphy_work *work)
 		for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++)
 			if ((radio->tx_ba[i].stopping & BIT(tid)) && rtl_ax_tx_ba_finish(radio, i, tid))
 				retry = true;
+	for(i=0;i<128;i++)if(radio->self_roles[i].retiring && rtl_ax_self_role_release(radio,i))retry=true;
 	if (retry && radio->monitor_started)
 		wiphy_delayed_work_queue(wiphy, &radio->cleanup_work, HZ);
 }
@@ -1074,13 +1087,14 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 
 	if (id == 128)
 		return -ENOSPC;
-	radio->identities[id] = ((struct rtl_ax_vif *)vif->drv_priv)->identity;
-	radio->identities[id].macid = id;
 	if (client) {
 		ret = rtl_ax_client_prepare(radio, vif);
 		if (ret) return ret;
 		goto connected;
 	}
+	radio->identities[id] = ((struct rtl_ax_vif *)vif->drv_priv)->identity;
+	radio->identities[id].macid = id;
+	radio->role_owner[id]=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
 	rtl_ax_role_unpause(unpause, id);
 	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 9, 8, unpause, sizeof(unpause), true, false);
 	if (ret)
@@ -1097,7 +1111,7 @@ connected:
 	memset(&radio->tx_ba[id], 0, sizeof(radio->tx_ba[id]));
 	ether_addr_copy(radio->tx_ba[id].address, sta->addr);
 	if (client)
-		radio->bss_color = vif->bss_conf.he_bss_color.enabled ? vif->bss_conf.he_bss_color.color : 0;
+		radio->self_roles[radio->role_owner[id]].color = vif->bss_conf.he_bss_color.enabled ? vif->bss_conf.he_bss_color.color : 0;
 	if (client) rtl_ax_client_cam(cam, id, vif->addr, sta->addr, vif->cfg.aid, true, true);
 	else rtl_ax_peer_cam(cam, id, vif->addr, sta->addr, 0, true);
 	if (sta->deflink.he_cap.has_he) rtl_ax_store32(cam + 32, id | BIT(14));
@@ -2520,7 +2534,7 @@ static ssize_t radio_mac80211_show(struct device *dev,
 		radio->ps_poll_requests, radio->ps_poll_errors,
 		rtl_ax_datapath_profile, radio->rx_copy_bytes, radio->rx_prepare_ns, radio->rx_mac80211_ns,
 		retired, ba_active, ba_deleting, tx_stopping, radio->offload_started, radio->offload_result,
-		radio->sta_role, radio->sta_associated, radio->role_result);
+		radio->sta_role, radio->sta_associated, radio->self_roles[1].result);
 }
 static DEVICE_ATTR_RO(radio_mac80211);
 #endif

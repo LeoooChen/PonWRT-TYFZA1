@@ -184,7 +184,7 @@ struct rtl_ax_ap {
  struct {unsigned primary,bandwidth,center;}channel;
  struct ieee80211_hw *hw;
  unsigned dfs_domain,chip;bool radar_required,ap_started,mesh_started,beacon_enabled;
- int command_lock,ap_result,mesh_sync_work,offload_work;u8 bss_color;long long mesh_tsf_remainder;
+ int command_lock,ap_result,mesh_sync_work,offload_work;struct {u8 color;}self_roles[128];long long mesh_tsf_remainder;
  struct {unsigned valid;}security_roles[1];
 };
 #define NL80211_BAND_5GHZ 1
@@ -195,14 +195,15 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 static int ieee80211_channel_to_frequency(unsigned channel,unsigned band){(void)band;return 5000+channel*5;}
 static struct ieee80211_channel *ieee80211_get_channel(void *wiphy,int frequency)
 {(void)wiphy;unsigned channel=(frequency-5000)/5;return &regulatory_channels[(channel-36)/4];}
-struct rtl_ax_vif {struct {unsigned mbid;} identity;};
+struct rtl_ax_role_identity {unsigned port,mbid,macid;};
+struct rtl_ax_vif {struct rtl_ax_role_identity identity;};
 struct ieee80211_vif {u8 addr[6];int type;struct rtl_ax_vif drv_priv[1];};
 #define NL80211_IFTYPE_AP 3
 #define wiphy_work_queue(w,p) ((void)(w),(void)(p))
-static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
+static int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx,unsigned id,unsigned port,unsigned mbid){(void)id;(void)port;(void)mbid;(void)tx;return 0;}
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;struct {bool enabled;unsigned color;}he_bss_color;};
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
-static int rtl_ax_self_role_prepare(struct rtl_ax_ap *r,u8 *addr,unsigned bi,unsigned dtim){(void)r;(void)addr;(void)bi;(void)dtim;return 0;}
+static int rtl_ax_self_role_prepare(struct rtl_ax_ap *r,const struct rtl_ax_role_identity *id,u8 *addr,unsigned bi,unsigned dtim){(void)id;(void)r;(void)addr;(void)bi;(void)dtim;return 0;}
 static void rtl_ax_security_dctl(void *p,unsigned id,void *role){(void)p;(void)id;(void)role;}
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned a,unsigned b,unsigned c,void *p,unsigned bytes,bool ack){(void)r;(void)q;(void)a;(void)b;(void)c;(void)p;(void)bytes;(void)ack;return 0;}
 static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_bss_conf *conf){

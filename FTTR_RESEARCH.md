@@ -276,6 +276,8 @@
 
 129. 接入直接BCMC每接口模板：12序列域分别保存GTK/PN代际/序列token/port-MBID/self-MACID/发射地址，FE配方贯通，PE选择与最终发布核对；私有请求保留地址快照，NI owner增加BCMC标识，非零self的RPQ正确匹配且不扣普通站点PS/AC计数。同域netdev冲突/跨域self冲突/已占域改self拒绝，单域关闭保留其他模板。245原有+72完整多域RPQ/EQ、同批双VIF选择性撤销、2个真实learner二进制配方到PE、3次完整main暂存、模板/绑定/GTK/NI退场/771 CPU回收/序列/FTTR/收发/发布回归通过；MCP:能力，PE32680字节/栈7336/重复一致/非uplink13992，Image/模块和九输入一致通过。未实机；软件BCMC FIFO与策略门仍共享，接口分配/完整多VIF生命周期及全链路退场、安全ID复用继续待补。详见[BCMC接口模板](port/FTTR.md#per-interface-direct-bcmc-templates-and-pe-ownership)。
 
+130. 接入按self-MACID保留的角色生命周期：CREATE/JOIN/CAM/站点表统一使用显式身份，阶段/类型/颜色/确认快照独立保存，peer记录其self owner；修复非零self仍创建CAM/表0的遗漏。self与peer共用预留，CREATE超时保留并先清理再重建，移除等待子站点/密钥/组播WP，固件删除与CAM擦除分阶段重试，首次CAM超时无快照也按原索引清理；接口释放后的worker不持有旧VIF指针，新接口先完成旧清理。root0/VAP41/63并存、两芯片/创建失败/独立删除/peer-key持有/无快照/颜色继承及STA-BA/密钥/AP-mesh/FE/DFS回归通过，Image/模块和四输入一致通过。PE未变、未实机；全局AP/信标/异步工作和实际多接口分配仍未完全拆分，接口数量限制保留。详见[self角色生命周期](port/FTTR.md#retained-self-role-state-by-macid)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

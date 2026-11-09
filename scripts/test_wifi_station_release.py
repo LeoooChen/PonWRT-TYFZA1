@@ -77,7 +77,7 @@ struct ieee80211_key_conf;
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx,unsigned id,unsigned port,unsigned mbid){(void)id;(void)port;(void)mbid;return rtl_ax_tx_bcmc_stop(tx);}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
-struct rtl_ax_ap {struct rtl_ax_key_owner security_owner[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;u8 role_cam[60];unsigned traffic_peer;u8 bss_color;
+struct rtl_ax_ap {struct rtl_ax_key_owner security_owner[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct rtl_ax_self_role self_roles[128];u8 role_owner[128];unsigned traffic_peer;u8 bss_color;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128],security_ext[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
@@ -144,7 +144,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
   assert(func==27 && !ack && len==24);drop_commands++;
   id=(rtl_ax_ap_read32(p)>>8)&127;assert(rtl_ax_tx_station_pending(r->tx,id,16));
  }else if(cls==8){assert(ack && len==4);if(id==7)assert((rtl_ax_ap_read32(p)&0x1e000)==0x6000);role_commands++;assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
- else if(cls==6){assert(ack && len==60);cam_commands++;assert(p[53]==r->bss_color);assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
+ else if(cls==6){assert(ack && len==60);cam_commands++;assert(p[53]==r->self_roles[r->role_owner[id]].color);assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
  else if(cls==10){assert(ack && len==24);security_commands++;}
  else {assert((cls==12 && len==8) || (cls==5 && len==68));
   if(cls==5&&func==2&&id==7&&(rtl_ax_ap_read32(p+52)&0xf7))assert((rtl_ax_ap_read32(p+20)&0xf7)==0x50);
@@ -156,6 +156,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
 common += r'''
 static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned q,unsigned c,unsigned cls,unsigned f,const u8 *p,unsigned n,bool recv,bool done){assert(!recv);return rtl_ax_command(r,q,c,cls,f,p,n,done);}
 
+static int rtl_ax_self_role_release(struct rtl_ax_ap *r,unsigned id){r->self_roles[id].retiring=false;return 0;}
 static int prepared;
 static unsigned sequence_binds,sequence_unbinds;static int sequence_error,prepare_error;
 static int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;sequence_binds++;return sequence_error;}
@@ -208,7 +209,7 @@ int main(void){
   assert(!rtl_ax_ampdu_action(&hw,&vif,&p));assert(callbacks==1 && drop_commands>drops);
   rpq_complete=true;rtl_ax_cleanup_work(&w,&r.cleanup_work.work);assert(callbacks==1 && !r.tx_ba[7].stopping);
  }
- r.bss_color=37;r.security_roles[7].valid=1;r.security_roles[7].cam[0]=42;set_bit(42,r.security_ids);
+ r.self_roles[0].color=37;r.security_roles[7].valid=1;r.security_roles[7].cam[0]=42;set_bit(42,r.security_ids);
  tx.pending[7][16]=true;rpq_complete=false;
  assert(!rtl_ax_station_remove(&hw,&vif,sta));assert(!sta->drv_priv[0].macid && r.retired_stations[7].pending);
  assert(test_bit(7,r.station_ids) && !role_commands && !cam_commands);

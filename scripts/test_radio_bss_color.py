@@ -45,7 +45,7 @@ typedef uint8_t u8;typedef uint32_t u32;
 #include "'''+str(driver/'cam-owner.h')+r'''"
 static void rtl_ax_store32(u8 *,uint32_t);static uint32_t rtl_ax_ap_read32(const u8 *);
 #include "'''+str(driver/'role-identity.h')+r'''"
-struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;u8 role_cam[60],bss_color;int command_mutex,io;bool sta_role;};
+struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct rtl_ax_self_role self_roles[128];u8 role_owner[128];int command_mutex,io;bool sta_role;};
 static u8 sent[60];static unsigned calls,writes;static int error;static unsigned reg=0xa5a5a5a5;
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned c,unsigned cls,unsigned f,const void *p,unsigned len,bool ack){
  assert(!r->command_mutex&&q==1&&c==1&&cls==6&&f==0&&len==60&&ack);memcpy(sent,p,60);calls++;return error;
@@ -64,12 +64,12 @@ int main(void){
  for(unsigned i=0;i<128;i++)r.identities[i].macid=i;
  for(unsigned i=0;i<60;i++)initial[i]=i*3+1;
  for(unsigned color=0;color<64;color++)for(unsigned failure=0;failure<2;failure++){
-  memcpy(r.role_cam,initial,60);r.bss_color=17;calls=writes=0;reg=0xa5a5a5a5;error=failure?-ETIMEDOUT:0;
-  assert(rtl_ax_bss_color_update(&r,color)==error);assert(calls==1&&sent[53]==color);
+  memcpy(r.self_roles[0].cam,initial,60);r.self_roles[0].color=17;calls=writes=0;reg=0xa5a5a5a5;error=failure?-ETIMEDOUT:0;
+  assert(rtl_ax_bss_color_update(&r,0,color)==error);assert(calls==1&&sent[53]==color);
   for(unsigned i=0;i<60;i++)if(i!=53)assert(sent[i]==initial[i]);
-  if(failure){assert(!writes&&r.bss_color==17&&!memcmp(r.role_cam,initial,60));}
-  else {assert(writes==1&&r.bss_color==color&&!memcmp(r.role_cam,sent,60));assert(reg==((0xa5a5a5a5&~63U)|color));}
-  error=0;assert(!rtl_ax_bss_color_update(&r,color));
+  if(failure){assert(!writes&&r.self_roles[0].color==17&&!memcmp(r.self_roles[0].cam,initial,60));}
+  else {assert(writes==1&&r.self_roles[0].color==color&&!memcmp(r.self_roles[0].cam,sent,60));assert(reg==((0xa5a5a5a5&~63U)|color));}
+  error=0;assert(!rtl_ax_bss_color_update(&r,0,color));
   for(unsigned peer=0;peer<128;peer++)for(unsigned valid=0;valid<2;valid++){
    memset(&r.cam_owners,0,sizeof(r.cam_owners));memcpy(cam,initial,60);cam[32]=peer;cam[8]=7;cam[53]=0;
    assert(!rtl_ax_cam_write(&r,cam));cam[8]=valid?7:6;
@@ -79,7 +79,7 @@ int main(void){
  }
  for(unsigned color=0;color<64;color++)for(unsigned kind=0;kind<3;kind++)for(unsigned valid=0;valid<2;valid++){
   const u8 self[6]={2,1,2,3,4,5},peer[6]={2,9,8,7,6,5};
-  r.bss_color=color;memset(&r.cam_owners,0,sizeof(r.cam_owners));
+  r.self_roles[0].color=color;memset(&r.cam_owners,0,sizeof(r.cam_owners));
   if(kind==0)rtl_ax_role_cam(cam,0,self);
   else if(kind==1)rtl_ax_peer_cam(cam,127,self,peer,42,valid);
   else rtl_ax_client_cam(cam,1,self,peer,42,true,valid);
@@ -89,13 +89,27 @@ int main(void){
   assert(!rtl_ax_cam_write(&r,cam)&&sent[53]==color);
   for(unsigned i=0;i<60;i++)if(i!=53)assert(sent[i]==initial[i]);
  }
- memset(&r.cam_owners,0,sizeof(r.cam_owners));r.sta_role=true;r.bss_color=19;
+ memset(&r.cam_owners,0,sizeof(r.cam_owners));r.sta_role=true;r.role_owner[1]=1;r.self_roles[1].color=19;
  memset(cam,0,60);cam[8]=7;cam[32]=1;cam[33]=64;cam[36]=42;
- assert(!rtl_ax_cam_write(&r,cam)&&!memcmp(r.role_cam,cam,60));
- assert(!rtl_ax_bss_color_update(&r,37)&&sent[33]==64&&sent[36]==42);
- memcpy(initial,r.role_cam,60);cam[36]=73;error=-ETIMEDOUT;
- assert(rtl_ax_cam_write(&r,cam)==-ETIMEDOUT&&!memcmp(initial,r.role_cam,60));error=0;
- calls=writes=0;assert(rtl_ax_bss_color_update(&r,64)==-EINVAL&&!calls&&!writes);
+ assert(!rtl_ax_cam_write(&r,cam)&&!memcmp(r.self_roles[1].cam,cam,60));
+ assert(!rtl_ax_bss_color_update(&r,1,37)&&sent[33]==64&&sent[36]==42);
+ memcpy(initial,r.self_roles[1].cam,60);cam[36]=73;error=-ETIMEDOUT;
+ assert(rtl_ax_cam_write(&r,cam)==-ETIMEDOUT&&!memcmp(initial,r.self_roles[1].cam,60));error=0;
+ /* Different BSS colors and owner snapshots must survive peer creation
+  * and peer deletion in another BSSID, even when IDs are nonsequential. */
+ memset(&r,0,sizeof(r));
+ const u8 one[6]={2,0,0,0,1,1},two[6]={2,0,0,0,2,2},peer[6]={2,9,8,7,6,5};
+ r.identities[41].macid=41;r.identities[63].macid=63;r.identities[7].macid=7;
+ r.role_owner[41]=41;r.role_owner[63]=63;r.role_owner[7]=41;
+ r.self_roles[41].color=17;r.self_roles[63].color=37;
+ rtl_ax_role_cam(cam,41,one);assert(!rtl_ax_cam_write(&r,cam)&&sent[53]==17);
+ rtl_ax_role_cam(cam,63,two);assert(!rtl_ax_cam_write(&r,cam)&&sent[53]==37);
+ u8 saved[60];memcpy(saved,r.self_roles[63].cam,60);
+ rtl_ax_peer_cam(cam,7,one,peer,42,true);assert(!rtl_ax_cam_write(&r,cam)&&sent[53]==17);
+ assert(!rtl_ax_bss_color_update(&r,41,23)&&sent[32]==41&&sent[53]==23);
+ rtl_ax_peer_cam(cam,7,one,peer,42,false);assert(!rtl_ax_cam_write(&r,cam)&&sent[53]==23);
+ assert(!memcmp(saved,r.self_roles[63].cam,60)&&r.self_roles[63].color==37);
+ calls=writes=0;assert(rtl_ax_bss_color_update(&r,0,64)==-EINVAL&&!calls&&!writes);
  puts("Native BSSID color: 128 ACK/failure/retry transitions, 32768 peer create/delete writes passed");
 }
 '''

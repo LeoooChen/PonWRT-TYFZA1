@@ -7,6 +7,13 @@
 struct rtl_ax_role_identity {
 	u8 port, mbid, macid, type;
 };
+/* Retained in the radio until hardware cleanup, independent of vif memory. */
+struct rtl_ax_self_role {
+ u8 stage, type, color;
+ bool retiring;
+ int result;
+ u8 cam[60];
+};
 struct rtl_ax_vif {
 	struct rtl_ax_role_identity identity;
 };

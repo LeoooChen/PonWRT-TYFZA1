@@ -19,13 +19,13 @@ static int rtl_ax_client_update(struct rtl_ax_ap *radio, struct ieee80211_vif *v
 		vif->cfg.aid, associated, true);
 	if (associated && (radio->sta_join & BIT(12)))
 		rtl_ax_store32(cam + 32, RTL_AX_CLIENT_MACID | BIT(14));
-	radio->bss_color = associated && vif->bss_conf.he_bss_color.enabled ?
+	radio->self_roles[1].color = associated && vif->bss_conf.he_bss_color.enabled ?
 		vif->bss_conf.he_bss_color.color : 0;
 	ret = rtl_ax_cam_write(radio, cam);
 	if (ret) return ret;
-	memcpy(radio->role_cam, cam, sizeof(cam));
+	memcpy(radio->self_roles[1].cam, cam, sizeof(cam));
 	mutex_lock(&radio->command_mutex);
-	rtl_ax_port0_color(&radio->io, radio->bss_color);
+	rtl_ax_port0_color(&radio->io, radio->self_roles[1].color);
 	/* Factory STA: BSSID match and TSF sync, no beacon transmission. */
 	rtl_ax_port0_field(&radio->io, 0xc400, 0x13c1f, associated ? 0x1281c : 4);
 	rtl_ax_port0_field(&radio->io, 0xc414, 0xffffff,
@@ -52,24 +52,26 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 
 	if (radio->retired_stations[RTL_AX_CLIENT_MACID].pending) return -EBUSY;
 	if (radio->sta_role) return 0;
-	if (!bitmap_empty(radio->station_ids, 128)) return -EBUSY;
+	for(unsigned int i=1;i<128;i++)if(test_bit(i,radio->station_ids))return -EBUSY;
 	radio->identities[RTL_AX_CLIENT_MACID] = ((struct rtl_ax_vif *)vif->drv_priv)->identity;
+	radio->role_owner[RTL_AX_CLIENT_MACID]=RTL_AX_CLIENT_MACID;
 	/* Probe installed an AP self role. Release its CAM before STA takes CAM0. */
-	if (radio->role_stage) {
-		rtl_ax_store32(command, 0x500 | (u32)radio->role_type << 13);
+	if (radio->self_roles[0].stage) {
+		rtl_ax_store32(command, 0x500 | (u32)radio->self_roles[0].type << 13);
 		ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, 4, true);
 		if (ret) return ret;
 		/* Firmware no longer owns AP MACID0, even if CAM cleanup fails. */
-		radio->role_stage = 0;
+		radio->self_roles[0].stage = 0;
 	}
 	/* A failed CAM erase outlives the successful firmware role removal. */
 	if (radio->cam_owners.role[0].reserved) {
-		memcpy(cam, radio->role_cam, sizeof(cam));
+		memcpy(cam, radio->self_roles[0].cam, sizeof(cam));
 		cam[8] &= ~1;
 		cam[52] &= ~1;
 		ret = rtl_ax_cam_write(radio, cam);
 		if (ret) return ret;
 	}
+	__clear_bit(0,radio->station_ids);
 	rtl_ax_role_unpause(unpause, RTL_AX_CLIENT_MACID);
 	ret = rtl_ax_command_flags(radio, RTL_AX_H2C_CMD, 1, 9, 8, unpause, 32, true, false);
 	if (ret) return ret;
@@ -84,7 +86,7 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 	rtl_ax_identity_maintain(command, &radio->identities[RTL_AX_CLIENT_MACID]);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, 4, true);
 	if (ret) goto failed;
-	radio->bss_color = 0;
+	radio->self_roles[1].color = 0;
 	eth_zero_addr(radio->sta_bssid);
 	rtl_ax_client_cam(cam, RTL_AX_CLIENT_MACID, vif->addr, radio->sta_bssid, 0, false, true);
 	ret = rtl_ax_cam_write(radio, cam);
@@ -119,8 +121,8 @@ static void rtl_ax_client_cfg_changed(struct ieee80211_hw *hw,
 		radio->offload_result = rtl_ax_tx_ni_retire_peer(radio->tx, RTL_AX_CLIENT_MACID);
 	}
 	if (!radio->sta_role || radio->retired_stations[RTL_AX_CLIENT_MACID].pending) return;
-	radio->role_result = rtl_ax_client_update(radio, vif, vif->cfg.assoc);
-	if (radio->role_result && vif->cfg.assoc) {
+	radio->self_roles[1].result = rtl_ax_client_update(radio, vif, vif->cfg.assoc);
+	if (radio->self_roles[1].result && vif->cfg.assoc) {
 		radio->sta_associated = false;
 		radio->peer_authorized[RTL_AX_CLIENT_MACID] = false;
 		rtl_ax_tx_peer_authorized(radio->tx, RTL_AX_CLIENT_MACID, false);

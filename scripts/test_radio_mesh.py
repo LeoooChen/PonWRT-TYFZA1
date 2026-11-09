@@ -70,21 +70,25 @@ struct ieee80211_vif {void *netdev;struct rtl_ax_vif drv_priv[1];int type;bool u
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
 #include "cam-owner.h"
-struct rtl_ax_ap {u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;
+struct rtl_ax_ap {struct rtl_ax_self_role self_roles[128];u8 role_owner[128];bool station_ids[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;
  struct {u8 nhm_noise_ratio;} environment;s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work,cleanup_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
- struct {unsigned valid;}security_roles[1];
- unsigned chip,role_stage,role_type,edca_valid;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;
- int role_result,ap_result,command_mutex,command_lock,offload_work,beacon_work,ra_update_work;
- struct port port0;u8 role_cam[60],bss_color;unsigned receive_acks,done_acks,unmatched_acks;
+ struct {unsigned valid;}security_roles[128];u8 security_unlink[128];
+ unsigned chip,edca_valid;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;
+ int ap_result,command_mutex,command_lock,offload_work,beacon_work,ra_update_work;
+ struct port port0;unsigned receive_acks,done_acks,unmatched_acks;
  struct sk_buff *scan_pending;struct ieee80211_hw *hw;u64 scan_received_ns;
  unsigned scan_word0,scan_word1,scan_last_rpl,scan_matched,scan_unmatched;u8 scan_last_bssid[6];
 };
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
+static bool test_bit(unsigned i,bool *p){return p[i];}
+static void __set_bit(unsigned i,bool *p){p[i]=true;}
+static void __clear_bit(unsigned i,bool *p){p[i]=false;}
+#define RTL_AX_SECURITY_ENTRIES 128
 static unsigned cancellations,stop_requests;
 static unsigned bcn_enable,mbid_enable=0x70000,rx_mode,templates,fail_template,fail_command,commands,mbid_prepares,root_prepares,last_drop;static int mbid_error,drop_error;
-static unsigned command_class[32],command_function[32],command_word[32];
+static unsigned command_class[32],command_function[32],command_word[32],command_macid[32],table_macid;
 static void rtl_ax_store32(u8 *p,u32 value){memcpy(p,&value,4);}
 static u32 rtl_ax_ap_read32(const u8 *p){u32 v;memcpy(&v,p,4);return v;}
 static void pci_set_master(void *p){(void)p;}
@@ -95,13 +99,14 @@ static void rtl_ax_rx_open(void *rx){(void)rx;}
 static void rtl_ax_rx_close(void *rx){(void)rx;}
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned a,unsigned c,unsigned f,const u8 *p,unsigned len,bool ack){
  (void)r;(void)q;(void)a;(void)len;(void)ack; assert(commands<32);
+ command_macid[commands]=c==6?rtl_ax_ap_read32(p+32)&127:rtl_ax_ap_read32(p)&127;
  command_class[commands]=c;command_function[commands]=f;command_word[commands++]=rtl_ax_ap_read32(p);
  return fail_command && commands==fail_command ? -EIO : 0;
 }
 static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned q,unsigned a,unsigned c,unsigned f,const u8 *p,unsigned len,bool ack,bool done){
  (void)done;return rtl_ax_command(r,q,a,c,f,p,len,ack);
 }
-static int rtl_ax_station_tables(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;return 0;}
+static int rtl_ax_station_tables(struct rtl_ax_ap *r,unsigned id){(void)r;table_macid=id;return 0;}
 static int rtl_ax_port0_drop_mbid(void *p,unsigned id){(void)p;last_drop=id;return drop_error;}
 static int rtl_ax_port0_vap_prepare(struct io *io,struct port *p,unsigned id,unsigned interval,unsigned dtim){(void)io;(void)p;assert(id&&id<8&&interval==100&&dtim==2);mbid_prepares++;return mbid_error;}
 static int rtl_ax_port0_beacon(struct io *io,unsigned id,bool en){(void)io;if(id){if(en)mbid_enable|=BIT(id);else mbid_enable&=~BIT(id);}else bcn_enable=en?BIT(12):0;return mbid_error;}
@@ -192,21 +197,70 @@ for name in ("rtl_ax_role_unpause", "rtl_ax_role_create", "rtl_ax_role_join", "r
     code += function("role.h", name)
 code += function("pci.c", "rtl_ax_cam_write")
 code += function("pci.c", "rtl_ax_bss_color_update")
+code += function("pci.c", "rtl_ax_self_role_release")
 code += function("pci.c", "rtl_ax_self_role_prepare")
 for name in ("rtl_ax_monitor_add_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_changed"):
     code += function("monitor.h", name)
 code += r"""
 static void reset_commands(void){commands=fail_command=0;}
-static void check_join(unsigned word){assert(commands==2);assert(command_class[0]==8&&command_function[0]==0&&command_word[0]==word);assert(command_class[1]==6&&command_function[1]==0);}
+static void check_join(unsigned word,unsigned count){assert(commands==count);unsigned i=count-2;assert(command_class[i]==8&&command_function[i]==0&&command_word[i]==word);assert(command_class[i+1]==6&&command_function[i+1]==0);}
 int main(void){
+ /* Real self-role state is indexed by self MACID, not the global AP0. */
+ for(unsigned chip=3;chip<=4;chip++)for(unsigned failed=0;failed<=4;failed++){
+  struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=chip,.monitor_started=true};
+  const u8 root[6]={2,0,0,0,0,1},one[6]={2,0,0,0,0,2},two[6]={2,0,0,0,0,3};
+  struct rtl_ax_role_identity a={.macid=0,.type=2},b={.macid=41,.mbid=1,.type=3},c={.macid=63,.mbid=2,.type=3};
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&a,root,100,2));
+  struct rtl_ax_self_role saved=r.self_roles[0];
+  r.self_roles[41].color=23;reset_commands();fail_command=failed;
+  int ret=rtl_ax_self_role_prepare(&r,&b,one,100,2);assert(ret==(failed?-EIO:0));
+  assert(!memcmp(&saved,&r.self_roles[0],sizeof(saved)));
+  if(failed>=2)assert(r.station_ids[41]);
+  if(failed==2)assert(r.self_roles[41].retiring&&r.self_roles[41].type==3);
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&b,one,100,2));
+  assert(r.self_roles[41].stage==5&&r.self_roles[41].cam[32]==41&&r.self_roles[41].cam[53]==23&&table_macid==41);
+  assert(!memcmp(r.self_roles[41].cam+54,one,6));
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&c,two,100,2));
+  assert(r.self_roles[63].stage==5&&r.self_roles[63].cam[32]==63&&table_macid==63);
+  assert(r.cam_owners.role[41].bssid!=r.cam_owners.role[63].bssid);
+  struct rtl_ax_self_role other=r.self_roles[63];
+  r.station_ids[7]=true;r.role_owner[7]=41;
+  reset_commands();assert(rtl_ax_self_role_release(&r,41)==-EBUSY&&!commands);r.station_ids[7]=false;
+  r.security_roles[41].valid=1;assert(rtl_ax_self_role_release(&r,41)==-EBUSY&&!commands);r.security_roles[41].valid=0;
+  r.security_unlink[5]=42;assert(rtl_ax_self_role_release(&r,41)==-EBUSY&&!commands);r.security_unlink[5]=0;
+  fail_command=2;assert(rtl_ax_self_role_release(&r,41)==-EIO&&r.self_roles[41].stage==0&&r.station_ids[41]);
+  assert(r.cam_owners.role[41].reserved&&!memcmp(&other,&r.self_roles[63],sizeof(other)));
+  reset_commands();assert(!rtl_ax_self_role_release(&r,41)&&commands==1&&command_class[0]==6&&command_macid[0]==41);
+  assert(!r.station_ids[41]&&!r.cam_owners.role[41].reserved&&!r.self_roles[41].retiring);
+  assert(!memcmp(&other,&r.self_roles[63],sizeof(other))&&!memcmp(&saved,&r.self_roles[0],sizeof(saved)));
+  reset_commands();assert(!rtl_ax_self_role_release(&r,63)&&command_macid[0]==63&&command_macid[1]==63);
+  r.station_ids[7]=true;r.role_owner[7]=0;b.macid=7;
+  reset_commands();assert(rtl_ax_self_role_prepare(&r,&b,one,100,2)==-EBUSY&&!commands);
+  assert(rtl_ax_self_role_release(&r,7)==-EBUSY&&!r.self_roles[7].retiring&&!commands);
+ }
+ /* First CAM failure has no acknowledged snapshot; release still clears
+  * the allocated nonzero MACID and preserves the other self role. */
+ {
+  struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=3,.monitor_started=true};
+  const u8 address[6]={2,0,0,0,0,41};struct rtl_ax_role_identity id={.macid=41,.mbid=1,.type=3};
+  reset_commands();fail_command=4;assert(rtl_ax_self_role_prepare(&r,&id,address,100,2)==-EIO);
+  assert(r.cam_owners.role[41].reserved&&r.station_ids[41]&&!r.self_roles[41].cam[8]);
+  reset_commands();assert(!rtl_ax_self_role_release(&r,41)&&commands==2);
+  assert(command_macid[0]==41&&command_macid[1]==41&&!r.cam_owners.role[41].reserved&&!r.station_ids[41]);
+  /* No interface pointer is needed to retry an uncertain firmware removal. */
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&id,address,100,2));
+  reset_commands();fail_command=1;assert(rtl_ax_self_role_release(&r,41)==-EIO&&r.self_roles[41].retiring&&r.self_roles[41].stage==5);
+  reset_commands();assert(!rtl_ax_self_role_release(&r,41)&&commands==2&&!r.station_ids[41]);
+ }
+ mbid_prepares=root_prepares=bcmc_stops=0;
  /* A VAP identity reaches the actual self-role commands without becoming AP2. */
  for(unsigned mbid=1;mbid<8;mbid++){
   struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=3,.monitor_started=true};
   struct ieee80211_vif vap={.type=NL80211_IFTYPE_AP,.drv_priv={{{.type=3,.mbid=mbid}}}};
   r.ap_vif=&vap;reset_commands();
-  assert(!rtl_ax_self_role_prepare(&r,vap.addr,100,2));
+  assert(!rtl_ax_self_role_prepare(&r,&vap.drv_priv[0].identity,vap.addr,100,2));
   assert(command_word[1]==0x6100&&command_word[2]==(0x4f040100|(3<<14)));
-  assert(r.role_type==3&&r.identities[0].mbid==mbid);
+  assert(r.self_roles[0].type==3&&r.identities[0].mbid==mbid);
   assert(mbid_prepares==mbid&&root_prepares==0&&last_drop==mbid);
   struct ieee80211_hw hw={&r};struct ieee80211_bss_conf conf={.beacon_int=100,.dtim_period=2,.enable_beacon=true};r.hw=&hw;
   bcn_enable=BIT(12);mbid_enable=0x70000|BIT(1);
@@ -224,7 +278,7 @@ int main(void){
   r.ap_started=true;drop_error=-EIO;rtl_ax_ap_stop(&hw,&vap,&conf);
   assert(r.cleanup_work.queued&&r.ap_result==-EIO&&bcn_enable==BIT(12));drop_error=0;
   reset_commands();mbid_error=-EINVAL;
-  assert(rtl_ax_self_role_prepare(&r,vap.addr,100,2)==-EINVAL);mbid_error=0;
+  assert(rtl_ax_self_role_prepare(&r,&vap.drv_priv[0].identity,vap.addr,100,2)==-EINVAL);mbid_error=0;
   mbid_prepares--; /* failed re-prepare is checked separately above */
 
  }
@@ -237,14 +291,14 @@ int main(void){
   reset_commands();bcmc_stop_error=-ETIMEDOUT;unsigned stops=bcmc_stops;
   assert(rtl_ax_ap_start(&hw,&ap,&conf)==-ETIMEDOUT&&bcmc_stops==stops+1&&!r.ap_started&&!commands);
   bcmc_stop_error=0;
-  reset_commands();assert(!rtl_ax_self_role_prepare(&r,ap.addr,100,2));
-  assert(r.role_type==2&&r.role_stage==5&&commands==4);
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&(struct rtl_ax_role_identity){.type=2},ap.addr,100,2));
+  assert(r.self_roles[0].type==2&&r.self_roles[0].stage==5&&commands==4);
   assert(command_word[1]==0x4100&&command_word[2]==(0x4b040100|bw));
-  u8 saved_cam[60],replacement[6]={2,1,2,3,4,57};memcpy(saved_cam,r.role_cam,60);
+  u8 saved_cam[60],replacement[6]={2,1,2,3,4,57};memcpy(saved_cam,r.self_roles[0].cam,60);
   reset_commands();fail_command=1;
-  assert(rtl_ax_self_role_prepare(&r,replacement,100,2)==-EIO);
-  assert(!memcmp(saved_cam,r.role_cam,60)&&r.cam_owners.role[0].reserved&&r.cam_owners.bssid[0].references==1);
-  reset_commands();assert(!rtl_ax_self_role_prepare(&r,ap.addr,100,2));
+  assert(rtl_ax_self_role_prepare(&r,&(struct rtl_ax_role_identity){.type=2},replacement,100,2)==-EIO);
+  assert(!memcmp(saved_cam,r.self_roles[0].cam,60)&&r.cam_owners.role[0].reserved&&r.cam_owners.bssid[0].references==1);
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&(struct rtl_ax_role_identity){.type=2},ap.addr,100,2));
 
   assert(!rtl_ax_monitor_add_interface(&hw,&sta)&&r.sta_role&&r.sta_vif==&sta);
   assert(rtl_ax_monitor_add_interface(&hw,&mesh)==-EBUSY);
@@ -270,7 +324,7 @@ int main(void){
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED);
   assert(r.mesh_sync_work.queued);
   assert(r.ap_started&&r.mesh_started&&r.beacon_enabled&&templates==1&&bcn_enable==BIT(12)&&rx_mode==4);
-  assert(r.role_type==6);check_join(0x5b040100|bw);
+  assert(r.self_roles[0].type==6);check_join(0x5b040100|bw,2);
   /* Scan/ROC toggles only beacon enable. The channel remains assigned. */
   reset_commands();cancellations=0;unsigned saved_templates=templates;
   r.dfs.enabled=true;r.dfs.in_cac=false;r.radar_required=true;
@@ -296,12 +350,12 @@ int main(void){
   conf.enable_beacon=false;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
   mesh.cfg.idle=true;rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_IDLE);
   mesh.cfg.idle=false;rtl_ax_monitor_remove_interface(&hw,&mesh);assert(!r.ap_vif);assert(!rtl_ax_monitor_add_interface(&hw,&ap));
-  reset_commands();assert(!rtl_ax_ap_start(&hw,&ap,&conf));check_join(0x4b040100|bw);assert(r.role_type==2);
+  reset_commands();assert(!rtl_ax_ap_start(&hw,&ap,&conf));check_join(0x4b040100|bw,4);assert(r.self_roles[0].type==2);
   rtl_ax_ap_stop(&hw,&ap,&conf);rtl_ax_monitor_remove_interface(&hw,&ap);assert(!rtl_ax_monitor_add_interface(&hw,&mesh));
   conf.enable_beacon=true;reset_commands();fail_command=1;
   rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);
   assert(r.ap_result==-EIO&&!r.ap_started&&!bcn_enable&&stop_requests==1);
-  reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_started);check_join(0x5b040100|bw);
+  reset_commands();rtl_ax_ap_changed(&hw,&mesh,&conf,BSS_CHANGED_BEACON_ENABLED);assert(r.ap_started);check_join(0x5b040100|bw,4);
   struct sk_buff skb={.status={.flag=RX_FLAG_NO_SIGNAL_VAL}};
   r.hw=&hw;r.scan_pending=&skb;rtl_ax_scan_complete_frame(&r,NULL);
   assert(delivered_flags==RX_FLAG_NO_SIGNAL_VAL&&!r.scan_pending);
