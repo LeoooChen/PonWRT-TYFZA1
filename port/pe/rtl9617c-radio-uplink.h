@@ -136,6 +136,27 @@ static u32 __attribute__((section(".entry"), noinline)) rx_protocol(const u8 *ll
 	return type == 0xdd860000 && (llc[8] >> 4) == 6 && (llc[14] == 6 || llc[14] == 17);
 }
 
+/* RXBD shift and A-MSDU padding keep Ethernet headers halfword aligned.
+ * Avoid split-word stores to uncached payload memory. Read all source words
+ * first so the exact twelve-byte move also preserves overlapping headers. */
+static inline void __attribute__((always_inline)) rx_ethernet_move(u8 *out, const u8 *in)
+{
+	u32 a = ((const struct packed_word *)in)->value;
+	u32 b = ((const struct packed_word *)(in + 4))->value;
+	u32 c = ((const struct packed_word *)(in + 8))->value;
+	if (!((u32)out & 3)) {
+		((u32 *)out)[0] = a; ((u32 *)out)[1] = b; ((u32 *)out)[2] = c;
+	} else if (!((u32)out & 1)) {
+		*(u16 *)out = a;
+		*(u32 *)(out + 2) = (a >> 16) | (b << 16);
+		*(u32 *)(out + 6) = (b >> 16) | (c << 16);
+		*(u16 *)(out + 10) = c >> 16;
+	} else {
+		unaligned_word(out, a); unaligned_word(out + 4, b);
+		unaligned_word(out + 8, c);
+	}
+}
+
 static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	volatile u32 *mailbox, u8 *buffer, u32 buffer_dma, u32 *reorder)
 {
@@ -253,7 +274,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	for (u32 n = 0; n < frames; n++) {
 		u32 bytes = plan[n].range >> 16;
 		u8 *ethernet = buffer + (plan[n].range & 65535);
-		header_copy(ethernet, plan[n].addresses, 12);
+		rx_ethernet_move(ethernet, plan[n].addresses);
 		/* Stock Wi-Fi lookup maps the actual length (minimum 34), not
 		 * ETH_ZLEN. Padding here would overwrite the next A-MSDU header. */
 		u32 *descriptor = uncached(mailbox[89] + ((write + n) & RTL_AX_NI_TX_MASK) * 8);
