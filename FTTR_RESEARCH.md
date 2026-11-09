@@ -337,6 +337,8 @@
 
 166. 明确原厂EEPROM光诊断与SFP缺口边界：两relay实际API/四标量getter共24成功、144读失败对照，固定channel0/address0x51；聚合RX字段硬编码0，六阈值/告警及polling接口均成功但不写输出。端序辅助在保留构建为no-op，测试只在read_word主机整数边界供值，不推断线序；温度有signed8位整度截断。未找到这些地址与四种BOSA工厂选择的连接依据，因此不据导出符号添加探测/零阈值/假告警能力。该项为原厂证据补充，SFP分派仍未实现；未实机。详见[EEPROM能力边界](port/FTTR.md#relay-eeprom-diagnostics-do-not-establish-a-selected-sfp-implementation)。
 
+167. 统一NI目的映射与QM AXI属性共享窗口事务：无线/FE原各持局部锁，0x1654/1658数据与索引可串写，7aeaf11原helper并发已复现。新增受限共享事务供radio、FE普通/组播、QM、OAM调用，锁内等待旧访问/写数据/发命令/读回，超时后下一调用不覆盖忙窗口，读失败不发布输出。1024并发事务与读回/超时故障、组播表/owner/route、十一回归（98准备/100恢复/554 ES/729 refill）、原厂源MAC/ITU/EPON/206 PON/40无线路由及板级AXI对照通过；Image/模块/7输入一致与补丁fuzz0重放通过。PE未改、未实机；该项补齐自创框架跨驱动寄存器归属，不代表报文全链路退场或ID安全复用。详见[共享NI窗口](port/FTTR.md#serialize-the-ni-destination-and-axi-attribute-hardware-windows)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

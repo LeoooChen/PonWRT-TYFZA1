@@ -2,6 +2,7 @@
 /* Per-radio NI VP/EPP/EQ state, consumed by the shared PE1 executor. */
 #include <linux/etherdevice.h>
 #include <linux/rtl9617c-qm-layout.h>
+#include <linux/rtl9617c-ni-table.h>
 
 #define RING_BYTES RTL9617C_WIFI_EPP_BYTES
 #define BUFFER_COUNT RTL9617C_WIFI_BUFFERS
@@ -198,8 +199,21 @@ static void ni_route_sleep(struct rtl_ax_tx *tx, unsigned int macid)
 	if (READ_ONCE(tx->peer_authorized[macid])) schedule_work(&tx->ni.ps_work);
 }
 
-static int ni_access(struct rtl_ax_tx *tx, unsigned int offset, u32 command)
+static unsigned int ni_table_read(void *context, unsigned int offset)
 {
+	struct rtl_ax_tx *tx = context;
+	return readl(tx->ni.regs + offset);
+}
+
+static void ni_table_write(void *context, unsigned int offset, unsigned int value)
+{
+	struct rtl_ax_tx *tx = context;
+	writel(value, tx->ni.regs + offset);
+}
+
+static int ni_access(void *context, unsigned int offset, unsigned int command)
+{
+	struct rtl_ax_tx *tx = context;
 	u32 status;
 	writel(command, tx->ni.regs + offset);
 	return readl_poll_timeout(tx->ni.regs + offset, status, !(status & BIT(31)), 1, 100000);
@@ -207,9 +221,8 @@ static int ni_access(struct rtl_ax_tx *tx, unsigned int offset, u32 command)
 
 static int attr_write(struct rtl_ax_tx *tx, unsigned int index, const u32 *value)
 {
-	writel(value[0], tx->ni.regs + 0x66ac);
-	writel(value[1], tx->ni.regs + 0x66a8);
-	return ni_access(tx, 0x66a4, BIT(31) | BIT(30) | index);
+	return rtl9617c_ni_table(tx, ni_table_read, ni_table_write, ni_access,
+		0x66a4, index, NULL, value, 2);
 }
 
 static int ni_uplink_stop(struct rtl_ax_tx *tx)
@@ -359,8 +372,8 @@ static int ni_restore_registers(struct rtl_ax_tx *tx)
 		if (tx->ni.registers[i] != 0x6108 && tx->ni.registers[i] != tx->ni.registers[11])
 			writel(tx->ni.saved[i], tx->ni.regs + tx->ni.registers[i]);
 	for (i = 0; i < 8; i++) {
-		writel(tx->ni.arb[i], tx->ni.regs + 0x1658);
-		ret = ni_access(tx, 0x1654, BIT(31) | BIT(30) | (i * 64 + 16 + tx->ni.cpu));
+		ret = rtl9617c_ni_table(tx, ni_table_read, ni_table_write, ni_access,
+			0x1654, i * 64 + 16 + tx->ni.cpu, NULL, &tx->ni.arb[i], 1);
 		if (ret) return ret;
 	}
 	for (i = 0; i < 8; i++) {
@@ -475,14 +488,14 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 		tx->ni.epp_eq[i] = readl(tx->ni.regs + tx->ni.registers[10] + i * 4);
 	}
 	for (i = 0; i < 8; i++) {
-		ret = ni_access(tx, 0x1654, BIT(31) | (i * 64 + 16 + tx->ni.cpu));
+		ret = rtl9617c_ni_table(tx, ni_table_read, ni_table_write, ni_access,
+			0x1654, i * 64 + 16 + tx->ni.cpu, &tx->ni.arb[i], NULL, 1);
 		if (ret) return ret;
-		tx->ni.arb[i] = readl(tx->ni.regs + 0x1658);
 	}
 	for (i = 0; i < 2; i++) {
-		ret = ni_access(tx, 0x66a4, BIT(31) | (i ? 48 + tx->ni.cpu : tx->ni.eq));
+		ret = rtl9617c_ni_table(tx, ni_table_read, ni_table_write, ni_access,
+			0x66a4, i ? 48 + tx->ni.cpu : tx->ni.eq, tx->ni.attrs[i], NULL, 2);
 		if (ret) return ret;
-		tx->ni.attrs[i][0] = readl(tx->ni.regs + 0x66ac); tx->ni.attrs[i][1] = readl(tx->ni.regs + 0x66a8);
 	}
 	tx->ni.active = true;
 	memset(tx->pe.memory + 0x11000, 0, 0xc00);
@@ -518,8 +531,9 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	ret = attr_write(tx, tx->ni.eq, eq_attr); if (ret) return ret;
 	ret = attr_write(tx, 48 + tx->ni.cpu, epp_attr); if (ret) return ret;
 	for (i = 0; i < 8; i++) {
-		writel(9, tx->ni.regs + 0x1658);
-		ret = ni_access(tx, 0x1654, BIT(31) | BIT(30) | (i * 64 + 16 + tx->ni.cpu));
+		const u32 value = 9;
+		ret = rtl9617c_ni_table(tx, ni_table_read, ni_table_write, ni_access,
+			0x1654, i * 64 + 16 + tx->ni.cpu, NULL, &value, 1);
 		if (ret) return ret;
 	}
 	/* PE owns continuous TXBD positions even before NI binding: canceled

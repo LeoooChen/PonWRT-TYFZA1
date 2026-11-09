@@ -332,9 +332,8 @@ static int fe_prepare(struct rtl_fe *fe)
   ret=rtl_fe_classifier_read(&io,1024+4*i,fe->classifier_saved[i]);
   if(ret)return ret;
   for(side=0;side<4;side++) {
-   ret=fe_access(fe,0x1654,BIT(31)|(24+i)|(side<<6));
+   ret=rtl9617c_ni_table(fe,fe_read,fe_write,fe_access,0x1654,(24+i)|(side<<6),&fe->map_saved[i][side],NULL,1);
    if(ret)return ret;
-   fe->map_saved[i][side]=fe_read(fe,0x1658);
   }
  }
  fe->prepared=true;
@@ -412,8 +411,8 @@ static int fe_prepare(struct rtl_fe *fe)
   rtl_fe_bits_set(lpb,42,4,i?0:1); /* Native WAN0/LAN1 selectors. */
   for(side=0;side<3;side++)fe_write(fe,0x3414+i*12+side*4,lpb[side]);
   for(side=0;side<4;side++) {
-   fe_write(fe,0x1658,i?12:13);
-   ret=fe_access(fe,0x1654,BIT(31)|BIT(30)|(i?24:25)|(side<<6));
+   unsigned int value=i?12:13;
+   ret=rtl9617c_ni_table(fe,fe_read,fe_write,fe_access,0x1654,(i?24:25)|(side<<6),NULL,&value,1);
    if(ret)return ret;
   }
  }
@@ -484,8 +483,7 @@ static int fe_restore(struct rtl_fe *fe)
  }
  for(i=0;i<2;i++) {
   for(side=0;side<4;side++) {
-   fe_write(fe,0x1658,fe->map_saved[i][side]);
-   ret=fe_access(fe,0x1654,BIT(31)|BIT(30)|(24+i)|(side<<6));
+   ret=rtl9617c_ni_table(fe,fe_read,fe_write,fe_access,0x1654,(24+i)|(side<<6),NULL,&fe->map_saved[i][side],1);
    if(ret)return ret;
   }
   ret=rtl_fe_classifier_write(&io,1024+4*i,fe->classifier_saved[i]);

@@ -2,6 +2,7 @@
 """Execute actual NI preparation across all-COS backlog and partial setup faults."""
 import argparse
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import re
 import subprocess
 import tempfile
@@ -11,11 +12,11 @@ driver=root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--revision');a=p.parse_args()
 source=subprocess.check_output(['git','show',a.revision+':'+str((driver/'ni-test.h').relative_to(root))],cwd=root,text=True) if a.revision else (driver/'ni-test.h').read_text()
 def function(name):
-    m=re.search(r'^static (?:int|bool) '+name+r'\([^;]*?\)\s*\{',source,re.M)
+    m=re.search(r'^static (?:int|bool|void|unsigned int) '+name+r'\([^;]*?\)\s*\{',source,re.M)
     start,end,depth=m.start(),m.end(),1
     while depth:depth+=(source[end]=='{')-(source[end]=='}');end+=1
     return source[start:end]+'\n'
-code=r'''
+code=ni_table_code+r'''
 #include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -52,12 +53,14 @@ static u32 readl(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void writel(u32 v,void *p){writes++;if(fail_enable&&p==regs+0x6108/4)return;memcpy(p,&v,4);}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static void dma_wmb(void){}
-static int ni_access(struct rtl_ax_tx *tx,unsigned reg,u32 request){
+static u32 mapping[512],attributes[64][2];
+static int ni_access(void *context,unsigned reg,unsigned request){
+ struct rtl_ax_tx *tx=context;
  accesses++;
- if(request&BIT(30)){assert(reg==0x1654);writes++;}
+ if(request&BIT(30)){assert(reg==0x1654);writes++;mapping[request&511]=regs[0x1658/4];}
  else {
-  if(reg==0x1654)regs[0x1658/4]=0xa000|(request&511);
-  else {assert(reg==0x66a4);regs[0x66ac/4]=0xb000|(request&63);regs[0x66a8/4]=0xc000|(request&63);}
+  if(reg==0x1654)regs[0x1658/4]=mapping[request&511];
+  else {assert(reg==0x66a4);regs[0x66ac/4]=attributes[request&63][0];regs[0x66a8/4]=attributes[request&63][1];}
  }
  if(late){regs[(0x7000+tx->ni.cpu*32)/4+late-1]+=8;late=0;}
  return accesses==fail_access?-ETIMEDOUT:0;
@@ -69,9 +72,11 @@ static int pe_event_prepare(struct rtl_ax_tx *tx){assert(tx==active);event_calls
 static int rtl_ax_rx_pe_rpq_start(void *rx,void *m,u32 dma_address,const u32 *program,unsigned bytes){
  (void)rx;assert(m==memory&&dma_address==0x5000000&&program==pe_tx_program&&bytes==4);rpq_calls++;return fail_rpq;
 }
-'''+''.join(function(n) for n in ('ni_es_empty','ni_epps_empty','ni_test_prepare'))+r'''
+'''+''.join(function(n) for n in ('ni_table_read','ni_table_write','ni_es_empty','ni_epps_empty','ni_test_prepare'))+r'''
 static struct rtl_ax_tx setup(unsigned slot){
  memset(regs,0,sizeof(regs));memset(dma,0,sizeof(dma));memset(memory,0xa5,sizeof(memory));
+ for(unsigned i=0;i<512;i++)mapping[i]=0xa000|i;
+ for(unsigned i=0;i<64;i++){attributes[i][0]=0xb000|i;attributes[i][1]=0xc000|i;}
  maps=writes=accesses=fail_access=event_calls=rpq_calls=late=eq_errors=0;fail_map=fail_event=fail_rpq=0;fail_enable=false;
  struct rtl_ax_tx tx={.pe={.memory=memory,.dma=0x5000000,.slot=slot},.ni={.cpu=3-slot,.eq=6+slot,.profile=7-slot,.vp_index=9+slot}};
  tx.ni.registers[0]=0x61e8+tx.ni.eq*20;

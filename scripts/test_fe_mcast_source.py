@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import subprocess
 import sys
 import tempfile
@@ -116,7 +117,7 @@ assert(w[0]=={words[0]}U && w[1]=={words[1]}U && w[2]=={words[2]}U);}}""")
 code=code.replace(' /* Nonzero foreign', ' for(unsigned i=0;i<4;i++)m.reg[(0x1704+i*4)/4]=0x8100;\n'+''.join(checks)+'\n /* Nonzero foreign')
 with tempfile.TemporaryDirectory(prefix='mcast-source-') as tmp:
     tmp=Path(tmp)
-    (tmp/'test.c').write_text(code)
+    (tmp/'test.c').write_text(ni_table_code+code)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(DRIVERS),str(tmp/'test.c'),'-o',str(tmp/'test')],check=True)
     subprocess.run([str(tmp/'test')],check=True)
 original['native_difference']='Per-P6 source rewrite retains VLAN/COS and bridge TTL; native clears original helper ip_ttl_dec_cmd bit10'

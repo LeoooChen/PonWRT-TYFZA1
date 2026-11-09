@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import struct
 import subprocess
 import sys
@@ -147,7 +148,7 @@ for case in recipes+epon_recipes:
 unsigned w[3];assert(!rtl_fe_mc_replica_encode(&io,&r,w));assert(w[0]=={w[0]}U&&w[1]=={w[1]}U&&w[2]=={w[2]}U);}}''')
 code=code.replace('prepare(&m);saved=m;', 'prepare(&m);saved=m;'+''.join(checks),1)
 with tempfile.TemporaryDirectory(prefix='mcast-pon-') as tmp:
-    tmp=Path(tmp);(tmp/'test.c').write_text(code)
+    tmp=Path(tmp);(tmp/'test.c').write_text(ni_table_code+code)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(DRIVERS),str(tmp/'test.c'),'-o',str(tmp/'test')],check=True)
     subprocess.run([str(tmp/'test')],check=True)
 a.output.write_text(json.dumps(dict(recipes=recipes,epon_recipes=epon_recipes,dbuf_ports=32,

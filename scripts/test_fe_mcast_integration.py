@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute production FE install/delete and native multicast tables together."""
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import re
 import subprocess
 import tempfile
@@ -72,6 +73,7 @@ static unsigned long jiffies=100;
 '''
 for name in ('rtl_fe_mc_direct','rtl_fe_flow','rtl_fe_rule','rtl_fe_mc_rule'):
     code += re.search(r'struct '+name+r' \{.*?\n\};', native, re.S)[0]+'\n'
+code=ni_table_code+code
 code += r'''
 static int fe_mcast_direct_stage(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_rule *mc){(void)fe;(void)flow;for(unsigned i=0;i<mc->count;i++)assert(!mc->direct[i].wifi_id);return 0;}
 struct rtl_fe {

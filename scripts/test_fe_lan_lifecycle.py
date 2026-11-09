@@ -4,6 +4,7 @@ import hashlib
 import json
 import argparse
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import re
 import subprocess
 import tempfile
@@ -152,6 +153,7 @@ int main(void){
  struct rtl_fe f={.dma=0x03800000,.wifi_ippb=0xa5000004};unsigned int lan[5],old_regs[64],old_mask[8],old_cls[1040][7],old_map[256],old_demux,old_wifi_mask[8];
  unsigned int old_bridge_mask[6][8];
  for(unsigned int i=0;i<0x10000/4;i++)f.reg[i]=0x80000000U+i;
+ f.reg[0x1654/4]=0; /* idle shared destination-map window */
  f.reg[0x30a4/4]=0x0001b000U;
  for(unsigned int i=0;i<5;i++)f.reg[(0xa5f8+i*0x90)/4]=lan[i]=0x18100400U|(i<<24);
  for(unsigned int i=0;i<8;i++){f.mask[i]=old_mask[i]=0x55000000+i;f.wifi_mask[i]=old_wifi_mask[i]=0xaa550000+i;}
@@ -252,7 +254,7 @@ functions += ['rtl_fe_enable', 'rtl_fe_disable']
 with tempfile.TemporaryDirectory(dir=root / 'artifacts', prefix='fe-lan-lifecycle-') as work:
     path = Path(work) / 'test.c'
     binary = Path(work) / 'test'
-    path.write_text(common + registers + '\n' + '\n'.join(function(n) for n in functions) + test)
+    path.write_text(ni_table_code + common + registers + '\n' + '\n'.join(function(n) for n in functions) + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-g', '-fsanitize=address,undefined',
         '-I', str(drivers), str(path), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)

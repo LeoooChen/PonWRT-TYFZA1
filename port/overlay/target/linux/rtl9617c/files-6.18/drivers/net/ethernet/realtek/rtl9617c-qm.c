@@ -19,6 +19,7 @@
 #include "rtl9617c-qm.h"
 #include <linux/rtl9617c-bridge.h>
 #include <linux/rtl9617c-fttr.h>
+#include <linux/rtl9617c-ni-table.h>
 #include "rtl9617c-rx-checksum.h"
 
 #define EQ_ID 4
@@ -33,6 +34,10 @@
 #define CPU_READY 0x6368
 #define CB_CTRL 0x950c
 
+static unsigned int rtl_dq_read(void *context, unsigned int reg);
+static void rtl_dq_write(void *context, unsigned int reg, unsigned int value);
+static int rtl_dq_indirect(void *context, unsigned int reg, unsigned int value);
+
 static int rtl_qm_indirect(struct rtl_qm_rx *rx, unsigned int reg, u32 value)
 {
 	u32 status;
@@ -43,8 +48,8 @@ static int rtl_qm_indirect(struct rtl_qm_rx *rx, unsigned int reg, u32 value)
 
 static int rtl_qm_attribute(struct rtl_qm_rx *rx, unsigned int entry, u32 value)
 {
-	writel(value, rx->ni + 0x66ac);
-	return rtl_qm_indirect(rx, 0x66a4, BIT(31) | BIT(30) | entry);
+	return rtl9617c_ni_table(rx, rtl_dq_read, rtl_dq_write, rtl_dq_indirect,
+		0x66a4, entry, NULL, &value, 1);
 }
 
 static int rtl_qm_pon_destination_map(struct rtl_qm_rx *rx)
@@ -55,8 +60,9 @@ static int rtl_qm_pon_destination_map(struct rtl_qm_rx *rx)
 	/* LDPID32..63 must enter PDPID8 (QM) for both my-MAC and deep-Q flags. */
 	for (flags = 0; flags < 256; flags += 64)
 		for (port = 32; port < 64; port++) {
-			writel(8, rx->ni + 0x1658);
-			ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | flags | port);
+			u32 value = 8;
+			ret = rtl9617c_ni_table(rx, rtl_dq_read, rtl_dq_write, rtl_dq_indirect,
+				0x1654, flags | port, NULL, &value, 1);
 			if (ret)
 				return ret;
 		}
@@ -114,8 +120,9 @@ static int rtl_qm_ingress(struct rtl_qm_rx *rx, unsigned int port)
 	 * Port0 previously worked with the reset default;ports1..3 need their
 	 * own mapping rather than inheriting port0 as the egress destination. */
 	for (i = 0; i < 256; i += 64) {
-		writel(i & 64 ? 8 : port, rx->ni + 0x1658);
-		ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | i | port);
+		u32 value = i & 64 ? 8 : port;
+		ret = rtl9617c_ni_table(rx, rtl_dq_read, rtl_dq_write, rtl_dq_indirect,
+			0x1654, i | port, NULL, &value, 1);
 		if (ret)
 			return ret;
 	}
@@ -139,19 +146,12 @@ static int rtl_qm_ingress(struct rtl_qm_rx *rx, unsigned int port)
 	if (ret)
 		return ret;
 	/* Vendor mapping: logical CPU port 16 uses PDPID9, distinct from deep-Q8. */
-	writel(9, rx->ni + 0x1658);
-	ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | 16);
-	if (ret)
-		return ret;
-	ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | 0x90);
-	if (ret)
-		return ret;
-	ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | 0x50);
-	if (ret)
-		return ret;
-	ret = rtl_qm_indirect(rx, 0x1654, BIT(31) | BIT(30) | 0xd0);
-	if (ret)
-		return ret;
+	for (i = 0; i < 256; i += 64) {
+		u32 value = 9;
+		ret = rtl9617c_ni_table(rx, rtl_dq_read, rtl_dq_write, rtl_dq_indirect,
+			0x1654, i | 16, NULL, &value, 1);
+		if (ret) return ret;
+	}
 	/* PONCLE TCAM: match this LAN source port and redirect it to CPU0. */
 	writel(~(port << 6), rx->ni + 0x1e10);
 	writel(~0U, rx->ni + 0x1e0c);

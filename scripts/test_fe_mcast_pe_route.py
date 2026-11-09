@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import subprocess
 import sys
 import tempfile
@@ -75,7 +76,7 @@ for recipe in recipes:
 unsigned words[3];assert(!rtl_fe_mc_replica_encode(&io,&r,words));assert(words[0]=={words[0]}U&&words[1]=={words[1]}U&&words[2]=={words[2]}U);}}''')
 code=code.replace('/* ORIGINAL_ACTION_CHECKS */',''.join(checks))
 with tempfile.TemporaryDirectory(prefix='mcast-pe-route-') as t:
-    p=Path(t);(p/'test.c').write_text(code)
+    p=Path(t);(p/'test.c').write_text(ni_table_code+code)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(drivers),str(p/'test.c'),'-o',str(p/'test')],check=True)
     subprocess.run([str(p/'test')],check=True)
 args.output.write_text(json.dumps(dict(recipes=recipes,scope='Actual target FC/NI action execution; native replaces VIF POL with owned cookie and preserves original source. RMU/EQ allocation and payload exclusivity remain hardware-contract assumptions, not measured physical behavior.'),indent=2)+'\n')

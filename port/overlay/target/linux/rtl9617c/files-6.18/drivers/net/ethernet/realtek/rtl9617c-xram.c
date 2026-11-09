@@ -38,6 +38,7 @@
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
 #include <linux/rtl9617c-fttr.h>
+#include <linux/rtl9617c-ni-table.h>
 #include "rtl9617c-fe.h"
 #include "rtl9617c-fttr-p6.h"
 #include "rtl9617c-fttr-mcast.h"
@@ -1153,15 +1154,14 @@ int rtl9617c_ni_oam_configure(struct device *dev)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
 	static const unsigned int index[] = {15, 0x8f, 0x4f, 0xcf};
-	u32 status;
+	u32 value = 12;
 	unsigned int i;
 	int ret;
 
 	/* aal_port: NI7 ninth queue (LDPID15) enters the OAM physical port12. */
 	for (i = 0; i < ARRAY_SIZE(index); i++) {
-		writel(12, priv->ni + 0x1658);
-		writel(BIT(31) | BIT(30) | index[i], priv->ni + 0x1654);
-		ret = readl_poll_timeout(priv->ni + 0x1654, status, !(status & BIT(31)), 1, 100000);
+		ret = rtl9617c_ni_table(priv, rtl_mib_read, rtl_mib_write, rtl_mib_indirect,
+			0x1654, index[i], NULL, &value, 1);
 		if (ret)
 			return ret;
 	}

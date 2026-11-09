@@ -3,6 +3,7 @@
 #define RTL9617C_FE_MCAST_ROUTE_H
 #include "rtl9617c-fe-mcast.h"
 #include "../../../../include/linux/rtl9617c-qm-layout.h"
+#include "../../../../include/linux/rtl9617c-ni-table.h"
 
 /* The table owner does not own port/queue configuration. Save and restore
  * just the multicast connector and per-destination L2 editor/deep-buffer
@@ -22,6 +23,7 @@ static inline int rtl_fe_mc_route_read(const struct rtl_dq_io *io,unsigned int a
  unsigned int data,unsigned int index,unsigned int *words,unsigned int count)
 {
  int ret;
+ if(access==0x1654)return rtl9617c_ni_table(io->context,io->read,io->write,io->indirect,access,index,words,0,count);
  if(io->read(io->context,access)&0x80000000U)return -EBUSY;
  ret=io->indirect(io->context,access,0x80000000U|index);
  if(ret)return ret;
@@ -33,6 +35,7 @@ static inline int rtl_fe_mc_route_write(const struct rtl_dq_io *io,unsigned int 
 {
  unsigned int actual[2];
  int ret;
+ if(access==0x1654)return rtl9617c_ni_table(io->context,io->read,io->write,io->indirect,access,index,0,words,count);
  if(io->read(io->context,access)&0x80000000U)return -EBUSY;
  for(unsigned int i=0;i<count;i++)io->write(io->context,data-4*i,words[i]);
  ret=io->indirect(io->context,access,0xc0000000U|index);

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Execute native NI register restoration and release with indirect-IO failures."""
 from pathlib import Path
+from ni_table_fixture import code as ni_table_code
 import argparse,re,struct,subprocess,sys,tempfile
 parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--stock",type=Path);parser.add_argument("--revision");args=parser.parse_args()
 root=Path(__file__).resolve().parents[1]
@@ -35,10 +36,10 @@ if args.stock:
  print('Original AXI attribute:16 entry/completion cases confirm write/access order and300-poll timeout')
 s=subprocess.check_output(['git','show',args.revision+':'+str((driver/'ni-test.h').relative_to(root))],cwd=root,text=True) if args.revision else (driver/'ni-test.h').read_text()
 def fn(name):
- a=re.search(r'^static (?:int|void|bool) '+name+r'\([^;]*?\)\s*\{',s,re.M).start();b=s.index('{',a)+1;n=1
+ a=re.search(r'^static (?:int|void|bool|unsigned int) '+name+r'\([^;]*?\)\s*\{',s,re.M).start();b=s.index('{',a)+1;n=1
  while n:n+=(s[b]=='{')-(s[b]=='}');b+=1
  return s[a:b]+'\n'
-code=r'''
+code=ni_table_code+r'''
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
@@ -71,10 +72,11 @@ static void writel(u32 v,void *p){
  if(p==dma+0x100/4 && !v && disable_fail)return;
  if(p==dma+0x108/4 || p==dma+0x10c/4)vp_base_writes++;
  if(p==mmio+0x1654/4 || p==mmio+0x66a4/4){
- assert((v&0xc0000000U)==0xc0000000U);
+ assert(v&BIT(31));
  /* Model even a timed-out command as applied: rollback must be idempotent. */
- if(p==mmio+0x1654/4)arb[v&511]=mmio[0x1658/4];
- else {attr[v&63][0]=mmio[0x66ac/4];attr[v&63][1]=mmio[0x66a8/4];}
+ if(p==mmio+0x1654/4){if(v&BIT(30))arb[v&511]=mmio[0x1658/4];else mmio[0x1658/4]=arb[v&511];}
+ else if(v&BIT(30)){attr[v&63][0]=mmio[0x66ac/4];attr[v&63][1]=mmio[0x66a8/4];}
+ else {mmio[0x66ac/4]=attr[v&63][0];mmio[0x66a8/4]=attr[v&63][1];}
  accesses++;put_unaligned_le32(accesses==fail_at?v:v&~BIT(31),p);return;}
  if(p==dma+0x104/4){loading++;put_unaligned_le32(load_fail?v:0,p);return;}
  put_unaligned_le32(v,p);
@@ -111,7 +113,7 @@ static void *phys_to_virt(u32 a){(void)a;assert(0);return NULL;}
 static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dir){(void)dev;(void)a;(void)bytes;(void)dir;assert(0);}
 '''
 code+=fn('ni_uplink_stop').replace('tx->ni.uplink_ready = false;', 'uplink_stops++;tx->ni.uplink_ready = false;')
-code+=fn('ni_es_empty')+fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
+code+=fn('ni_es_empty')+fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_table_read')+fn('ni_table_write')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
  epp_error=0;epp_calls=uplink_frees=es_restore_fault=0;es_cpu=cpu;
@@ -209,7 +211,7 @@ int main(void){unsigned cases=0;
  }
  withdraw_error=0;
  struct rtl_ax_tx empty={};assert(!ni_test_remove(&empty));
- for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned fail=1;fail<=10;fail++){
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned fail=1;fail<=20;fail++){
   struct rtl_ax_tx t=setup(cpu);fail_at=fail;
   int result=ni_test_release(&t);
   assert(result==-ETIMEDOUT && t.ni.active && t.ni.regs==mmio && !released && !opens);
@@ -231,7 +233,7 @@ int main(void){unsigned cases=0;
  struct rtl_ax_tx t=setup(3);t.ni.vp_active=true;load_fail=true;fail_at=0;
  assert(ni_test_release(&t)==-ETIMEDOUT&&loading==1&&!accesses&&!released&&!opens&&t.ni.vp_active);
  load_fail=false;dma[0x104/4]=0;assert(!ni_test_release(&t)&&released==2&&!t.ni.vp_active);cases++;
- for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned fail=1;fail<=10;fail++) {
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned fail=1;fail<=20;fail++) {
   struct rtl_ax_tx forced=setup(cpu);fail_at=fail;
   /* Force the PCIe-teardown fallback through retained NI ownership. */
   put_unaligned_le32(1,memory+0x2078);

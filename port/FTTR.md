@@ -10122,6 +10122,47 @@ to the supported BOSA startup was established. Automatic probing, threshold
 actions and SFP calibration remain unimplemented rather than being inferred
 from exported getter names. No hardware was accessed.
 
+### Serialize the NI destination and AXI attribute hardware windows
+
+NI destination entries share access/data registers `0x1654/0x1658`; QM AXI
+attributes share `0x66a4/0x66ac/0x66a8`. The radio's NI mutex and FE's mutex are
+different owners. They previously could interleave staging a word, submitting
+an index and reading the result, so even operations on different entries could
+corrupt each other's mapping. A deterministic two-caller test reproduces that
+failure with the previous `7aeaf11` multicast access helpers.
+
+One exported NI transaction now serializes these two windows across native
+radio prepare/restore, FE ordinary and multicast maps, QM initialization and
+OAM setup. The mutex covers the idle check, all staging words, command completion
+and result/readback. A timeout releases the software mutex but the next caller
+must wait for the outstanding hardware access before touching data or index.
+Writes are read back under the same mutex; mismatches return `EIO`, and failed
+reads do not publish output. Existing caller ownership/rollback handles those
+errors. Only these two known hardware windows and their existing index/word
+bounds are accepted. Configuration callbacks only access MMIO and do not acquire
+FE/radio owner locks, so the shared lock is always inside those owner locks.
+No packet RX/TX callback takes this sleeping mutex.
+
+`test_ni_shared_tables.py` executes production transactions with host pthread
+locking, forced staging interleaving and1024 competing transactions. It also
+checks write/readback timeout, retained busy windows, corrupted readback and
+successful retry, then runs the existing multicast table/owner/route suite
+against the same implementation. The modeled MMIO boundary does not simulate
+physical packet throughput. Eleven related suites pass, including98 preparation,
+100 restore cases, complete multicast learning, FE rollback,554 ES cases and
+729 refill cases. Original FC/NI source-MAC, nine ITU/nine EPON action recipes,
+206 PON route faults,40 wireless route checks and the existing board AXI attribute
+comparison pass. RX/NI ownership and OAM family regressions also pass.
+
+Image/modules include the exported helper and the wireless consumer. Seven
+changed inputs match the compiled tree, and the added Makefile patch reverses
+and reapplies with fuzz0. Evidence is `artifacts/fttr/shared-ni-*-20261109.*`
+and `artifacts/fttr/shared-ni-*-20261110.*`; the legacy AXI test used the retained
+input under the main worktree because this worktree has no private-file copy.
+PE firmware is unchanged, and no device was accessed. Hardware transaction
+serialization does not establish complete in-flight packet retirement or safe
+reuse of quarantined multicast/GEM identities.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
