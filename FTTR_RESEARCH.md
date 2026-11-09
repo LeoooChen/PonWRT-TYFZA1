@@ -272,6 +272,8 @@
 
 127. 接入GTK的接口self-MACID归属：CAM保存MACID/port/MBID/HIQ类型，删除及异步回滚不再依赖当前接口或MACID是否为0；非root组播按原port/MBID清HIQ并等所属WP，保留其他VIF/新密钥。CPU组播/管理取接口MACID，非零self的组播QoS保留Linux序号。另修复第126项普通CPU代际撤销后ARM worker漏回收，新增WP标记驱动poll/unmap/free。64原厂GTK/24HIQ编码、96组清理故障、28双VIF同key-ID/四算法/旧回调/安装删除回滚、771批回收、16448 RPQ及144扩展密钥/STA/Mesh/FE回归通过；Image/模块和五输入一致通过。PE未变、未实机；直接NI→PE BCMC仍限root，完整多VIF分配/模板与全链路退场仍待补齐。详见[GTK接口归属](port/FTTR.md#gtk-ownership-follows-the-interface-self-role)。
 
+128. 接入同物理无线的多VIF PE表绑定：FE每槽支持12个netdev，各自BCMC策略/代际，单播策略也按VIF校验；cookie保存FE无线ID，解绑只永久撤销该VIF记录并保留tombstone，最后引用才退役全表。无线持有逐VIF引用，接口删除单独解绑，整机退出按项重试失败后缀，避免重复释放。双VIF不同GTK/同ifindex、容量、冲突、重绑不复活、部分失败及实际完整learner双副本入同表通过，原有learner/AP-mesh/NI退场/FE事务和Image/模块检查通过。双VIF学习独立运行以保留生产cookie隔离限制。直接BCMC的每VIF模板/队列/密钥序列仍未拆分，接口上限未解除，未实机。详见[多VIF绑定](port/FTTR.md#multiple-vif-bindings-to-one-pe-multicast-table)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

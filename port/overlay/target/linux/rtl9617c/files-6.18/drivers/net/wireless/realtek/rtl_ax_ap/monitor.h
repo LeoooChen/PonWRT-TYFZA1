@@ -559,6 +559,8 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret = rtl_ax_tx_sequence_unbind(radio->tx, vif);
 	if (ret) dev_err(&radio->pdev->dev, "sequence withdrawal failed: %d\n", ret);
+	ret = rtl_ax_tx_mcast_unbind_vif(radio->tx, ieee80211_vif_to_wdev(vif)->netdev);
+	if (ret) dev_err(&radio->pdev->dev, "multicast VIF detach failed: %d\n", ret);
 
 	if (radio->sta_vif == vif) {
 		rtl_ax_client_release(radio);

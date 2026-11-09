@@ -8389,6 +8389,48 @@ Artifacts are `artifacts/fttr/group-owner-*-20261109.*`. PE firmware is unchange
 no physical device was accessed. Full multi-VIF allocation/direct BCMC and
 complete hardware packet retirement remain unfinished.
 
+### Multiple VIF bindings to one PE multicast table
+
+The FE/radio binding layer now permits up to12 logical VIFs to share the same
+physical-radio PE multicast table. Each FE binding holds its own netdev and
+BCMC policy/generation. Unicast policy publication also checks that VIF's
+binding instead of requiring the physical slot's first netdev. A different
+table for the same physical destination, one table on two radios, or a VIF
+bound to two destinations is rejected. Adding a VIF preserves the existing
+immutable records and cookie tombstones.
+
+Every staged cookie records the FE-assigned wireless ID of its owning VIF.
+Unbinding closes the table epoch and permanently clears only that VIF's record
+epochs, retaining control tombstones; other VIF records and policies remain
+owned. Namespace-local ifindex is not used as identity. The last binding retires
+the complete table; a new first binding also retires prior FE/driver incarnations
+before publication. Normal multicast generation invalidation still closes all
+readers while FE revalidates complete recipient sets.
+
+The radio retains one reference per bound VIF, can detach a single interface
+during remove_interface, and releases every binding before NI/context/DMA
+teardown. An individual or partial detach failure retains the remaining netdev
+references for retry; already detached entries are not released twice. A
+NETDEV_DOWN followed by rebind still reaches FE, so the radio's retained local
+reference cannot incorrectly imply that FE owns the table.
+
+The production binding test checks same-radio multiple VIFs with different GTK
+policies,12-binding exhaustion, foreign-table/radio conflicts, identical ifindex
+in distinct logical devices, cookie revocation, rejoin without resurrection,
+partial failure and detach-before-PE-join-before-DMA-free. The actual complete
+multicast learner stages two VIF recipients with distinct GTK keys/sequence
+policies into the same PE table in an isolated test run. The separate run avoids
+exhausting the deliberately quarantined cookie pool of the existing long suite;
+production limits are unchanged. Existing full learner, AP/Mesh, NI retirement
+and FE transaction regressions pass. Image/modules build and input identity are
+checked; reports are `artifacts/fttr/multivif-bind-*-20261109.*`.
+
+This removes the single-VIF binding bottleneck. It does not yet make the direct
+BCMC PE template multi-VIF: its producer, admission, queue and GTK/sequence
+state still need per-interface storage. The interface API still creates one
+data VIF. No physical device was accessed and no packet-retirement/ID-reuse
+claim is made.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

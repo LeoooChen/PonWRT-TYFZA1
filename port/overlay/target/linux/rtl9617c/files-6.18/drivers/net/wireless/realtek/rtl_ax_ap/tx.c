@@ -71,7 +71,7 @@ struct rtl_ax_tx {
 	struct rtl_ax_ni_state ni;
 	struct rtl_mc_pe_table *mcast_table;
 	dma_addr_t mcast_dma;
-	struct net_device *mcast_dev;
+	struct net_device *mcast_dev[12];
 	struct delayed_work fttr_work;
 	bool fttr_registered, mcast_cpu_registered;
 	bool key_refresh_pending;

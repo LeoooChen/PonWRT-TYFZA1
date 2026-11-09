@@ -5,6 +5,7 @@
 struct rtl_ax_tx;
 struct ieee80211_vif;
 void rtl_ax_tx_peer_role(struct rtl_ax_tx *tx, unsigned int macid, unsigned int port, unsigned int mbid, const u8 *self);
+struct net_device;
 struct ieee80211_key_conf;
 int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif);
 int rtl_ax_tx_sequence_unbind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif);
@@ -14,6 +15,7 @@ int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx);
 int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx, unsigned int macid, unsigned int port, unsigned int mbid);
 void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx);
 int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,struct ieee80211_key_conf *key,unsigned int rate);
+int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx, struct net_device *netdev);
 int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid);
 struct rtl_ax_rx;
 struct device;

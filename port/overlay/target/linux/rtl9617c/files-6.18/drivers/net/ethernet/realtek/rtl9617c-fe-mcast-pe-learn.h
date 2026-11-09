@@ -11,11 +11,12 @@ static int fe_mcast_pe_recipe(struct rtl_fe *fe,struct rtl_fe_port *port,
 
  if(direct->iftype==NL80211_IFTYPE_AP && (direct->frame.destination[0]&1)) {
   unsigned int slot;
+  struct rtl_fe_mc_binding *binding=NULL;
   if(!epoch || epoch>0xffffffffULL)return -ESTALE;
-  for(slot=0;slot<2;slot++)if(fe->mc_pe[slot].netdev==port->netdev)break;
-  if(slot==2 || !fe->mc_pe[slot].bcmc_policy_generation ||
-     fe->mc_pe[slot].bcmc_policy_generation!=rtl9617c_bridge_wifi_policy_generation())return -EOPNOTSUPP;
-  policy=&fe->mc_pe[slot].bcmc;
+  for(slot=0;slot<2;slot++)if((binding=fe_mcast_pe_binding(fe,port->netdev,slot+18)))break;
+  if(!binding || !binding->bcmc_policy_generation ||
+     binding->bcmc_policy_generation!=rtl9617c_bridge_wifi_policy_generation())return -EOPNOTSUPP;
+  policy=&binding->bcmc;
   record.epoch=epoch;record.control=RTL_MC_PE_BCMC|(source<<RTL_MC_PE_SOURCE_SHIFT);
   ether_addr_copy(record.destination,direct->frame.destination);
   ether_addr_copy(record.peer,port->netdev->dev_addr);
@@ -29,7 +30,7 @@ static int fe_mcast_pe_recipe(struct rtl_fe *fe,struct rtl_fe_port *port,
     peer->destination<18 || peer->destination>19 || !peer->macid || peer->macid>127 ||
     !epoch || epoch>0xffffffffULL || !peer->policy_generation ||
     peer->policy_generation!=rtl9617c_bridge_wifi_policy_generation() ||
-    fe->mc_pe[peer->destination-18].netdev!=port->netdev)return -EOPNOTSUPP;
+    !fe_mcast_pe_binding(fe,port->netdev,peer->destination))return -EOPNOTSUPP;
  policy=&peer->policy;
  if(!(policy->flags&BIT(18)) || (!(policy->flags&BIT(16)) && policy->key) ||
     (policy->flags&~(BIT(16)|BIT(18)|BIT(23))) || (policy->key&65535) ||
@@ -56,6 +57,7 @@ static int fe_mcast_pe_stage(struct rtl_fe *fe,const struct rtl_fe_mc_direct *di
  if(!table || table->record[cookie].control || fe->mc_gate.writers ||
     fe->mc_gate.epoch!=direct->pe_record.epoch)return -ESTALE;
  table->record[cookie]=direct->pe_record;
+ fe->mc_pe[direct->pe_destination-18].owner[cookie]=direct->wifi_id;
  dma_wmb();
  return 0;
 }

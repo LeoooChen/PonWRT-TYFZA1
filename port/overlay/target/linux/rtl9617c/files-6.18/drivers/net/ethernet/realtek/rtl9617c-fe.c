@@ -76,6 +76,11 @@ struct rtl_fe_wifi_peer {
  u64 policy_generation;
  struct rtl9617c_wifi_policy policy;
 };
+struct rtl_fe_mc_binding {
+ struct net_device *netdev;
+ struct rtl9617c_wifi_policy bcmc;
+ u64 bcmc_policy_generation;
+};
 struct rtl_fe_mac {
  unsigned int users, saved[5];
  u8 address[ETH_ALEN];
@@ -189,8 +194,9 @@ struct rtl_fe {
  struct rtl_fe_mc_profile mc_profile;
  spinlock_t mc_lock;
  struct rtl_fe_mc_gate mc_gate;
- struct {struct rtl_mc_pe_table *table;struct net_device *netdev;
- struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;} mc_pe[2];
+ struct {struct rtl_mc_pe_table *table;
+ struct rtl_fe_mc_binding vif[12];
+ unsigned int owner[RTL_MC_PE_COOKIES];} mc_pe[2];
  atomic_t mc_flush;
  struct rtl_fe_mc_host *mc_hosts[RTL_FE_MC_GROUPS];
  struct rtl_fe_mc_direct *mc_directs[RTL_FE_MC_GROUPS];
@@ -2042,7 +2048,8 @@ void rtl_fe_free(struct rtl_fe *fe)
  if(ret)dev_err(fe->device,"P6 CF restoration failed during removal: %d\n",ret);
  list_for_each_entry_safe(flow,flow_next,&fe->flows,list){fe_mcast_host_remove(fe,flow);list_del(&flow->list);kfree(flow->replica_ports);kfree(flow);}
  for(unsigned int i=1;i<RTL_FE_MC_GROUPS;i++)kfree(fe->mc_directs[i]);
- for(unsigned int i=0;i<2;i++)if(fe->mc_pe[i].netdev)dev_put(fe->mc_pe[i].netdev);
+ for(unsigned int i=0;i<2;i++)for(unsigned int j=0;j<12;j++)
+  if(fe->mc_pe[i].vif[j].netdev)dev_put(fe->mc_pe[i].vif[j].netdev);
  list_for_each_entry(port,&fe->ports,list)fe_wifi_forget_port(fe,port);
  list_for_each_entry_safe(port,next,&fe->ports,list){list_del(&port->list);kfree(port);}
  dma_free_coherent(fe->device,RTL_FE_MEMORY_BYTES,fe->memory,fe->dma);

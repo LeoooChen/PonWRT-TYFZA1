@@ -36,7 +36,7 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define WRITE_ONCE(v,n) ((v)=(n))
 #define dma_wmb() ((void)0)
 #define BIT(n) (1U<<(n))
-struct net_device {unsigned refs;};
+struct net_device {unsigned refs,ifindex;};
 static void dev_hold(struct net_device *d){d->refs++;}
 static void dev_put(struct net_device *d){assert(d->refs);d->refs--;}
 '''
@@ -51,13 +51,14 @@ static u64 policy_generation=1;
 static u64 rtl9617c_bridge_wifi_policy_generation(void){return policy_generation;}
 #define ether_addr_equal(a,b) (!memcmp(a,b,6))
 #define list_for_each_entry(p,h,m) for(unsigned pi=0;pi<2&&((p)=&f->peers[pi]);pi++)
+struct rtl_fe_mc_binding {struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;};
 struct rtl_fe {int lock,mc_lock;unsigned changes;
  struct {unsigned writers;}mc_gate;
  struct rtl_fe_wifi_peer peers[2];
- struct {struct rtl_mc_pe_table *table;struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;}mc_pe[2];
- struct rtl_fe_port ports[2];};
+ struct {struct rtl_mc_pe_table *table;struct rtl_fe_mc_binding vif[12];unsigned owner[256];}mc_pe[2];
+ struct rtl_fe_port ports[13];};
 static struct rtl_fe_port *fe_port(struct rtl_fe *f,struct net_device *d){
- for(unsigned i=0;i<2;i++)if(f->ports[i].dev==d)return &f->ports[i];return NULL;
+ for(unsigned i=0;i<13;i++)if(f->ports[i].dev==d)return &f->ports[i];return NULL;
 }
 static void fe_mcast_pe_close(struct rtl_fe *f);
 static void fe_mcast_invalidate(struct rtl_fe *f){
@@ -68,7 +69,7 @@ fe += (ethernet / 'rtl9617c-fe-mcast-pe.h').read_text()
 fe = fe.replace('&f->peers[pi]', '&fe->peers[pi]')
 fe += r'''
 int main(void){
- struct net_device a={},b={},foreign={};struct rtl_fe f={.ports={{&a,1},{&b,2}}};
+ struct net_device a={.ifindex=1},b={.ifindex=2},foreign={.ifindex=3};struct rtl_fe f={.ports={{&a,1},{&b,2}}};
  struct rtl_mc_pe_table ta={},tb={},other={};
  assert(rtl_fe_wifi_mcast_table(&f,&foreign,18,&ta,true)==-ENODEV);
  assert(rtl_fe_wifi_mcast_table(&f,&a,17,&ta,true)==-EINVAL);
@@ -123,12 +124,33 @@ int main(void){
  assert(f.peers[0].macid==2&&f.peers[0].policy.noack_map==1);
  struct rtl9617c_wifi_policy group={.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
  assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2));
- assert(f.mc_pe[0].bcmc_policy_generation==2&&!memcmp(&f.mc_pe[0].bcmc,&group,sizeof(group)));
+ assert(f.mc_pe[0].vif[0].bcmc_policy_generation==2&&!memcmp(&f.mc_pe[0].vif[0].bcmc,&group,sizeof(group)));
  group.sequence=0;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2)==-EINVAL);group.sequence=23;
  assert(rtl_fe_wifi_mcast_policy(&f,&b,mac,18,0,&group,2)==-ENOLINK);
  assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,1)==-ESTALE);
  rtl_fe_wifi_mcast_detach(&f);
  assert(!ta.epoch&&!tb.epoch&&!a.refs&&!b.refs&&!f.mc_pe[0].table&&!f.mc_pe[1].table);
+ /* Same radio, distinct VIFs: binding/policy/record ownership is independent. */
+ struct net_device v[13]={};struct rtl_fe shared={};struct rtl_mc_pe_table table={};
+ for(unsigned i=0;i<13;i++){v[i].ifindex=100; /* distinct namespaces can reuse ifindex */shared.ports[i]=(struct rtl_fe_port){&v[i],i+1};}
+ for(unsigned i=0;i<12;i++)assert(!rtl_fe_wifi_mcast_table(&shared,&v[i],18,&table,true)&&v[i].refs==1);
+ assert(rtl_fe_wifi_mcast_table(&shared,&v[12],18,&table,true)==-ENOSPC&&!v[12].refs);
+ assert(rtl_fe_wifi_mcast_table(&shared,&v[12],19,&table,true)==-EBUSY);
+ group.sequence=23;group.key=63<<16;group.key_generation=11;
+ assert(!rtl_fe_wifi_mcast_policy(&shared,&v[0],mac,18,0,&group,2));
+ group.key=62<<16;assert(!rtl_fe_wifi_mcast_policy(&shared,&v[1],mac,18,0,&group,2));
+ assert(shared.mc_pe[0].vif[0].bcmc.key==63<<16&&shared.mc_pe[0].vif[1].bcmc.key==62<<16);
+ table.epoch=23;
+ table.record[9].epoch=table.record[10].epoch=23;table.record[9].control=123;table.record[10].control=124;
+ shared.mc_pe[0].owner[9]=shared.ports[0].wifi_id;shared.mc_pe[0].owner[10]=shared.ports[1].wifi_id;
+ assert(!rtl_fe_wifi_mcast_table(&shared,&v[0],18,&table,false));
+ assert(shared.mc_pe[0].table==&table&&!table.epoch&&!table.record[9].epoch&&table.record[10].epoch==23);
+ assert(table.record[9].control==123&&!v[0].refs&&v[1].refs==1);
+ assert(shared.mc_pe[0].vif[1].bcmc_policy_generation==2&&shared.mc_pe[0].vif[1].bcmc.key==62<<16);
+ assert(!rtl_fe_wifi_mcast_table(&shared,&v[0],18,&table,true));table.epoch=23;
+ assert(!table.record[9].epoch&&table.record[10].epoch==23); /* no resurrection */
+ rtl_fe_wifi_mcast_detach(&shared);assert(!shared.mc_pe[0].table);
+ for(unsigned i=0;i<13;i++)assert(!v[i].refs);
  puts("FE multicast PE binding: two radios, ownership conflicts, idempotence, invalidation and port detachment passed");
 }
 '''
@@ -143,12 +165,12 @@ struct ieee80211_hw {int unused;};
 struct pe_probe {void *memory;};
 struct rtl_ax_tx {struct pe_probe pe;struct {unsigned cpu;int ps_work;bool route_peers[128];}ni;
  int lock,fttr_work;bool fttr_registered,mcast_cpu_registered,pe_active,peer_authorized[128];u64 mcast_policy_attempt[128];
- struct rtl_mc_pe_table *mcast_table;struct net_device *mcast_dev;void *dma_device;
+ struct rtl_mc_pe_table *mcast_table;struct net_device *mcast_dev[12];void *dma_device;
  uintptr_t mcast_dma,headers_dma,pages_dma,ring_dma;void *headers,*pages,*ring;
  struct {void *skb;u64 fttr_generation;bool pe_mcast;}slots[2];};
 static unsigned bind_calls,unbind_calls,stop_calls,dma_frees,tx_frees,pe_frees,remove_calls;
-static int fail_bind,fail_unbind,fail_remove,fail_stop;
-static bool bound,joined;static unsigned canceled,unregistered,cpu_unregistered;
+static int fail_bind,fail_unbind,fail_remove,fail_stop;static struct net_device *fail_unbind_dev;
+static bool bound,joined;static unsigned bound_count;static unsigned canceled,unregistered,cpu_unregistered;
 static u64 generation=7,seen_generation;
 static unsigned compiler_calls,publish_calls;
 static int compiler_error,publish_error;
@@ -173,11 +195,11 @@ static void mutex_unlock(int *p){assert(*p);*p=0;}
 static u32 get_unaligned_le32(void *p){u32 v;memcpy(&v,p,4);return v;}
 static int rtl9617c_wifi_mcast_table(struct net_device *d,unsigned dest,struct rtl_mc_pe_table *t,bool bind){
  assert(d&&dest==19&&t);
- if(bind){bind_calls++;if(fail_bind)return -EIO;bound=true;}
- else {unbind_calls++;assert(!t->epoch);if(fail_unbind)return -EIO;bound=false;}
+ if(bind){bind_calls++;if(fail_bind)return -EIO;if(!d->refs)bound_count++;bound=true;}
+ else {unbind_calls++;assert(!t->epoch);if(fail_unbind || d==fail_unbind_dev)return -EIO;assert(bound_count);bound=--bound_count!=0;}
  return 0;
 }
-static int ni_test_remove(struct rtl_ax_tx *t){assert(!bound&&!t->mcast_dev);remove_calls++;return fail_remove?-EIO:0;}
+static int ni_test_remove(struct rtl_ax_tx *t){assert(!bound&&!t->mcast_dev[0]);remove_calls++;return fail_remove?-EIO:0;}
 static void pe_event_release(struct rtl_ax_tx *t){(void)t;}
 static void cancel_work_sync(int *p){(void)p;}
 static void cancel_delayed_work_sync(int *p){(void)p;assert(joined);canceled++;}
@@ -203,10 +225,10 @@ int main(void){
  struct rtl_ax_tx t={.pe={memory},.ni={.cpu=3},.mcast_table=&table,.fttr_registered=true,.mcast_cpu_registered=true};
  assert(ni_mcast_bind(&t,&a)==-EOPNOTSUPP&&!bind_calls);
  u32 cap=RTL_MC_PE_CAPABILITY;memcpy(memory+PE_PROBE_MAILBOX+RTL_MC_PE_CAP_MAILBOX*4,&cap,4);
- fail_bind=1;assert(ni_mcast_bind(&t,&a)==-EIO&&!t.mcast_dev&&!a.refs);fail_bind=0;
+ fail_bind=1;assert(ni_mcast_bind(&t,&a)==-EIO&&!t.mcast_dev[0]&&!a.refs);fail_bind=0;
  assert(!ni_mcast_bind(&t,&a)&&bound&&a.refs==1);
  assert(!ni_mcast_bind(&t,&a)&&a.refs==1);
- unsigned before=bind_calls;assert(!ni_mcast_bind(&t,&b)&&bind_calls==before&&!b.refs);
+ unsigned before=bind_calls;assert(!ni_mcast_bind(&t,&b)&&bind_calls==before+1&&b.refs==1);
  struct ieee80211_vif vif={.wdev={&a}};memory[0xe408]=2;
  assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&!compiler_calls);
  t.pe_active=t.ni.route_peers[1]=t.peer_authorized[1]=true;
@@ -222,12 +244,20 @@ int main(void){
  template[4]|=BIT(16);memcpy(memory+0xd020,template,sizeof(template));
  assert(!rtl_ax_tx_mcast_policy(&t,&vif,1));
  vif.wdev.netdev=&b;before=compiler_calls;
- assert(rtl_ax_tx_mcast_policy(&t,&vif,1)==-ENOLINK&&compiler_calls==before);
+ assert(!rtl_ax_tx_mcast_policy(&t,&vif,1)&&compiler_calls==before+1);
+ fail_unbind=1;assert(rtl_ax_tx_mcast_unbind_vif(&t,&a)==-EIO&&a.refs&&b.refs);
+ fail_unbind=0;assert(!rtl_ax_tx_mcast_unbind_vif(&t,&a)&&!a.refs&&b.refs&&bound);
+ assert(!ni_mcast_bind(&t,&a)&&a.refs&&b.refs);
+ /* Partial detach releases completed VIFs once and preserves the failed
+  * suffix; a retry must not drop the already released netdev reference. */
+ fail_unbind_dev=&b;assert(ni_mcast_unbind(&t)==-EIO&&!a.refs&&b.refs&&bound);
+ fail_unbind_dev=NULL;assert(!ni_mcast_unbind(&t)&&!a.refs&&!b.refs&&!bound);
+ assert(!ni_mcast_bind(&t,&a)&&!ni_mcast_bind(&t,&b));
  t.slots[0].skb=memory;t.slots[0].fttr_generation=2;t.slots[0].pe_mcast=true;
  table.epoch=7;fail_unbind=1;
  assert(rtl_ax_tx_free(&t,NULL)==-EIO&&!table.epoch&&bound&&a.refs==1&&!stop_calls&&!dma_frees&&!remove_calls);
  fail_unbind=0;fail_remove=1;
- assert(rtl_ax_tx_free(&t,NULL)==-EIO&&!bound&&!a.refs&&!stop_calls&&!dma_frees);
+ assert(rtl_ax_tx_free(&t,NULL)==-EIO&&!bound&&!a.refs&&!b.refs&&!stop_calls&&!dma_frees);
  fail_remove=0;fail_stop=1;
  assert(rtl_ax_tx_free(&t,NULL)==-ETIMEDOUT&&!dma_frees&&!tx_frees&&!canceled&&!unregistered&&!cpu_unregistered&&!fttr_puts&&!payload_unmapped);
  fail_stop=0;assert(!rtl_ax_tx_free(&t,NULL)&&dma_frees==1&&tx_frees==1&&pe_frees==1&&fttr_puts==1&&mcast_puts==1);

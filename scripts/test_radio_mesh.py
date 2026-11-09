@@ -66,7 +66,7 @@ struct ieee80211_bss_conf {unsigned beacon_int,dtim_period; bool enable_beacon;
 static void rtl_ax_store32(u8 *,u32);
 static u32 rtl_ax_ap_read32(const u8 *);
 #include "role-identity.h"
-struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
+struct ieee80211_vif {void *netdev;struct rtl_ax_vif drv_priv[1];int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
 #include "cam-owner.h"
@@ -111,6 +111,7 @@ static int rtl_ax_port0_start(struct io *io,struct port *port,void *r,int(*drop)
 static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){return vif;}
 static void cfg80211_stop_iface(void *wiphy,void *wdev,int gfp){(void)wiphy;(void)wdev;(void)gfp;stop_requests++;}
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
+static int rtl_ax_tx_mcast_unbind_vif(struct tx *tx,void *dev){(void)tx;(void)dev;return 0;}
 static void rtl_ax_tx_ap_address(struct tx *tx,u8 *addr){(void)tx;(void)addr;}
 static void rtl_ax_security_dctl(u8 *p,unsigned id,void *role){(void)id;(void)role;memset(p,0,68);}
 static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_bss_conf *conf){

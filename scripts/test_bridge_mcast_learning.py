@@ -35,8 +35,9 @@ struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;}
 struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid,features;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;struct wireless_dev *ieee80211_ptr;struct vlan_dev_priv vlan;};''')
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
 code=code.replace('struct rtl_fe {','#include "rtl9617c-epon-path.h"\nstruct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_epon_paths epon_paths;bool epon_admitted;struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
+code=code.replace('struct rtl_fe {','struct rtl_fe_mc_binding {struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;};\nstruct rtl_fe {')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
- struct {struct rtl_mc_pe_table *table;struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;} mc_pe[2];
+ struct {struct rtl_mc_pe_table *table;struct rtl_fe_mc_binding vif[12];unsigned owner[256];} mc_pe[2];
  struct rtl_fe_mc_gate mc_gate;int lock,mc_lock;struct rtl_fe_port *ports[6];''')
 code=code.replace('#include "rtl9617c-fe-mcast-profile.h"','#include "rtl9617c-fe-mcast-profile.h"\n#include "rtl9617c-fe-mcast-gate.h"')
 code=code.replace('typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32,__le32;typedef uint64_t u64;',
@@ -164,6 +165,7 @@ static struct net_device *fe_bridge_physical(struct net_device *d,struct rtl9617
 '''
 # Capture completions queue immediately, whereas FE retry waits HZ.
 code=code.replace('assert(q==0 && d==HZ);','assert(q==0 && (d==HZ || !d));')
+code+='static struct rtl_fe_mc_binding *fe_mcast_pe_binding(struct rtl_fe *fe,\n struct net_device *netdev,unsigned int destination)\n{\n if(!netdev || destination<18 || destination>19)return NULL;\n for(unsigned int i=0;i<12;i++)\n  if(fe->mc_pe[destination-18].vif[i].netdev==netdev)\n   return &fe->mc_pe[destination-18].vif[i];\n return NULL;\n}\n'
 code+=r'''
 static void fe_mcast_pe_close(struct rtl_fe *f){for(unsigned i=0;i<2;i++)if(f->mc_pe[i].table)f->mc_pe[i].table->epoch=0;}
 static void fe_mcast_invalidate(struct rtl_fe *fe){struct rtl_dq_io io=fe_io(fe);fe_mcast_pe_close(fe);rtl_fe_mc_gate_begin(&io,&fe->mc_gate);rtl_fe_mc_gate_end(&fe->mc_gate);}
@@ -731,7 +733,7 @@ int main(void){
  }
  /* Actual complete M2U transaction now publishes an immutable PE recipient
   * before exposing the Hash. Closed/foreign policies keep the CPU path. */
- struct rtl_mc_pe_table pe_table={};fe.mc_pe[1].table=&pe_table;fe.mc_pe[1].netdev=&wifi;
+ struct rtl_mc_pe_table pe_table={};fe.mc_pe[1].table=&pe_table;fe.mc_pe[1].vif[0].netdev=&wifi;
  test_peer_port=&wp;test_peer=(struct rtl_fe_wifi_peer){.destination=19,.macid=1,.policy_generation=1,
   .address={2,9,8,7,6,5},.policy={.qos=1,.key=7U<<16,.flags=BIT(16)|BIT(18)|BIT(23)}};
  for(unsigned v=0;v<64;v++)test_peer.policy.dscp_tid[v]=v%8;
@@ -848,10 +850,10 @@ int main(void){
   if(broadcast){memset(wireless.destination,255,6);wireless.ip_destination[0]=0xffffffffU;wireless.source_port=68;wireless.destination_port=67;}
   ap.iftype=role?NL80211_IFTYPE_AP:NL80211_IFTYPE_STATION;
   test_peer.policy.flags=BIT(16)|BIT(18)|(role?0:BIT(23));
-  fe.mc_pe[1].bcmc_policy_generation=0;
+  fe.mc_pe[1].vif[0].bcmc_policy_generation=0;
   if(role==2) {
-   fe.mc_pe[1].bcmc_policy_generation=test_policy_generation;
-   fe.mc_pe[1].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
+   fe.mc_pe[1].vif[0].bcmc_policy_generation=test_policy_generation;
+   fe.mc_pe[1].vif[0].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
    memcpy(wifi.dev_addr,"\2\0\0\0\0\1",6);
   }
   fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
@@ -881,9 +883,38 @@ int main(void){
   }
   fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
  }
+ if(getenv("RTL_TEST_MULTI_VIF")) {
+ /* One physical PE table serves two VIFs with distinct reported GTK
+  * policies. Complete learning must stage separate records in the same table. */
+ wireless=multicast_wireless;ap.iftype=NL80211_IFTYPE_AP;
+ fe.mc_pe[1].vif[1].netdev=&wifi2;
+ for(unsigned i=0;i<2;i++){
+  fe.mc_pe[1].vif[i].bcmc_policy_generation=test_policy_generation;
+  fe.mc_pe[1].vif[i].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),
+   .key=(63-i)<<16|2<<24,.bcmc_generation=29+i,.sequence=23+i,.key_generation=11+i,.rate=4};
+ }
+ memcpy(wifi2.dev_addr,"\2\0\0\0\0\2",6);
+ fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
+ skb.saved.ingress=skb.saved.port=1;skb.saved.wifi_id=0;skb.saved.multicast_epoch=fe.mc_gate.epoch;skb.frame=wireless;
+ ticket=fe_mcast_capture_begin(&bridge,&skb,false,++fe_mcast_ticket);assert(ticket);
+ fe_mcast_capture_select(&bridge,&skb,&wifi);fe_mcast_capture_select(&bridge,&skb,&wifi2);
+ skb.dev=&wifi;fe_mcast_capture_output(&bridge,&skb);skb.dev=&wifi2;fe_mcast_capture_output(&bridge,&skb);
+ fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
+ assert(fe.indexed&&fe.indexed->replica_count==2&&fe.mc_gate.active);
+ copied=0;
+ for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed){
+  unsigned which=fe.mc_directs[c]->physical==wifi.ifindex?0:1;struct net_device *dev=which?&wifi2:&wifi;
+  assert(fe.mc_directs[c]->pe_destination==19&&pe_table.record[c].bcmc.generation==29+which);
+  assert(pe_table.record[c].key==((63-which)<<16|2<<24));
+  assert(fe.mc_pe[1].owner[c]==(which?wp2.wifi_id:wp.wifi_id)&&!memcmp(pe_table.record[c].peer,dev->dev_addr,6));copied++;
+ }
+ assert(copied==2);fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ memset(&fe.mc_pe[1].vif[1],0,sizeof(fe.mc_pe[1].vif[1]));
+ goto finished;
+ }
  wireless=multicast_wireless;
  ap.iftype=NL80211_IFTYPE_STATION;
- fe.mc_pe[1].table=NULL;fe.mc_pe[1].netdev=NULL;test_peer_port=NULL;
+ fe.mc_pe[1].table=NULL;fe.mc_pe[1].vif[0].netdev=NULL;test_peer_port=NULL;
  /* EPON MAC-instance0 and31 use POL0/31 on ingress, with per-replica
   * POL0 and queues masked to the current PUC width on egress. */
  fe.itu_paths=NULL;fe.itu_netdev=NULL;paths.path[0].vlan=RTL_ITU_VLAN_ANY;
@@ -1012,6 +1043,7 @@ int main(void){
  fe_mcast_host_remove(&fe,&incomplete);assert(cpu_invalidations==before_revoke+1);
  struct rtl_fe_flow never_published={.replica_count=1};
  fe_mcast_host_remove(&fe,&never_published);assert(cpu_invalidations==before_revoke+1);
+finished:
  for(unsigned i=1;i<256;i++)free(fe.mc_directs[i]);
  for(unsigned i=0;i<16;i++)assert(!fe.mtus[i].users);
  fe_mcast_purge(&bridge);assert(!net.refs);free(fe.memory);
