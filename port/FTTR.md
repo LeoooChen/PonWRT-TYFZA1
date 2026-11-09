@@ -10041,6 +10041,31 @@ pass. Evidence is `artifacts/fttr/vp-close-*-20261109.*`. PE firmware is unchang
 no physical device was accessed. Successful enable-bit closure still does not
 prove all in-flight bus accesses finished or permit safe hardware-ID reuse.
 
+### Forced NI cleanup must finish a retained uplink stop
+
+An unsuccessful graceful `ni_uplink_stop` retains its coherent descriptor
+allocation and VP snapshot. The forced `ni_test_remove` path previously could
+continue to restore/unmap NI registers without successfully stopping that
+uplink, leaving its allocation and published mailbox reference behind. It now
+retries the same uplink stop before any forced base replacement or RX handoff.
+Failure returns with all retry resources retained; success uses the existing
+ordered stop to withdraw mailbox pointers, restore the VP and free exactly once.
+The forced downlink BID/EPP cleanup then proceeds independently.
+
+The lifecycle fixture now executes the production uplink-stop function together
+with production release/remove, instead of a success-only stop stub. Six new
+both-radio cases cover outstanding DMA consumption, rejected disable and a busy
+base transaction across repeated remove attempts, then recovery into forced
+downlink cleanup. Old `1beaee0` reproduces bypassing the incomplete stop. All52
+restore cases and six related suites pass, including554 ES scenarios and the
+linked PE-to-ARM ownership transfer. ASan/UBSan, final Image/modules and both
+changed radio source identities pass. Evidence is
+`artifacts/fttr/uplink-forced-*-20261109.*`.
+
+No physical device was accessed and PE firmware is unchanged. This establishes
+the cleanup dependency and retains the existing two-descriptor prefetch rule;
+it does not establish full MCE/AFT/AXI/MiniOLT retirement or safe ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

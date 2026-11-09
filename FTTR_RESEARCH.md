@@ -331,6 +331,8 @@
 
 163. 补齐普通VP释放与强制PCI清理的关闭读回：旧0f16f7d生产函数复现VP关闭写被拒仍改基址/释放；两入口现在核对TXQ0使能bit0，失败EIO并保留原资源，重试成功后才清理。双radio/普通/强制四场景、46恢复场景、16原厂AXI属性对照及六项回归含554 ES，Image/模块/输入一致通过。核对原厂reset实际.text.unlikely段只见DMA/AFT复位及环重建，未据此推断下游空闲；PE未改、未实机，完整退场和ID复用仍待补齐。详见[VP关闭归属](port/FTTR.md#failed-vp-closure-retains-graceful-and-forced-ni-ownership)。
 
+164. 修复强制NI清理绕过残留上行停止：旧1beaee0在ni_uplink_stop失败后仍可恢复/释放寄存器，遗留描述符分配和邮箱；强制路径现在先重试原生uplink stop，失败保留全部重试资源，成功后由同一停止流程撤指针/恢复VP/释放一次。生命周期测试改为执行真实uplink stop，六双radio/DMA未追平/关闭被拒/基址忙/重试→强制下行清理场景、52恢复场景及六回归含554 ES和链接PE→ARM，ASan/UBSan、Image/模块/两输入一致通过。PE未改、未实机；完整MCE/AFT/AXI/MiniOLT退场与ID复用仍未证明。详见[强制清理上行依赖](port/FTTR.md#forced-ni-cleanup-must-finish-a-retained-uplink-stop)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

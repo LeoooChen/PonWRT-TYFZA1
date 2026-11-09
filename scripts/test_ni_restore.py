@@ -53,9 +53,13 @@ typedef uint32_t u32;
 #define RTL_AX_TX_RINGS 6
 #define TEST_MEMORY_BYTES 128
 struct rtl_ax_tx {void *dma_device,*rx;unsigned producer[6];struct {void *memory;}pe;
- struct {void *route_dev,*retired_vif[12],*peer_dev[128];unsigned char peer_wifi[128];bool active,vp_active,epp_retiring;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
+ struct {void *route_dev,*retired_vif[12],*peer_dev[128];unsigned char peer_wifi[128];bool active,vp_active,epp_retiring,uplink_ready;void *regs,*dma,*vp,*test_memory,*uplink_memory;u32 test_dma,uplink_dma;int ps_work;
  unsigned cpu,eq,registers[14],saved[14],arb[8],attrs[2][2],epp_bases[8],epp_eq[8],vp_saved[5],vp_index;}ni;};
 static u32 mmio[0x10000/4],dma[0x1000/4],arb[512],attr[64][2];static unsigned char memory[0x80000];
+static unsigned char uplink_memory[8192];
+#define RTL_AX_NI_TX_BYTES 8192
+#define RTL_AX_NI_TX_MASK 1023
+static __attribute__((unused)) void *rtl_ax_rx_pe_memory(void *rx){(void)rx;return memory;}
 static unsigned accesses,fail_at,polls,mmio_writes,opens,released,paused;
 static bool load_fail,disable_fail;static unsigned loading,vp_base_writes,rx_handoffs;
 static u32 get_unaligned_le32(const void *p){u32 x;memcpy(&x,p,4);return x;}
@@ -76,7 +80,7 @@ static void writel(u32 v,void *p){
 }
 #define readl_poll_timeout(p,v,c,d,t) ({(void)(d);(void)(t);polls++;v=readl(p);(c)?0:-ETIMEDOUT;})
 static bool ni_epps_empty(struct rtl_ax_tx *t){(void)t;return true;}
-static unsigned uplink_stops;static int ni_uplink_stop(struct rtl_ax_tx *t){(void)t;uplink_stops++;return 0;}
+static unsigned uplink_stops;
 static int rtl_ax_tx_pause(struct rtl_ax_tx *t){(void)t;paused++;return 0;}
 static int rtl_ax_rx_pe_rpq_stop(void *r){(void)r;rx_handoffs++;return 0;}
 static void ni_ps_retire(struct rtl_ax_tx *t){(void)t;}
@@ -84,7 +88,10 @@ static void pe_event_release(struct rtl_ax_tx *t){(void)t;}
 static void cancel_work_sync(void *w){(void)w;}
 static void dma_wmb(void){}
 static void rtl_ax_tx_open(struct rtl_ax_tx *t){(void)t;opens++;}
-static void dma_free_coherent(void *d,unsigned n,void *p,unsigned a){(void)d;(void)n;(void)p;(void)a;released++;}
+static unsigned uplink_frees;
+static void dma_free_coherent(void *d,unsigned n,void *p,unsigned a){(void)d;(void)a;
+ if(p==uplink_memory){assert(n==8192&&!get_unaligned_le32(memory+0x2160)&&!get_unaligned_le32(memory+0x2174));uplink_frees++;}
+ released++;}
 static void iounmap(void *p){assert(p);released++;}
 '''
 code+=r'''
@@ -102,10 +109,11 @@ static void dev_put(void *p){(void)p;assert(0);}
 static void *phys_to_virt(u32 a){(void)a;assert(0);return NULL;}
 static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dir){(void)dev;(void)a;(void)bytes;(void)dir;assert(0);}
 '''
+code+=fn('ni_uplink_stop').replace('tx->ni.uplink_ready = false;', 'uplink_stops++;tx->ni.uplink_ready = false;')
 code+=fn('ni_es_empty')+fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
- epp_error=0;epp_calls=0;
+ epp_error=0;epp_calls=uplink_frees=0;
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));
  accesses=mmio_writes=polls=opens=released=paused=loading=vp_base_writes=rx_handoffs=0;load_fail=disable_fail=false;
  struct rtl_ax_tx t={.pe={memory},.ni={.active=true,.regs=mmio,.dma=dma,.vp=(u8*)dma+0x100,.cpu=cpu,.eq=cpu==3?6:7}};
@@ -118,6 +126,24 @@ static struct rtl_ax_tx setup(unsigned cpu){
  return t;
 }
 int main(void){unsigned cases=0;
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned failure=0;failure<3;failure++){
+  struct rtl_ax_tx t=setup(cpu);fail_at=0;
+  t.ni.uplink_memory=uplink_memory;t.ni.uplink_dma=0x7000000;t.ni.uplink_ready=true;
+  put_unaligned_le32(0x10000100,memory+0x2160);put_unaligned_le32(1,memory+0x2174);
+  if(failure==0)dma[0x118/4]=1;
+  if(failure==1){dma[0x100/4]=1;disable_fail=true;}
+  if(failure==2){load_fail=true;dma[0x104/4]=BIT(31);}
+  for(unsigned retry=0;retry<2;retry++){
+   assert(ni_test_remove(&t)==(failure==1?-EIO:-ETIMEDOUT));
+   assert(t.ni.active&&t.ni.uplink_memory==uplink_memory&&!uplink_frees&&!released);
+   assert(!rx_handoffs&&!accesses&&!vp_base_writes&&!t.ni.epp_retiring);
+  }
+  load_fail=disable_fail=false;dma[0x104/4]=dma[0x118/4]=0;
+  put_unaligned_le32(1,memory+0x2078); /* force the downlink cleanup after uplink stop */
+  assert(!ni_test_remove(&t));
+  assert(!t.ni.active&&!t.ni.uplink_ready&&!t.ni.uplink_memory&&uplink_frees==1&&released==3);
+  assert(!ni_test_remove(&t)&&uplink_frees==1);cases++;
+ }
  for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned forced=0;forced<2;forced++){
   struct rtl_ax_tx t=setup(cpu);fail_at=0;t.ni.vp_active=true;
   dma[0x100/4]=1;disable_fail=true;

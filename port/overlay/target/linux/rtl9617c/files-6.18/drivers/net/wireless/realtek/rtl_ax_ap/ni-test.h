@@ -565,6 +565,11 @@ released:
   if(tx->ni.route_dev){dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;}
   return rtl_ax_tx_pause(tx);
  }
+	/* A failed graceful uplink stop still owns its descriptor allocation
+	 * and VP snapshot. Complete that stop before the forced path can replace
+	 * the VP base or unmap the registers required to retry it. */
+	ret = ni_uplink_stop(tx);
+	if (ret) return ret;
 	/* PCIe DMA is already closed by radio teardown. Stop NI publication
 	 * before releasing the PE mailbox, its IRQ action, or the EPP memory. */
 	writel(readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu), tx->ni.regs + 0x6108);
