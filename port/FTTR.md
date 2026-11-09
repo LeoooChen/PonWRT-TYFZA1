@@ -8155,6 +8155,50 @@ exposes one data interface: per-VIF role/MBID/beacon allocation, GTK, shared
 sequence and BCMC/FE/PE identity are not yet complete. NI group/action/cookie/GEM
 retirement restrictions remain; this change does not remove their quarantine.
 
+### Role identity through firmware tables and beacon upload
+
+A native interface now has a private hardware identity (port, MBID, self MACID
+and role type), and each station copies it into a retained per-MACID record.
+The current interface allocator still creates one AP/STA/mesh at port0/MBID0.
+JOIN, address CAM, station CCTL updates and beacon uploads consume the identity
+instead of silently resetting these fields to the root AP values. Removal uses
+the retained station record after mac80211 can free the station/interface data.
+This does not yet advertise multiple interfaces.
+
+The target HAL establishes distinct fields: role type AP2/VAP3/STA1/mesh6;
+JOIN port[23:21]; CAM port[10:8] and TSF port[13:11]; C/XB CCTL word5 port[2:0]
+and MBID[7:4]. The original VAP allocator requires an existing port0 and assigns
+MBID1..7 while sharing WMM0. Beacon HAL copies role hardware band, port, MBID
+and self MACID into its hardware entry, then the actual MAC encoder writes
+port/MBID/band into header bytes0/1/2 and MACID into byte4. Physical RF band
+must not be substituted for MAC band0.
+
+Native initial station tables, BA operational/finish updates and rate-update
+JOINs preserve the station identity. Partial CCTL writes alter only the
+identity bits selected by the command's mask, retaining unrelated HE/rate state.
+Self-role construction derives AP/VAP/mesh type from the interface identity.
+Normal beacon upload receives that same identity along with mac80211's template;
+allocation or H2C failure leaves previously recorded template state unchanged.
+The separate explicit probe beacon interface retains its root-role contract.
+
+`trace_stock_radio_role_identity.py` executes36 target HAL→JOIN/CAM cases,
+72 actual C/XB CCTL encodings, and24 complete HAL role→beacon entry→MAC payload
+chains. `test_radio_role_identity.py` matches these outputs and checks160
+partial CCTL masks plus24 real native beacon upload/error cases and input/allocation
+bounds. AP/mesh lifecycle tests inject seven VAP identities into actual self-role
+commands. STA/BA cleanup tests use nonzero MBID5 and require it across BA updates
+and deferred station removal. Existing STA, CAM-color, extended-key, authorization
+and FE transaction tests pass. Kernel Image/modules build passes and all four
+changed inputs match the worktree. Reports/build data are under
+`artifacts/fttr/role-identity*-20261109.*`; PE firmware is unchanged.
+
+Per-VIF resource allocation, MBID enable/disable and beacon scheduling, per-VIF
+GTK/non-QoS sequence/BCMC state and CPU/NI→PE descriptor identity still require
+integration before the single-data-interface restriction can be removed. These
+encoded multi-role tests do not demonstrate physical multi-SSID operation.
+Complete upstream/downstream packet retirement and other hardware-ID quarantine
+remain unchanged. No physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

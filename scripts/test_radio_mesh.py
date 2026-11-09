@@ -62,11 +62,14 @@ typedef int64_t s64; typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t 
 #define dev_info(...) ((void)0)
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period; bool enable_beacon;
  struct {bool enabled; unsigned color;} he_bss_color;};
-struct ieee80211_vif {int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
+static void rtl_ax_store32(u8 *,u32);
+static u32 rtl_ax_ap_read32(const u8 *);
+#include "role-identity.h"
+struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
 #include "cam-owner.h"
-struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;
+struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;
  struct {u8 nhm_noise_ratio;} environment;s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
@@ -193,6 +196,15 @@ code += r"""
 static void reset_commands(void){commands=fail_command=0;}
 static void check_join(unsigned word){assert(commands==2);assert(command_class[0]==8&&command_function[0]==0&&command_word[0]==word);assert(command_class[1]==6&&command_function[1]==0);}
 int main(void){
+ /* A VAP identity reaches the actual self-role commands without becoming AP2. */
+ for(unsigned mbid=1;mbid<8;mbid++){
+  struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=3,.monitor_started=true};
+  struct ieee80211_vif vap={.type=NL80211_IFTYPE_AP,.drv_priv={{{.type=3,.mbid=mbid}}}};
+  r.ap_vif=&vap;reset_commands();
+  assert(!rtl_ax_self_role_prepare(&r,vap.addr,100,2));
+  assert(command_word[1]==0x6100&&command_word[2]==(0x4f040100|(3<<14)));
+  assert(r.role_type==3&&r.identities[0].mbid==mbid);
+ }
  for(unsigned chip=3;chip<=4;chip++){
   struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=chip,.monitor_started=true};
   struct ieee80211_hw hw={&r};struct ieee80211_vif ap={.type=NL80211_IFTYPE_AP},mesh={.type=NL80211_IFTYPE_MESH_POINT},monitor={.type=NL80211_IFTYPE_MONITOR},sta={.type=2};

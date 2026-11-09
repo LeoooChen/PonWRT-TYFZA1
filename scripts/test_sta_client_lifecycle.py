@@ -66,13 +66,14 @@ static u32 rtl_ax_ap_read32(const u8 *p){u32 x;memcpy(&x,p,4);return x;}
 static bool bitmap_empty(const bool *p,unsigned n){for(unsigned i=0;i<n;i++)if(p[i])return false;return true;}
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;u8 bssid[6];
  struct {bool enabled;unsigned color;}he_bss_color;bool enable_beacon;};
-struct ieee80211_vif {int type;u8 addr[6];struct {unsigned aid;bool assoc,idle;} cfg;
+#include "''' + str(driver / 'role-identity.h') + r'''"
+struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];int type;u8 addr[6];struct {unsigned aid;bool assoc,idle;} cfg;
  struct ieee80211_bss_conf bss_conf;};
 #include "''' + str(driver / 'cam-owner.h') + r'''"
 struct rtl_ax_ap;
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 struct rtl_ax_io {void(*write8)(void *,unsigned,u8);};
-struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
+struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
  bool sta_role,sta_associated,scanning,station_ids[128],peer_authorized[128];
  bool ap_started,beacon_enabled;unsigned edca_valid;int ap_result,command_lock;
  struct {bool in_cac,detected;int error;}dfs;
@@ -126,7 +127,7 @@ static void rtl_ax_update32(struct rtl_ax_io *io,unsigned reg,unsigned mask,unsi
 common += function((driver/'pci.c').read_text(),'rtl_ax_cam_write') + function((driver/'pci.c').read_text(),'rtl_ax_bss_color_update')
 test = r'''
 int main(void){
- struct ieee80211_vif vif={.type=2,.addr={2,0,0,0,0,1},.cfg={.aid=42},.bss_conf={.beacon_int=100,.dtim_period=2}};
+ struct ieee80211_vif vif={.drv_priv={{{.macid=1,.type=1}}},.type=2,.addr={2,0,0,0,0,1},.cfg={.aid=42},.bss_conf={.beacon_int=100,.dtim_period=2}};
  struct rtl_ax_ap held={.station_ids={[7]=true}};
  assert(rtl_ax_client_prepare(&held,&vif)==-EBUSY&&!calls);
  for(unsigned fault=0;fault<=8;fault++){

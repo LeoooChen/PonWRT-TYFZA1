@@ -262,6 +262,8 @@
 
 122. 接入独立地址/BSSID CAM归属：实际CAM写入不再假设索引等于MACID或固定BSSID0，按目标C/XB容量128/20分配，同BSSID引用共享，发送前预留、ACK失败保留、删除原索引且最后引用ACK后释放。执行原厂三BSSID/非顺序MACID/共享及重用26次转换，发现并纠正6次最后用户删除重新分配BSSID索引/保留valid的原厂错误。补齐AP→STA角色删除成功但CAM失败的独立重试，AP候选命令不覆盖已确认快照，首次写入失败无快照时仍按正确表长清理。容量、重试、共享身份拒绝、关联更新、清理期间新引用及ASan/UBSan、STA/BA/颜色/AP-mesh/双CAM密钥/FE事务回归和Image/模块、三输入一致通过。PE未变、未实机；这是多VIF基础归属接入，MBID/信标/GTK/序列/BCMC与FE/PE多接口隔离仍未完成，其他硬件ID隔离仍保留。详见[CAM归属](port/FTTR.md#independent-address-and-bssid-cam-ownership)。
 
+123. 接入接口/站点硬件身份到固件表和信标：保存port/MBID/self-MACID/role-type，实际JOIN、CAM、CCTL/BA/速率更新和站点释放从保留记录取值，正常信标上传使用接口身份。原厂确认VAP3共享port0/WMM0、MBID1…7，执行36角色、72双芯片CCTL、24完整HAL→信标链并逐字节对照；160部分掩码、24实际上传/错误、7VAP自角色和非零MBID5的BA/释放生命周期通过，STA/颜色/双CAM密钥/授权/FE事务回归及Image/模块、四输入一致通过。PE未变、未实机；多VIF分配/MBID使能/信标调度、GTK/序列/BCMC及CPU/NI→PE描述符身份仍需接入，接口上限尚未解除。详见[角色身份与信标](port/FTTR.md#role-identity-through-firmware-tables-and-beacon-upload)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

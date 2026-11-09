@@ -65,17 +65,18 @@ static unsigned int rtl_ax_ap_read32(const u8 *p){unsigned int v;memcpy(&v,p,4);
 common += '#include "' + str(driver / 'role.h') + '"\n'
 common += '#include "' + str(driver / 'security.h') + '"\n'
 common += '#include "' + str(driver / 'cam-owner.h') + '"\n'
+common += '#include "' + str(driver / 'role-identity.h') + '"\n'
 common += r'''
 struct wiphy {int unused;};
 struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
-struct ieee80211_vif {u8 addr[6];int type;bool use_4addr;struct {unsigned aid;} cfg;};
+struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];u8 addr[6];int type;bool use_4addr;struct {unsigned aid;} cfg;};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];u8 addr[6];unsigned int aid;};
 struct rtl_ax_tx {bool pending[128][17];};
 struct ieee80211_key_conf;
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
-struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;u8 role_cam[60];unsigned traffic_peer;u8 bss_color;
+struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;u8 role_cam[60];unsigned traffic_peer;u8 bss_color;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128],security_ext[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
@@ -139,10 +140,12 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
  if(cls==9){
   assert(func==27 && !ack && len==24);drop_commands++;
   id=(rtl_ax_ap_read32(p)>>8)&127;assert(rtl_ax_tx_station_pending(r->tx,id,16));
- }else if(cls==8){assert(ack && len==4);role_commands++;assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
+ }else if(cls==8){assert(ack && len==4);if(id==7)assert((rtl_ax_ap_read32(p)&0x1e000)==0x6000);role_commands++;assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
  else if(cls==6){assert(ack && len==60);cam_commands++;assert(p[53]==r->bss_color);assert(!rtl_ax_tx_station_pending(r->tx,id,16));}
  else if(cls==10){assert(ack && len==24);security_commands++;}
- else {assert((cls==12 && len==8) || (cls==5 && len==68));}
+ else {assert((cls==12 && len==8) || (cls==5 && len==68));
+  if(cls==5&&func==2&&id==7&&(rtl_ax_ap_read32(p+52)&0xf7))assert((rtl_ax_ap_read32(p+20)&0xf7)==0x50);
+ }
  if(fail_count && cls==fail_class && func==fail_function){fail_count--;return -ETIMEDOUT;}
  return 0;
 }
@@ -168,6 +171,7 @@ int main(void){
  struct rtl_ax_tx tx={};struct rtl_ax_ap r={.tx=&tx,.ap_vif=&vif,.chip=0x52,.monitor_started=true};
  struct ieee80211_hw hw={&r,&w,128};
  struct ieee80211_sta *sta=calloc(1,sizeof(*sta));assert(sta);
+ r.identities[0].type=2;r.identities[7]=(struct rtl_ax_role_identity){.macid=7,.type=3,.mbid=5};
  sta->drv_priv[0].macid=7;sta->addr[0]=2;sta->addr[5]=77;sta->aid=27;set_bit(7,r.station_ids);
  memcpy(r.tx_ba[7].address,sta->addr,6);
  /* Real non-MACID address slots and shared BSSID references survive RPQ/ACK failure. */
@@ -210,7 +214,7 @@ int main(void){
  assert(!r.retired_stations[7].pending && !test_bit(7,r.station_ids) && r.station_removed==1);
  assert(!r.cam_owners.role[7].reserved&&r.cam_owners.bssid[0].references==1);
  struct ieee80211_sta client={.drv_priv={{1}},.addr={2,0,0,0,0,8}};
- vif.type=NL80211_IFTYPE_STATION;vif.cfg.aid=42;r.sta_vif=&vif;r.ap_vif=NULL;r.sta_role=r.sta_associated=true;
+ vif.type=NL80211_IFTYPE_STATION;vif.cfg.aid=42;r.sta_vif=&vif;r.ap_vif=NULL;r.sta_role=r.sta_associated=true;r.identities[1]=(struct rtl_ax_role_identity){.macid=1,.type=1};
  r.cam_owners.role[0].reserved=false;r.cam_owners.role[1].reserved=true;r.cam_owners.role[1].address=0;
  set_bit(1,r.station_ids);tx.pending[1][0]=true;rpq_complete=false;
  assert(!rtl_ax_station_remove(&hw,&vif,&client)&&r.retired_stations[1].pending&&r.sta_role);

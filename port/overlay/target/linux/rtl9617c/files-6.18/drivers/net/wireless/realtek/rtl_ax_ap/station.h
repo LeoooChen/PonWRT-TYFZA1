@@ -12,6 +12,7 @@ static int rtl_ax_client_update(struct rtl_ax_ap *radio, struct ieee80211_vif *v
 
 	if (!radio->sta_role) return -ENODEV;
 	rtl_ax_store32(command, associated ? radio->sta_join : RTL_AX_CLIENT_MACID | 0x04040100);
+	rtl_ax_identity_join(command, &radio->identities[RTL_AX_CLIENT_MACID]);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0, command, 4, true);
 	if (ret) return ret;
 	rtl_ax_client_cam(cam, RTL_AX_CLIENT_MACID, vif->addr, radio->sta_bssid,
@@ -52,6 +53,7 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 	if (radio->retired_stations[RTL_AX_CLIENT_MACID].pending) return -EBUSY;
 	if (radio->sta_role) return 0;
 	if (!bitmap_empty(radio->station_ids, 128)) return -EBUSY;
+	radio->identities[RTL_AX_CLIENT_MACID] = ((struct rtl_ax_vif *)vif->drv_priv)->identity;
 	/* Probe installed an AP self role. Release its CAM before STA takes CAM0. */
 	if (radio->role_stage) {
 		rtl_ax_store32(command, 0x500 | (u32)radio->role_type << 13);
@@ -79,6 +81,7 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 	radio->retired_stations[RTL_AX_CLIENT_MACID].client = true;
 	ether_addr_copy(radio->retired_stations[RTL_AX_CLIENT_MACID].self, vif->addr);
 	rtl_ax_store32(command, RTL_AX_CLIENT_MACID | 0x2000);
+	rtl_ax_identity_maintain(command, &radio->identities[RTL_AX_CLIENT_MACID]);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, 4, true);
 	if (ret) goto failed;
 	radio->bss_color = 0;

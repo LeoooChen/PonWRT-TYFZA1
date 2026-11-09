@@ -19,6 +19,7 @@
 #include "download.h"
 #include "transport.h"
 #include "role.h"
+#include "role-identity.h"
 #include "cam-owner.h"
 #include "security.h"
 #include "rate.h"
@@ -237,6 +238,7 @@ struct rtl_ax_ap {
 	int role_result;
 	u8 role_cam[60], bss_color;
 	struct rtl_ax_cam_owners cam_owners;
+	struct rtl_ax_role_identity identities[128];
 	struct rtl_ax_port0 port0;
 	bool beacon_enabled;
 	u32 beacon_bytes, beacon_header[4], beacon_last_stats[2];
@@ -637,6 +639,7 @@ static int rtl_ax_cam_write(struct rtl_ax_ap *radio, u8 cam[60])
 {
 	int ret;
 
+	rtl_ax_identity_cam(cam, &radio->identities[cam[32] & 127]);
 	ret = rtl_ax_cam_prepare(&radio->cam_owners, cam);
 	if (ret) return ret == -ENOENT ? 0 : ret;
 	cam[53] = radio->bss_color & 0x3f;
@@ -702,7 +705,8 @@ static int rtl_ax_station_connected_table(struct rtl_ax_ap *radio, unsigned int 
 	u8 cmac[68];
 
 	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C, 0);
-	if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
+	if (radio->identities[macid].type == 1) rtl_ax_station_cmac_client(cmac);
+	rtl_ax_identity_cmac(cmac, &radio->identities[macid]);
 	if (sta->deflink.he_cap.has_he)
 		rtl_ax_station_cmac_he(cmac, rtl_ax_he_padding(sta->deflink.he_cap.he_cap_elem.phy_cap_info,
 			sta->deflink.he_cap.ppe_thres, min_t(unsigned int,
@@ -785,7 +789,8 @@ static int rtl_ax_rfk_notify_locked(struct rtl_ax_ap *radio)
 }
 
 static int rtl_ax_beacon_update(struct rtl_ax_ap *radio, const u8 *frame,
-	unsigned int bytes, unsigned int tim, unsigned int rate)
+	unsigned int bytes, unsigned int tim, unsigned int rate,
+	const struct rtl_ax_role_identity *identity)
 {
 	u8 *packet;
 	int ret;
@@ -796,6 +801,7 @@ static int rtl_ax_beacon_update(struct rtl_ax_ap *radio, const u8 *frame,
 	if (!packet)
 		return -ENOMEM;
 	rtl_ax_beacon_header(packet, tim - 24, rate, beacon_tx_ant);
+	rtl_ax_identity_beacon(packet, identity);
 	memcpy(packet + 16, frame, bytes);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_LONG_DATA, 1, 5, 16,
 			     packet, bytes + 16, false);
@@ -833,13 +839,19 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	bool owns_transport = !radio->monitor_started;
 	bool mesh = radio->ap_vif && radio->ap_vif->type == NL80211_IFTYPE_MESH_POINT;
 	u8 role_type = mesh ? 6 : 2;
+	struct rtl_ax_role_identity *identity = &radio->identities[0];
 	int ret;
 
 	/* Probe has not yet registered the wiphy. Keep the C2H receive ring
 	 * available for original receive/done acknowledgements. */
-	rtl_ax_role_unpause(unpause, 0);
+	*identity = radio->ap_vif ? ((struct rtl_ax_vif *)radio->ap_vif->drv_priv)->identity :
+		(struct rtl_ax_role_identity){ .type = role_type };
+	role_type = identity->type;
+	rtl_ax_role_unpause(unpause, identity->macid);
 	rtl_ax_role_create(create, 0, mesh);
+	rtl_ax_identity_maintain(create, identity);
 	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1, mesh);
+	rtl_ax_identity_join(join, identity);
 	rtl_ax_role_cam(cam, 0, address);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);

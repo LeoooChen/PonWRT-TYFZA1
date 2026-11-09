@@ -40,10 +40,12 @@ code=r'''
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
-typedef uint8_t u8;
+typedef uint8_t u8;typedef uint32_t u32;
 #define RTL_AX_H2C_DATA 1
 #include "'''+str(driver/'cam-owner.h')+r'''"
-struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;u8 role_cam[60],bss_color;int command_mutex,io;bool sta_role;};
+static void rtl_ax_store32(u8 *,uint32_t);static uint32_t rtl_ax_ap_read32(const u8 *);
+#include "'''+str(driver/'role-identity.h')+r'''"
+struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;u8 role_cam[60],bss_color;int command_mutex,io;bool sta_role;};
 static u8 sent[60];static unsigned calls,writes;static int error;static unsigned reg=0xa5a5a5a5;
 static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned c,unsigned cls,unsigned f,const void *p,unsigned len,bool ack){
  assert(!r->command_mutex&&q==1&&c==1&&cls==6&&f==0&&len==60&&ack);memcpy(sent,p,60);calls++;return error;
@@ -59,6 +61,7 @@ code+=extract('rtl_ax_cam_write')+extract('rtl_ax_bss_color_update')
 code+=r'''
 int main(void){
  struct rtl_ax_ap r={};u8 initial[60],cam[60];
+ for(unsigned i=0;i<128;i++)r.identities[i].macid=i;
  for(unsigned i=0;i<60;i++)initial[i]=i*3+1;
  for(unsigned color=0;color<64;color++)for(unsigned failure=0;failure<2;failure++){
   memcpy(r.role_cam,initial,60);r.bss_color=17;calls=writes=0;reg=0xa5a5a5a5;error=failure?-ETIMEDOUT:0;
@@ -81,7 +84,7 @@ int main(void){
   else if(kind==1)rtl_ax_peer_cam(cam,127,self,peer,42,valid);
   else rtl_ax_client_cam(cam,1,self,peer,42,true,valid);
   /* The previous callers sent this zero color directly, overwriting CAM0. */
-  assert(cam[53]==0);if(!(cam[8]&1)){cam[8]|=1;assert(!rtl_ax_cam_write(&r,cam));cam[8]&=~1;}
+  assert(cam[53]==0);rtl_ax_identity_cam(cam,&r.identities[cam[32]&127]);if(!(cam[8]&1)){cam[8]|=1;assert(!rtl_ax_cam_write(&r,cam));cam[8]&=~1;}
   assert(!rtl_ax_cam_prepare(&r.cam_owners,cam));memcpy(initial,cam,60);
   assert(!rtl_ax_cam_write(&r,cam)&&sent[53]==color);
   for(unsigned i=0;i<60;i++)if(i!=53)assert(sent[i]==initial[i]);

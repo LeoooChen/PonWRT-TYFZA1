@@ -201,6 +201,12 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 
 		if (ret) return ret;
 	}
+	struct rtl_ax_vif *native = (void *)vif->drv_priv;
+	native->identity = (struct rtl_ax_role_identity){
+		.macid = vif->type == NL80211_IFTYPE_STATION ? RTL_AX_CLIENT_MACID : 0,
+		.type = vif->type == NL80211_IFTYPE_STATION ? 1 :
+			vif->type == NL80211_IFTYPE_MESH_POINT ? 6 : 2,
+	};
 	ret = rtl_ax_tx_sequence_bind(radio->tx, vif);
 	if (ret) return ret;
 	if (vif->type == NL80211_IFTYPE_STATION) {
@@ -237,7 +243,8 @@ static int rtl_ax_ap_template(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 		return -ENOMEM;
 	if (conf->basic_rates)
 		rate = radio->rates[__ffs(conf->basic_rates)].hw_value;
-	ret = rtl_ax_beacon_update(radio, skb->data, skb->len, offsets.tim_offset, rate);
+	ret = rtl_ax_beacon_update(radio, skb->data, skb->len, offsets.tim_offset, rate,
+		&((struct rtl_ax_vif *)vif->drv_priv)->identity);
 	dev_kfree_skb(skb);
 	return ret;
 }
@@ -792,6 +799,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	 * BSSID CAM remains valid while the AP's self-role uses it. */
 	rtl_ax_store32(command, macid | (radio->retired_stations[macid].client ? 0x2400 :
 		radio->retired_stations[macid].mesh ? 0xc600 : 0x4600));
+	rtl_ax_identity_maintain(command, &radio->identities[macid]);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, sizeof(command), true);
 	if (ret)
 		return ret;
@@ -849,7 +857,8 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 	for (i = 0; i < IEEE80211_NUM_TIDS; i++)
 		aggregate = max_t(unsigned int, aggregate, radio->tx_ba[macid].aggregation[i]);
 	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C, aggregate);
-	if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
+	if (radio->identities[macid].type == 1) rtl_ax_station_cmac_client(cmac);
+	rtl_ax_identity_cmac(cmac, &radio->identities[macid]);
 	/* BA changes retain the peer's negotiated HE packet-extension padding. */
 	rtl_ax_store32(cmac + 60, rtl_ax_ap_read32(cmac + 60) & ~0xffU);
 	if (radio->ra_registered[macid])
@@ -1029,6 +1038,8 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 
 	if (id == 128)
 		return -ENOSPC;
+	radio->identities[id] = ((struct rtl_ax_vif *)vif->drv_priv)->identity;
+	radio->identities[id].macid = id;
 	if (client) {
 		ret = rtl_ax_client_prepare(radio, vif);
 		if (ret) return ret;
@@ -1039,6 +1050,7 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	if (ret)
 		return ret;
 	rtl_ax_store32(command, id | (vif->type == NL80211_IFTYPE_MESH_POINT ? 0xc200 : 0x4200));
+	rtl_ax_identity_maintain(command, &radio->identities[id]);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 4, command, sizeof(command), true);
 	if (ret)
 		return ret;
@@ -1066,6 +1078,7 @@ connected:
 		sta->deflink.bandwidth), &sta->deflink.he_cap,
 		min_t(unsigned int, sta->deflink.smps_mode == IEEE80211_SMPS_STATIC ? 1 : sta->deflink.rx_nss, 2),
 		vif->type == NL80211_IFTYPE_MESH_POINT, client);
+	rtl_ax_identity_join(command, &radio->identities[id]);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0, command, sizeof(command), true);
 	if (ret)
 		goto remove;
@@ -1204,7 +1217,8 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		rtl_ax_update32(&radio->io, 0xc610, 0xff0000ff,
 			0xa0000000 | (hw->max_tx_aggregation_subframes - 1));
 		rtl_ax_station_cmac_connected(cmac, station->macid, radio->chip == RTL_AX_8852C, aggregate);
-		if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
+		if (radio->identities[station->macid].type == 1) rtl_ax_station_cmac_client(cmac);
+		rtl_ax_identity_cmac(cmac, &radio->identities[station->macid]);
 		rtl_ax_store32(cmac + 60, rtl_ax_ap_read32(cmac + 60) & ~0xffU);
 		/* The stock VW_NO_WDINFO default must not overwrite firmware RA. */
 		if (radio->ra_registered[station->macid])
@@ -1700,6 +1714,7 @@ static void rtl_ax_ra_update_work(struct wiphy *wiphy, struct wiphy_work *work)
 		}
 		rcu_read_unlock();
 		if (!configured) continue;
+		rtl_ax_identity_join(join, &radio->identities[id]);
 		if (he) ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
 		if (!ret) ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 8, 0, join, sizeof(join), true);
 		if (!ret) ret = rtl_ax_command_flags(radio, RTL_AX_H2C_LONG_DATA, 2, 1, 0,
@@ -2294,6 +2309,7 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	memcpy(radio->power_country, "00", 3);
 	hw->wiphy->reg_notifier = rtl_ax_regulatory_notify;
 	hw->sta_data_size = sizeof(struct rtl_ax_station);
+	hw->vif_data_size = sizeof(struct rtl_ax_vif);
 	ieee80211_hw_set(hw, RX_INCLUDES_FCS);
 	ieee80211_hw_set(hw, SIGNAL_DBM);
 	ieee80211_hw_set(hw, RX_INLINE);
