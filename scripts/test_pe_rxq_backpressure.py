@@ -40,7 +40,9 @@ class Machine:
   if 'rx_completion_poll' in symbols:self.execute('rx_completion_poll')
   self.execute('pe_rxq')
   if 'rx_notify_done' in symbols:self.execute('rx_notify_done')
- def process(self):self.execute('pe_rx_work')
+ def process(self):
+  before=self.get(MB+90*4);self.execute('pe_rx_work')
+  if self.get(MB+90*4)!=before:self.execute('rx_ni_publish')
  def call(self):self.capture();self.process()
  def arrive(self,frame=b'control-payload',data=False):
   at=self.payload_dma(self.get(B+MAP+self.slot*4));self.tag=self.tag%8191+1
@@ -742,6 +744,53 @@ pipeline.u.emu_start(symbols['pe_main'],0xbfc0fff0,count=10000)
 assert pipeline.get(MB+90*4)==1 and pipeline.get(ST+1024)==1<<31|0x124
 assert pipeline.get(MB+81*4)==pipeline.slot and pipeline.get(MB+175*4)==1
 pipeline.inventory()
+# A normal full batch publishes one doorbell, including a descriptor wrap.
+# Early ARM and NI-credit exits publish the prepared prefix before waiting.
+for blocked in (None, 'ARM', 'NI', 'reorder'):
+ r=reorder_peer();r.put(MB+90*4,1020);r.put(MB+91*4,1020);r.put(VP+0x1c,1020)
+ count=16 if blocked is None else 3
+ for i in range(count):r.arrive(data_frame(0x123+i,2+i),True);r.capture()
+ if blocked=='ARM':r.arrive(bytes(60));r.capture()
+ if blocked=='NI':
+  for i in range(3,8):r.arrive(data_frame(0x123+i,2+i),True);r.capture()
+  r.put(0x1000659c,1);r.put(0x10007000,93*8);r.put(0x10007100,0)
+ if blocked=='reorder':r.arrive(data_frame(0x127,6),True);r.capture()
+ writes=[]
+ def published(uc,access,a,size,value,data):
+  if (a&0x1fffffff)==VP+0x68:
+   assert value==1
+   end=r.get(MB+90*4)
+   assert r.get(VP+0x18)==end&1023
+   for i in range(end-1020):
+    address=r.get(NI+((1020+i)&1023)*8)
+    assert bytes(uc.mem_read(address,12))==dst+peer
+   writes.append(end)
+ hook=r.u.hook_add(UC_HOOK_MEM_WRITE,published,begin=VP+0x68,end=VP+0x6b)
+ r.execute('pe_rx_work_batch')
+ assert writes==[1020+count],(blocked,writes)
+ if blocked is not None:
+  r.execute('pe_rx_work_batch')
+  assert writes==[1023],(blocked,writes)
+ r.u.hook_del(hook)
+
+# A pause arriving after descriptor preparation must be acknowledged only
+# after the current batch's pending NI prefix has reached the doorbell.
+paused=reorder_peer();paused.u.mem_map(0x10020000,4096)
+for i in range(4):paused.arrive(data_frame(0x123+i,2+i),True);paused.capture()
+for j,v in ((0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1)):paused.put(MB+j*4,v)
+publication=[];changed=[False];acknowledged=[False]
+def pause_after_prepare(uc,access,a,size,value,data):
+ if (a&0x1fffffff)==MB+90*4 and not changed[0]:
+  changed[0]=True;paused.put(MB+3*4,2)
+ if (a&0x1fffffff)==VP+0x68:publication.append(paused.get(VP+0x18))
+ if (a&0x1fffffff)==MB+4*4 and value==2:
+  assert publication==[4] and paused.get(MB+90*4)==4
+  acknowledged[0]=True;uc.emu_stop()
+paused.u.hook_add(UC_HOOK_MEM_WRITE,pause_after_prepare)
+for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_SP,(B+0xfff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):paused.u.reg_write(reg,v)
+paused.u.emu_start(symbols['pe_main'],0x9fc0fff0,count=20000)
+assert changed[0] and acknowledged[0]
+
 # An empty capture queue needs no worker, while a later packet still waits
 # for the outstanding ARM state handler before its PN/SN can advance.
 idle=Machine();idle.put(MB+180*4,1)

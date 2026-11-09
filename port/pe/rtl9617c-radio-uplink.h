@@ -298,9 +298,6 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	if (amsdu) mailbox[113]++;
 	/* The state release also published all packet and NI descriptor writes. */
 	mailbox[90] = write + frames;
-	volatile u32 *vp = (void *)mailbox[88];
-	vp[0x18 / 4] = (write + frames) & RTL_AX_NI_TX_MASK;
-	vp[0x68 / 4] = 1;
 	return RX_NI_PENDING | ((write + frames) & ~RX_NI_PENDING);
 }
 
@@ -517,14 +514,26 @@ advance:
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
 }
 
+/* A batch owns all newly prepared NI descriptors until this publication.
+ * Its exit also publishes a short tail before waiting for ARM/NI/reorder. */
+static void __attribute__((section(".rxq"), noinline)) rx_ni_publish(volatile u32 *mailbox)
+{
+	volatile u32 *vp = (void *)mailbox[88];
+	sync();
+	vp[0x18 / 4] = mailbox[90] & RTL_AX_NI_TX_MASK;
+	vp[0x68 / 4] = 1;
+}
+
 static void __attribute__((section(".rxq"), noinline)) pe_rx_work_batch(volatile u32 *mailbox)
 {
 	/* A queued packet checks the ARM acknowledgement before use. */
 	if (mailbox[RTL_AX_RX_WORK_PROCESS] == mailbox[RTL_AX_RX_WORK_WRITE]) return;
+	u32 submitted = mailbox[90];
 #pragma clang loop unroll(disable)
 	for (u32 budget = 0; budget < 16; budget++) {
 		u32 before = mailbox[RTL_AX_RX_WORK_PROCESS];
 		pe_rx_work(mailbox);
 		if (before == mailbox[RTL_AX_RX_WORK_PROCESS]) break;
 	}
+	if (submitted != mailbox[90]) rx_ni_publish(mailbox);
 }
