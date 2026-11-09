@@ -53,9 +53,9 @@ struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
 #define NL80211_IFTYPE_STATION 2
 #define NL80211_IFTYPE_MESH_POINT 7
 #define RTL_AX_CLIENT_MACID 1
-struct ieee80211_vif {int type;};
 #include "''' + str(driver / 'role-identity.h') + r'''"
-struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];u8 security_ext[128];unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
+struct ieee80211_vif {int type;struct rtl_ax_vif drv_priv[1];};
+struct rtl_ax_ap {struct rtl_ax_key_owner security_owner[128];struct rtl_ax_role_identity identities[128];u8 security_ext[128];unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
  struct ieee80211_key_conf *security_keys[128];
  bool sta_role,sta_associated;int io;
  bool security_ids[128],security_deleting[128],security_aborting[128];u8 security_unlink[128];
@@ -84,6 +84,8 @@ static int rtl_ax_tx_key_pn_unbind(int tx,struct ieee80211_key_conf *k){(void)tx
 static int rtl_ax_tx_bcmc_stop(int tx){
  (void)tx;hiq_stops++;int ret=fail(HIQ_STOP);if(!ret)hiq_pending=false;return ret;
 }
+static unsigned group_macid,group_port,group_mbid;
+static int rtl_ax_tx_group_stop(int tx,unsigned macid,unsigned port,unsigned mbid){group_macid=macid;group_port=port;group_mbid=mbid;return rtl_ax_tx_bcmc_stop(tx);}
 struct key_wdev {void *netdev;};static struct key_wdev key_wdev;
 #define ieee80211_vif_to_wdev(v) ((void)(v),&key_wdev)
 static int rtl_ax_tx_ni_route(int tx,void *dev,unsigned id){(void)tx;(void)dev;assert(!id);return fail(RETIRE);}
@@ -388,7 +390,7 @@ int main(void){
  assert(hardware_roles[7].valid==1&&hardware_roles[7].cam[0]==1&&hardware_cam[1]);
  assert(!rtl_ax_set_key(&hw,DISABLE_KEY,&(struct ieee80211_vif){},&sta,&next)&&!r.security_ids[1]);
  /* A late interface GTK deletion cannot touch a reused hardware CAM. */
- reset();memset(&r,0,sizeof(r));struct ieee80211_vif vif={.type=NL80211_IFTYPE_STATION};
+ reset();memset(&r,0,sizeof(r));struct ieee80211_vif vif={.type=NL80211_IFTYPE_STATION,.drv_priv={{{.macid=1,.type=1}}}};
  struct ieee80211_key_conf gtk=new_key(1,false),fresh=new_key(0,true);
  sta.drv_priv[0].macid=1;r.retired_stations[1].client=true;
  assert(!rtl_ax_set_key(&hw,SET_KEY,&vif,0,&gtk));assert(hardware_roles[1].valid==BIT(3));
@@ -397,6 +399,43 @@ int main(void){
  before=dctls;assert(!rtl_ax_set_key(&hw,DISABLE_KEY,&vif,0,&gtk));
  assert(dctls==before && hardware_roles[1].valid==1 && hardware_cam[fresh.hw_key_idx]);
  assert(r.security_keys[fresh.hw_key_idx]==&fresh);
+ /* Two VAP GTKs with identical key IDs must never share DMAC/PN ownership. */
+ for(unsigned alg=0;alg<4;alg++)for(unsigned point=0;point<5;point++){
+  reset();key_cipher=(unsigned[]){4,8,10,9}[alg];struct rtl_ax_ap multi={};struct ieee80211_hw mh={&multi,0};
+  struct ieee80211_vif a={.drv_priv={{{.macid=41,.mbid=3,.type=3}}}},b={.drv_priv={{{.macid=63,.mbid=5,.type=3}}}};
+  struct ieee80211_key_conf ka=new_key(1,false),kb=new_key(1,false),next=new_key(2,false);kb.key[0]=11;
+  assert(!rtl_ax_set_key(&mh,SET_KEY,&a,NULL,&ka));assert(!rtl_ax_set_key(&mh,SET_KEY,&b,NULL,&kb));
+  unsigned ca=ka.hw_key_idx,cb=kb.hw_key_idx;assert(ca!=cb&&multi.security_owner[ca].macid==41&&multi.security_owner[cb].macid==63);
+  struct rtl_ax_security_role keep=hardware_roles[63];u64 pn=hardware_pn[63];
+  a.drv_priv[0].identity=b.drv_priv[0].identity; /* delayed callback after identity changed */
+  fault=(enum fault[]){PN_UNBIND,HIQ_STOP,FLUSH,DCTL,CAM}[point];failures=1;apply_failed_dctl=true;
+  assert(rtl_ax_set_key(&mh,DISABLE_KEY,&a,NULL,&ka)==-ETIMEDOUT);
+  assert(multi.security_ids[ca]&&!multi.security_keys[ca]&&multi.security_owner[ca].macid==41);
+  assert(!memcmp(&keep,&hardware_roles[63],sizeof(keep))&&hardware_pn[63]==pn&&hardware_cam[cb]);
+  fault=NONE;assert(!rtl_ax_set_key(&mh,SET_KEY,&b,NULL,&next));
+  keep=hardware_roles[63];assert(!rtl_ax_security_cleanup(&multi));
+  assert(!hardware_cam[ca]&&!multi.security_ids[ca]&&!multi.security_owner[ca].group);
+  assert(!memcmp(&keep,&hardware_roles[63],sizeof(keep))&&hardware_cam[cb]);
+  if(point<4)assert(group_macid==41&&group_port==0&&group_mbid==3);
+ }
+ /* Partial group installation must restore only the original self role. */
+ for(unsigned alg=0;alg<4;alg++)for(unsigned stage=0;stage<2;stage++){
+  reset();key_cipher=(unsigned[]){4,8,10,9}[alg];struct rtl_ax_ap r={};struct ieee80211_hw hw={&r,0};
+  struct ieee80211_vif va={.drv_priv={{{.macid=41,.mbid=3,.type=3}}}},vb={.drv_priv={{{.macid=63,.mbid=5,.type=3}}}};
+  struct ieee80211_key_conf first=new_key(1,false),bad=new_key(2,false),other=new_key(1,false);
+  assert(!rtl_ax_set_key(&hw,SET_KEY,&va,NULL,&first));assert(!rtl_ax_set_key(&hw,SET_KEY,&vb,NULL,&other));
+  struct rtl_ax_security_role saved=hardware_roles[63];
+  fault=stage?PN_BIND:DCTL;failures=1;apply_failed_dctl=true;
+  assert(rtl_ax_set_key(&hw,SET_KEY,&va,NULL,&bad)==-ETIMEDOUT);
+  fault=NONE;assert(!rtl_ax_security_cleanup(&r));
+  assert(group_macid==41&&group_mbid==3&&!memcmp(&saved,&hardware_roles[63],sizeof(saved)));
+  assert(r.security_keys[first.hw_key_idx]==&first&&r.security_keys[other.hw_key_idx]==&other);
+  /* Old deletion works even when the later interface is invalid/unassigned. */
+  va.drv_priv[0].identity.macid=255;
+  assert(!rtl_ax_set_key(&hw,DISABLE_KEY,&va,NULL,&first));
+  assert(!memcmp(&saved,&hardware_roles[63],sizeof(saved)));
+ }
+ puts("Per-VIF GTK: 28 dual-interface same-key-ID and stale-callback/install/delete/fault/retry scenarios passed");
  puts("key cleanup: TX retirement/drain, DMAC ACK both outcomes, CAM failure, newer PTK/GTK, MACID127 and station reuse passed");
 }
 '''

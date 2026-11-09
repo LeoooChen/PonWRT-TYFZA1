@@ -8345,6 +8345,50 @@ GTK/BCMC, full interface allocation and complete hardware packet retirement
 remain unfinished; software domain isolation does not remove hardware-ID
 quarantine.
 
+### GTK ownership follows the interface self role
+
+GTK installation now selects the interface's stored self-MACID rather than
+implicitly using MACID0 (or a global STA sentinel). Every primary security CAM
+retains its owning MACID, port, MBID and whether it uses AP HIQ. Disable callbacks
+and deferred cleanup use that retained ownership even if the later interface
+identity has changed or become invalid. The current desired DCTL for the owner
+is restored on failed installation, preserving newer keys and other VIFs' keys.
+Owner metadata is cleared only after both CAM halves erase successfully.
+
+Group retirement is independent of a zero/nonzero MACID test. Root0 delegates
+to the existing direct-BCMC fence. Non-root CPU GTK retirement pauses PE, sends
+the factory HIQ_PORT7 or HIQ_MBSSID8 command for the saved port/MBID, resumes
+recycling and waits for the saved self-MACID's outstanding WPs. A failed pause,
+command or wait remains an error; CAM/DCTL cleanup retains ownership and retries.
+These no-ACK HIQ commands plus WP completion do not establish the outstanding
+upstream/downstream hardware retirement required for ID reuse.
+
+CPU group/management TX now takes its MACID from the interface when no unicast
+station is supplied, and AP DCTL restoration uses that self role. A nonzero
+self-MACID group QoS frame must retain Linux's per-interface sequence; it no
+longer qualifies for the PE unicast per-TID sequence rewrite. The direct NI→PE
+BCMC template remains root-only and does not yet support multiple VIFs.
+
+This review also fixed the ARM completion side of the previous interface-token
+change. PE-canceled ordinary CPU requests had no FTTR/GTK/multicast stamp and
+were skipped by the release worker. A per-WP interface-reference flag now starts
+and maintains release polling for these requests, so cancellation unmaps/frees
+them and restores software credits exactly once. The normal RPQ path remains
+unchanged.
+
+`trace_stock_group_owner.py` executes64 target HAL GTK owner calls and24 HIQ
+port/MBID encodings. `test_group_stop.py` compares96 command/failure cases.
+Production key lifecycle tests pass28 two-VIF cases using identical key IDs,
+including four ciphers, stale callbacks, installation failure, deletion failure
+and cleanup with a newer key on the other VIF. Existing144 extended-CAM and
+key/STA/Mesh/FE regressions pass. Actual CPU submission verifies nonzero group
+MACID with preserved sequence. ARM completion passes771 partial/full batches
+across all WP IDs/rings, including ordinary interface-only cancellations;
+16448 RPQ comparisons pass. Image/modules build and five input identities pass.
+Artifacts are `artifacts/fttr/group-owner-*-20261109.*`. PE firmware is unchanged;
+no physical device was accessed. Full multi-VIF allocation/direct BCMC and
+complete hardware packet retirement remain unfinished.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

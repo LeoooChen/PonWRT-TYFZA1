@@ -29,6 +29,12 @@ static inline u64 rtl_ax_security_read_pn(const struct rtl_ax_io *io,
 	return (u64)high << 16 | low >> 16;
 }
 
+/* Stored with a CAM, not inferred from a later interface/key callback. */
+struct rtl_ax_key_owner {
+	u8 macid, port, mbid;
+	bool group;
+};
+
 struct rtl_ax_security_role {
 	u8 valid, keyid[7], cam[7], tx_keyid;
 };

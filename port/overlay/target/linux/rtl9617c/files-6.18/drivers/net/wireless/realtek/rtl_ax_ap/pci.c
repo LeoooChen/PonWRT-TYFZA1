@@ -194,6 +194,7 @@ struct rtl_ax_ap {
 	DECLARE_BITMAP(security_deleting, RTL_AX_SECURITY_ENTRIES);
 	DECLARE_BITMAP(security_aborting, RTL_AX_SECURITY_ENTRIES);
 	u8 security_unlink[RTL_AX_SECURITY_ENTRIES]; /* Pending DMAC unlink: MACID + 1. */
+	struct rtl_ax_key_owner security_owner[RTL_AX_SECURITY_ENTRIES];
 	u8 security_ext[RTL_AX_SECURITY_ENTRIES]; /* Primary CAM owns optional second CAM + 1. */
 	struct rtl_ax_security_role security_roles[128];
 	struct ieee80211_key_conf *security_keys[RTL_AX_SECURITY_ENTRIES];
@@ -831,6 +832,18 @@ static int rtl_ax_port0_drop_mbid(void *ctx, unsigned int mbid)
 		packet, sizeof(packet), false);
 	if (!ret) radio->mbid_drop_pending &= ~BIT(mbid);
 	return ret;
+}
+
+int rtl_ax_mac_drop_group(struct pci_dev *pdev, unsigned int port, unsigned int mbid)
+{
+	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
+	u8 packet[24] = {};
+
+	if (port > 4 || mbid > 7 || (port && mbid)) return -EINVAL;
+	/* Factory HIQ_PORT7 / HIQ_MBSSID8; MAC band0, port in byte3. */
+	rtl_ax_store32(packet, (mbid ? 8 : 7) | port << 24);
+	rtl_ax_store32(packet + 4, mbid);
+	return rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 9, 27, packet, sizeof(packet), false);
 }
 
 int rtl_ax_mac_drop_bcmc(struct pci_dev *pdev)

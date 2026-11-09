@@ -39,7 +39,7 @@ static void put(void *p,u32 v){memcpy(p,&v,4);}
 int main(void){
  static u8 memory[0x80000];static struct sk_buff skbs[256];
  struct ieee80211_hw hw={};unsigned cases=0;
- for(unsigned kind=0;kind<2;kind++)for(unsigned released=0;released<=256;released++) {
+ for(unsigned kind=0;kind<3;kind++)for(unsigned released=0;released<=256;released++) {
   memset(memory,0,sizeof(memory));memset(skbs,0,sizeof(skbs));
   struct rtl_ax_tx t={.pe_active=true,.running=true,.queues_stopped=true,.hw=&hw,.pe={memory},.occupied=256};
   active=&t;batch=1;expected=released;bh=rcu=locks=wakes=unmaps=returns=raws=sw_freed=0;
@@ -47,7 +47,7 @@ int main(void){
   for(unsigned id=0;id<256;id++) {
    skbs[id].data[0]=id;skbs[id].rtl9617c_fttr_generation=kind?0:2;
    skbs[id].cb.flags=IEEE80211_TX_CTL_HW_80211_ENCAP|IEEE80211_TX_CTL_AMPDU|IEEE80211_TX_STAT_ACK;
-   t.pending[id]=true;t.slots[id]=(struct rtl_ax_tx_slot){.skb=&skbs[id],.fttr_generation=kind?0:2,.ring=id%6,.macid=id%128,.pe_sequence=true,.pe_mcast=kind,.quota_counted=kind && id%128 && id%6<4};
+   t.pending[id]=true;t.slots[id]=(struct rtl_ax_tx_slot){.skb=&skbs[id],.fttr_generation=kind?0:2,.ring=id%6,.macid=id%128,.pe_sequence=true,.pe_mcast=kind==1,.pe_interface=kind==2,.quota_counted=kind && id%128 && id%6<4};
    if(t.slots[id].quota_counted) {
     unsigned ac=id%6,peer=id%128;t.ac_pending[peer][ac]++;
     put_unaligned_le32(t.ac_pending[peer][ac],memory+RTL_AX_TX_ARM_AC_PENDING+(peer*4+ac)*4);
@@ -59,7 +59,7 @@ int main(void){
   /* No headers allocation: canceled requests never produced sequence data. */
   rtl_ax_tx_fttr_work(&t.fttr_work.work);
   assert(t.fttr_discarded==released&&sw_freed==released&&unmaps==released&&fttr_puts==(kind?0:released));
-  assert(mcast_puts==(kind?released:0));
+  assert(mcast_puts==(kind==1?released:0));
   assert(t.completed==released&&t.occupied==256-released&&t.status_count[4]==released);
   assert(!returns&&!raws&&!lookups&&!t.ampdu_completed&&!t.unmatched);
   unsigned quota_releases=0;
@@ -79,7 +79,7 @@ int main(void){
   }
   /* A completed WP reused by a non-FTTR skb must not be polled/dropped. */
   if(released) {
-   skbs[0].rtl9617c_fttr_generation=0;t.slots[0].skb=&skbs[0];t.slots[0].pe_mcast=false;t.pending[0]=true;t.occupied++;
+   skbs[0].rtl9617c_fttr_generation=0;t.slots[0].skb=&skbs[0];t.slots[0].pe_mcast=false;t.slots[0].pe_interface=false;t.pending[0]=true;t.occupied++;
    rtl_ax_tx_fttr_work(&t.fttr_work.work);
    assert(t.fttr_discarded==released&&t.pending[0]&&sw_freed==released);
   }

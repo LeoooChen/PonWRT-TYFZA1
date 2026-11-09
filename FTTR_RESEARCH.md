@@ -270,6 +270,8 @@
 
 126. 接入每VIF非QoS序列域：port0 MBID0…7与port1…4共12独立ARM/Linux/PE绑定，root保留原布局，其余使用独立记录；NI入队保存域+代际，选择/最终发布核对，旧域仍有效或代际相同时也不跨域。CPU所有已绑定接口请求增加独立WP代际凭据，预分配序号也可在排队后撤销；27位代际显式耗尽，SEQ2拒绝旧固件。240原厂计数、24576并发、12域98400 Linux/PE交替及重绑、24原有/24 NI域/24 CPU撤销/2跨域场景和BCMC/组播/FTTR退场/发布/收发回归通过。对齐main3db3da5并验证RX优化；PE32476字节、栈7328、重复构建一致、非uplink13992，Image/模块和五输入一致通过。未实机；BCMC仍显式限root，每VIF GTK/BCMC、完整接口分配和全链路退场继续待补。详见[VIF序列域](port/FTTR.md#per-interface-non-qos-sequence-domains)。
 
+127. 接入GTK的接口self-MACID归属：CAM保存MACID/port/MBID/HIQ类型，删除及异步回滚不再依赖当前接口或MACID是否为0；非root组播按原port/MBID清HIQ并等所属WP，保留其他VIF/新密钥。CPU组播/管理取接口MACID，非零self的组播QoS保留Linux序号。另修复第126项普通CPU代际撤销后ARM worker漏回收，新增WP标记驱动poll/unmap/free。64原厂GTK/24HIQ编码、96组清理故障、28双VIF同key-ID/四算法/旧回调/安装删除回滚、771批回收、16448 RPQ及144扩展密钥/STA/Mesh/FE回归通过；Image/模块和五输入一致通过。PE未变、未实机；直接NI→PE BCMC仍限root，完整多VIF分配/模板与全链路退场仍待补齐。详见[GTK接口归属](port/FTTR.md#gtk-ownership-follows-the-interface-self-role)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

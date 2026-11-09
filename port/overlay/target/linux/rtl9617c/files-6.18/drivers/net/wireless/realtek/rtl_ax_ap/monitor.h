@@ -315,10 +315,11 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
  }
 	radio->bss_color = conf->he_bss_color.enabled ? conf->he_bss_color.color : 0;
 	ret = rtl_ax_self_role_prepare(radio, vif->addr, conf->beacon_int, conf->dtim_period);
-	if (!ret && radio->security_roles[0].valid) {
+	unsigned int self = ((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
+	if (!ret && radio->security_roles[self].valid) {
 		u8 dctl[68];
 
-		rtl_ax_security_dctl(dctl, 0, &radio->security_roles[0]);
+		rtl_ax_security_dctl(dctl, self, &radio->security_roles[self]);
 		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 9, dctl, sizeof(dctl), true);
 	}
 	if (!ret)
@@ -757,6 +758,7 @@ static int rtl_ax_security_clear(struct rtl_ax_ap *radio, unsigned int index)
  __clear_bit(index,radio->security_ids);
  radio->security_keys[index]=NULL;
  radio->security_ext[index]=0;
+ memset(&radio->security_owner[index],0,sizeof(radio->security_owner[index]));
  return 0;
 }
 
@@ -909,8 +911,9 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 		if (radio->security_unlink[index]) {
 			unsigned int macid = radio->security_unlink[index] - 1;
 
-			if ((macid ? rtl_ax_tx_ni_retire_peer(radio->tx, macid) :
-			     rtl_ax_tx_bcmc_stop(radio->tx)) ||
+			const struct rtl_ax_key_owner *owner = &radio->security_owner[index];
+			if ((owner->group ? rtl_ax_tx_group_stop(radio->tx, macid, owner->port, owner->mbid) :
+			     rtl_ax_tx_ni_retire_peer(radio->tx, macid)) ||
 			    rtl_ax_tx_key_pending(radio->tx, index)) {
 				retry = true;
 				continue;
@@ -922,7 +925,7 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 				continue;
 			}
 			radio->security_unlink[index] = 0;
-			if (!macid || (radio->security_roles[macid].valid & 3))
+			if (owner->group || (radio->security_roles[macid].valid & 3))
 				rtl_ax_offload_ready(radio);
 		}
 		if (rtl_ax_security_clear(radio,index)) {
@@ -1432,7 +1435,9 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 	if (!injected_rate)
 		rate = rtl_ax_tx_basic_rate(radio, control->sta, info);
 
-	if (!macid && radio->sta_role) macid = RTL_AX_CLIENT_MACID;
+	if (!control->sta && info->control.vif && !(info->flags & IEEE80211_TX_CTL_INJECTED))
+		macid = ((struct rtl_ax_vif *)info->control.vif->drv_priv)->identity.macid;
+	else if (!macid && radio->sta_role) macid = RTL_AX_CLIENT_MACID;
 	if (skb->len >= (encap ? ETH_HLEN : ieee80211_is_back_req(header->frame_control) ? sizeof(struct ieee80211_bar) : 24) && skb->len <= 0x3fff &&
 	    (encap || ieee80211_is_mgmt(header->frame_control) || ieee80211_is_data(header->frame_control) ||
 	     ieee80211_is_back_req(header->frame_control))) {
@@ -1528,15 +1533,30 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned int macid = sta ? ((struct rtl_ax_station *)sta->drv_priv)->macid :
-		vif->type == NL80211_IFTYPE_STATION ? RTL_AX_CLIENT_MACID : 0;
+		((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
 	bool pairwise=key->flags & IEEE80211_KEY_FLAG_PAIRWISE;
  bool extended=key->cipher==WLAN_CIPHER_SUITE_CCMP_256 || key->cipher==WLAN_CIPHER_SUITE_GCMP_256;
  unsigned int cipher=(key->cipher==WLAN_CIPHER_SUITE_GCMP || key->cipher==WLAN_CIPHER_SUITE_GCMP_256?8:6)+extended;
  unsigned int slots[2],extension=0;
-	struct rtl_ax_security_role role = radio->security_roles[macid];
+	struct rtl_ax_security_role role;
+	struct rtl_ax_key_owner owner = { .macid = macid,
+		.group = !pairwise && vif->type != NL80211_IFTYPE_STATION };
 	u8 cam[24], dctl[68];
 	unsigned int index;
 	int ret;
+
+	if (cmd == DISABLE_KEY) {
+		index = key->hw_key_idx;
+		if (index >= RTL_AX_SECURITY_ENTRIES || radio->security_keys[index] != key) return 0;
+		owner = radio->security_owner[index];
+		macid = owner.macid;
+	} else if (owner.group) {
+		const struct rtl_ax_role_identity *identity = &((struct rtl_ax_vif *)vif->drv_priv)->identity;
+		owner.port = identity->port; owner.mbid = identity->mbid;
+		if (owner.port > 4 || owner.mbid > 7 || (owner.port && owner.mbid)) return -EINVAL;
+	}
+	if (macid >= 128) return -EINVAL;
+	role = radio->security_roles[macid];
 
 	/* Mesh GTKs are per transmitter; mac80211 owns mesh encryption and PN. */
 	if (vif->type == NL80211_IFTYPE_MESH_POINT)
@@ -1588,6 +1608,7 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
    __set_bit(second,radio->security_ids);extension=second+1;
   }
   radio->security_ext[index]=extension;
+  radio->security_owner[index]=owner;
   __set_bit(index,radio->security_deleting);__set_bit(index,radio->security_aborting);
   for(unsigned int half=0;half<count;half++) {
    unsigned int cam_index=half?extension-1:index;
@@ -1604,8 +1625,8 @@ static int rtl_ax_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	} else {
 		/* AP GTK packets wait in HIQ, outside the four per-peer ACs.
 		 * Retire them before changing the DMAC key map or freeing CAM. */
-		if (!macid) {
-			ret = rtl_ax_tx_bcmc_stop(radio->tx);
+		if (owner.group) {
+			ret = rtl_ax_tx_group_stop(radio->tx, macid, owner.port, owner.mbid);
 			if (ret) goto done;
 		}
 		ret = rtl_ax_tx_flush_key(radio->tx, index);
@@ -1652,7 +1673,7 @@ done:
 	if (ret && test_bit(index, radio->security_deleting))
 		wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 	radio->key_result = ret;
-	if (!ret && cmd == DISABLE_KEY && !macid) rtl_ax_offload_ready(radio);
+	if (!ret && cmd == DISABLE_KEY && owner.group) rtl_ax_offload_ready(radio);
 	dev_info(&radio->pdev->dev, "native data key %s MACID%u key-ID%u CAM%u result=%d\n",
 		cmd == SET_KEY ? "install" : "remove", macid, key->keyidx, index, ret);
 	return ret;

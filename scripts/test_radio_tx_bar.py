@@ -111,7 +111,7 @@ struct ieee80211_hdr {u16 frame_control,duration_id;u8 addr1[6],addr2[6],addr3[6
 struct ieee80211_bar {u16 frame_control,duration;u8 ra[6],ta[6];u16 control,start_seq_num;} __attribute__((packed));
 struct ieee80211_tx_rate {int idx;unsigned flags,count;};
 struct key {unsigned cipher,flags,hw_key_idx,keyidx,iv_len;u64 tx_pn;struct rtl_key_pn rtl9617c_pn;};
-struct rtl_ax_vif {struct {unsigned port,mbid;} identity;};
+struct rtl_ax_vif {struct {unsigned port,mbid,macid;} identity;};
 struct vif {unsigned type;u8 addr[6];struct rtl_ax_vif drv_priv[1];};
 static unsigned sequence_calls;static int sequence_error;
 static int ieee80211_rtl9617c_next_sequence(struct vif *v,u16 *s){assert(v);sequence_calls++;*s=0xabc0;return sequence_error;}
@@ -123,7 +123,7 @@ struct ieee80211_sta {void *drv_priv;struct {struct {unsigned ampdu_density;}ht_
 struct ieee80211_tx_control {struct ieee80211_sta *sta;};
 struct scatterlist {u32 dma,len;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted;struct rtl_ax_tx_mapping *mapping;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted,pe_interface;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {u64 bcmc_policy_attempt;bool bcmc_enabled;bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  unsigned wmm_quota,ac_pending[128][4],wmm_dropped,peer_bytes[128],peer_packets[128],ac_packets[4];unsigned peer_flows[128][64];
@@ -181,10 +181,10 @@ static u64 rtl9617c_bridge_wifi_policy_generation(void){return 1;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx,struct sk_buff *s,struct rtl_ax_tx_slot *slot,bool *linearized,bool separate){
- (void)tx;(void)linearized;assert(separate?s->len==84:s->len==20);slot->dma=0x09000000;maps++;return 1;}
+ (void)tx;(void)linearized;assert(separate?s->len==84:(s->len==20||s->len==64));slot->dma=0x09000000;maps++;return 1;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx,const struct rtl_ax_tx_slot *slot){(void)tx;assert(slot->dma==0x09000000);unmaps++;}
 static void rtl_ax_security_tx(u8 *page,unsigned id,unsigned key,u64 pn,unsigned cipher){(void)page;(void)id;(void)key;(void)pn;(void)cipher;assert(0);}
-static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert(reg==0x1078&&value==1);doorbells++;}
+static void write16(void *ctx,unsigned reg,unsigned value){(void)ctx;assert((reg==0x1078||reg==0x107c)&&value==1);doorbells++;}
 #define for_each_sg(list,sg,n,i) for((i)=0;(i)<(n)&&((sg)=&(list)[i],1);(i)++)
 #define sg_dma_address(s) ((s)->dma)
 #define sg_dma_len(s) ((s)->len)
@@ -273,6 +273,19 @@ int main(void){
   assert(get_unaligned_le32(memory+0xd000+7*32+12)==(t.peer_rates[7]&~BIT(31)));
  }
 
+ /* A VAP group QoS frame keeps Linux's interface sequence despite its
+  * nonzero self MACID. Monitor TX selects that MACID, not root0. */
+ for(unsigned pe=0;pe<2;pe++){
+  memset(memory,0,sizeof(memory));memset(pages,0,sizeof(pages));
+  struct rtl_ax_tx t={.running=true,.pe_active=pe,.pe={memory},.pages=pages,.headers=headers,.ring=ring,.pages_dma=0x08000000,.io=&io};
+  struct rtl_ax_ap r={.tx=&t,.chip=RTL_AX_8852C};struct ieee80211_hw hw={&r};struct ieee80211_tx_control ctrl={};
+  struct vif v={.type=NL80211_IFTYPE_AP,.drv_priv={{{.macid=41,.mbid=3}}}};
+  u8 bytes[64]={0x88,2,0,0,1};bytes[22]=0x30;bytes[23]=0x12;
+  struct sk_buff skb={.data=bytes,.len=64,.info={.control={.vif=&v}}};
+  rtl_ax_monitor_tx(&hw,&ctrl,&skb);assert(t.submitted==1);
+  if(pe){u32 *req=(void *)(memory+0x4000);assert(req[4]>>24==41&&!(req[4]&BIT(22))&&(req[4]&4095)==0x123);}
+  else assert(get_unaligned_le32(pages+5*264*128+8)>>24==41);
+ }
  /* HW header conversion bypassed the Linux handler. Only non-QoS calls
   * the interface allocator, and a closed binding fails before DMA mapping. */
  for(unsigned qos=0;qos<2;qos++){

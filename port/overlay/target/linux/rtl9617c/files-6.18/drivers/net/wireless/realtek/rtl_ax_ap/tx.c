@@ -58,7 +58,7 @@ struct rtl_ax_tx_slot {
 	u8 ring;
 	u8 key_index;
 	u8 macid, tid;
-	bool encrypted, pe_sequence, firmware_rate, pe_key_pn, quota_counted, pe_mcast;
+	bool encrypted, pe_sequence, firmware_rate, pe_key_pn, quota_counted, pe_mcast, pe_interface;
 	struct rtl_ax_tx_mapping *mapping;
 };
 
@@ -522,6 +522,23 @@ int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx)
  if(!ret)tx->bcmc_retiring=false;
  return ret;
 }
+int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx, unsigned int macid,
+	unsigned int port, unsigned int mbid)
+{
+	int ret;
+
+	if (macid >= 128 || port > 4 || mbid > 7 || (port && mbid)) return -EINVAL;
+	if (!macid && !port && !mbid) return rtl_ax_tx_bcmc_stop(tx);
+	/* NI BCMC is currently root-only. Non-root CPU GTK traffic still needs
+	 * the correct HIQ selector and the owning self-MACID's RPQ completion. */
+	ret = rtl_ax_tx_pause(tx);
+	if (ret) return ret;
+	ret = rtl_ax_mac_drop_group(tx->pdev, port, mbid);
+	rtl_ax_tx_open(tx);
+	if (!ret) ret = rtl_ax_tx_wait_station(tx, macid, IEEE80211_NUM_TIDS);
+	return ret;
+}
+
 /* Called while the station route is closed. Existing requests retain their
  * word3 snapshot; changing a peer never rewrites a queued request. */
 void rtl_ax_tx_peer_role(struct rtl_ax_tx *tx, unsigned int macid,
@@ -822,7 +839,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		.fttr_generation = skb->rtl9617c_fttr_generation};
 	bool linearized = false;
 	bool encap = info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP;
-	bool pe_sequence = tx->pe_active && !encap && macid &&
+	bool pe_sequence = tx->pe_active && !encap && macid && !is_multicast_ether_addr(header->addr1) &&
 		ieee80211_is_data_qos(header->frame_control) && ieee80211_is_data_present(header->frame_control) &&
 		!ieee80211_has_morefrags(header->frame_control) && !(le16_to_cpu(header->seq_ctrl) & 15);
 	unsigned int header_bytes = encap ? tx->peer_qos[macid] ? 26 : 24 : ieee80211_hdrlen(header->frame_control);
@@ -923,9 +940,10 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		/* Each software WP remains owned until hardware/software completion.
 		 * This side table does not alias the ten request address pairs. */
 		put_unaligned_le32(mcast_stamp, tx->pe.memory + RTL_MC_PE_CPU_STAMPS + id * 4);
-		put_unaligned_le32(info->control.vif &&
-			!(info->flags & IEEE80211_TX_CTL_INJECTED) ? rtl_seq_token(tx->pe.memory, role) : 0,
-			tx->pe.memory + RTL_SEQ_CPU_TOKENS + id * 4);
+		u32 token = info->control.vif && !(info->flags & IEEE80211_TX_CTL_INJECTED) ?
+			rtl_seq_token(tx->pe.memory, role) : 0;
+		slot.pe_interface = token != 0;
+		put_unaligned_le32(token, tx->pe.memory + RTL_SEQ_CPU_TOKENS + id * 4);
 	}
 	/* Join the closed-generation barrier after every fallible admission
 	 * check, before either PE or PCIe can observe this request. */
@@ -1142,7 +1160,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		tx->pe_producer = (tx->pe_producer + 1) & 255;
 		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
 		dma_wmb();
-		if (skb->rtl9617c_fttr_generation || slot.pe_key_pn || slot.pe_mcast)
+		if (skb->rtl9617c_fttr_generation || slot.pe_key_pn || slot.pe_mcast || slot.pe_interface)
 			queue_delayed_work(system_wq, &tx->fttr_work, 1);
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
@@ -1371,7 +1389,7 @@ static void rtl_ax_tx_fttr_work(struct work_struct *work)
 		u32 *released = tx->pe.memory + RTL_FTTR_PE_DISCARD + id * 4;
 		unsigned int qsel = slot->ring < 4 ? slot->ring : slot->ring == 4 ? 0x12 : 0x11;
 
-		if (!slot->skb->rtl9617c_fttr_generation && !slot->pe_key_pn && !slot->pe_mcast) continue;
+		if (!slot->skb->rtl9617c_fttr_generation && !slot->pe_key_pn && !slot->pe_mcast && !slot->pe_interface) continue;
 		if (!READ_ONCE(*released)) { pending = true; continue; }
 		/* PE no longer references the request/payload once this word is
 		 * visible. Clear before the completion makes this WP reusable. */
