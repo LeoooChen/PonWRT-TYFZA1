@@ -633,8 +633,11 @@ int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif)
 {
 	if (vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_STATION) return 0;
 	if (!tx->pe_active) return 0;
-	if (tx->sequence_generation == RTL_SEQ_ASSIGNED - 1) return -EOVERFLOW;
-	return ieee80211_rtl9617c_seq_bind(vif, tx->pe.memory + RTL_SEQ_BASE, ++tx->sequence_generation);
+	const struct rtl_ax_role_identity *identity = &((struct rtl_ax_vif *)vif->drv_priv)->identity;
+	unsigned int domain = rtl_seq_domain(identity->port << 4 | identity->mbid);
+	if (domain >= RTL_SEQ_DOMAINS) return -EINVAL;
+	if (tx->sequence_generation == RTL_SEQ_GENERATION_MASK) return -EOVERFLOW;
+	return ieee80211_rtl9617c_seq_bind(vif, tx->pe.memory + rtl_seq_offset(domain), ++tx->sequence_generation);
 }
 
 int rtl_ax_tx_sequence_unbind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif)
@@ -920,6 +923,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		/* Each software WP remains owned until hardware/software completion.
 		 * This side table does not alias the ten request address pairs. */
 		put_unaligned_le32(mcast_stamp, tx->pe.memory + RTL_MC_PE_CPU_STAMPS + id * 4);
+		put_unaligned_le32(info->control.vif &&
+			!(info->flags & IEEE80211_TX_CTL_INJECTED) ? rtl_seq_token(tx->pe.memory, role) : 0,
+			tx->pe.memory + RTL_SEQ_CPU_TOKENS + id * 4);
 	}
 	/* Join the closed-generation barrier after every fallible admission
 	 * check, before either PE or PCIe can observe this request. */

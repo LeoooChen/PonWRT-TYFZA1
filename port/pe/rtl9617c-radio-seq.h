@@ -5,7 +5,10 @@
  * a busy ARM allocator yields, and removal rejects delayed requests. */
 static u32 pe_sequence_next(u8 *memory, u32 generation, u32 *sequence)
 {
-	volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);
+	unsigned int domain = generation >> RTL_SEQ_DOMAIN_SHIFT;
+	if (domain >= RTL_SEQ_DOMAINS) return 2;
+	volatile struct rtl_seq_shared *s = (void *)(memory + rtl_seq_offset(domain));
+	generation &= RTL_SEQ_GENERATION_MASK;
 	if (!generation || s->generation != generation) return 2;
 	s->pe = 1; sync(); s->turn = 0; sync();
 	if (s->arm && !s->turn) { s->pe = 0; sync(); return 0; }

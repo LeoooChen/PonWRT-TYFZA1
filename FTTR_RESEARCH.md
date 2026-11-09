@@ -268,6 +268,8 @@
 
 125. 接入CPU/NI→PE发送身份快照：原厂160组C/XB数据/管理WD确认word8低7位port/MBID，CPU请求与直接ARM描述符均携带，NI站点模板/速率更新保留。CPU自地址保存在WP头缓冲96字节处，NI选择时把逐站点地址快照到私有请求28/29，AP/A-MSDU及RX匹配不再依赖全局地址；STA保留既有Linux三地址语义，未单方面改写。TXR1能力拒绝旧固件。49完整TX/32RX身份、40站点速率、67584请求、发布/组播/BCMC/FTTR退场/PS回归通过；PE32280字节、栈7312、重复构建一致、非uplink13992，Image/模块和五输入一致通过。旧全内存污染对比夹具读取失败，未计入证据，临时修改已撤销。未实机；每VIF非QoS序列/GTK/BCMC及完整接口分配、全链路退场仍未完成。详见[PE身份快照](port/FTTR.md#cpu-and-ni-pe-transmit-role-snapshots)。
 
+126. 接入每VIF非QoS序列域：port0 MBID0…7与port1…4共12独立ARM/Linux/PE绑定，root保留原布局，其余使用独立记录；NI入队保存域+代际，选择/最终发布核对，旧域仍有效或代际相同时也不跨域。CPU所有已绑定接口请求增加独立WP代际凭据，预分配序号也可在排队后撤销；27位代际显式耗尽，SEQ2拒绝旧固件。240原厂计数、24576并发、12域98400 Linux/PE交替及重绑、24原有/24 NI域/24 CPU撤销/2跨域场景和BCMC/组播/FTTR退场/发布/收发回归通过。对齐main3db3da5并验证RX优化；PE32476字节、栈7328、重复构建一致、非uplink13992，Image/模块和五输入一致通过。未实机；BCMC仍显式限root，每VIF GTK/BCMC、完整接口分配和全链路退场继续待补。详见[VIF序列域](port/FTTR.md#per-interface-non-qos-sequence-domains)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

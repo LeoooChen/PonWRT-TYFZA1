@@ -8294,6 +8294,57 @@ five source/generated-input identities pass. Local reports are
 results do not prove air-interface behavior, complete packet retirement or
 hardware-ID reuse.
 
+### Per-interface non-QoS sequence domains
+
+The native ARM/mac80211/PE sequence binding now selects twelve independent
+interface domains: port0 MBID0..7 and port1..4 with MBID0. The root retains
+its0x1fd00 shared record; the other eleven records occupy0x68c00 onward in the
+TX radio context. Invalid port/MBID combinations are rejected rather than
+aliasing another interface. The interface allocator still exposes a single
+data VIF, but the actual binding and NI allocation paths now support distinct
+domains. Linux retains its existing per-interface sequence counter and the
+same ARM/PE mutual exclusion protocol.
+
+Queued NI frames carry a domain-plus-generation token in their existing
+headroom word7. Selection and final publication compare both the token's domain
+and generation with the request role. A domain reassignment is rejected even if
+the old domain remains alive or another domain has the same generation value.
+PE allocates only after TXBD/WP credit and never allocates twice after a PN
+stall. Domain-specific closure cannot consume or close another domain's counter.
+Generation values use27 bits, with explicit exhaustion; high bits carry the
+domain and bit31 remains the assigned-sequence marker.
+
+CPU software WPs now have a separate interface token at0x68800, outside the ten
+address pairs and FTTR/GTK metadata. All bound-interface CPU requests snapshot it
+before publication, including ones whose non-QoS sequence Linux already assigned.
+The final PE publisher rejects a stale token before PCIe ownership transfer.
+Previously preassigned CPU requests did not have this interface-generation
+check. Requests already handed to PCIe still require the existing completion
+barriers. The root BCMC template is explicitly restricted to port0/MBID0 until
+its separate per-VIF GTK/template implementation is complete. Sequence capability
+SEQ2 makes the new driver reject incompatible PE firmware.
+
+`test_shared_sequence.py` executes240 target factory counter cases,24576
+concurrent allocations and the actual Linux TX/fast-path sequence handlers. It
+also binds all12 domains simultaneously, performs98400 Linux/PE alternations,
+then checks independent close/rebind, generation exhaustion and invalid domains.
+Linked-MIPS tests pass24 existing non-QoS EPP/header/RPQ/EQ/stall cases,24 domain
+selection/withdrawal cases,24 stale CPU queued/selected cases and two live-domain
+reassignment cases. Actual ARM submission checks token capture. Existing BCMC,
+multicast, CPU cancellation, FTTR NI/PE drain, TX/RX identity, publication and
+main RX address-store regressions pass.
+
+Image/modules build and five changed/generated-source identities pass. The PE
+image is32476 bytes, sha256
+`5a649bbe7ef17344df2c889e279752a63af4f95d9a84db49b31274b031e70453`, with
+conservative stack7328/8192 bytes. Repeat production build is identical;
+non-uplink builds at13992 bytes. Local reports are
+`artifacts/fttr/vif-seq-*-20261109.*`. This branch includes main3db3da5 and its
+RX address-store optimization. No physical device was accessed. Per-VIF
+GTK/BCMC, full interface allocation and complete hardware packet retirement
+remain unfinished; software domain isolation does not remove hardware-ID
+quarantine.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

@@ -970,7 +970,9 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
  u64 generation;
  int ret=0;
  if(vif->type!=NL80211_IFTYPE_AP || !tx->pe_active || rate>11)return -EOPNOTSUPP;
- next.sequence=READ_ONCE(((struct rtl_seq_shared *)(tx->pe.memory+RTL_SEQ_BASE))->generation);
+ const struct rtl_ax_role_identity *identity=&((struct rtl_ax_vif *)vif->drv_priv)->identity;
+ if(identity->port || identity->mbid)return -EOPNOTSUPP;
+ next.sequence=rtl_seq_token(tx->pe.memory,0);
  if(!next.sequence)return -ESTALE;
  if(key) {
   if((key->cipher!=WLAN_CIPHER_SUITE_CCMP && key->cipher!=WLAN_CIPHER_SUITE_GCMP &&

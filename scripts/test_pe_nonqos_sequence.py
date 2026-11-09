@@ -13,14 +13,18 @@ RING, PAGES, REPORTS, FORWARD = 0x05000000, 0x05100000, 0x05200000, 0x05300000
 SEQ = base + 0x1fd00
 
 
-def machine(start, full=True, client=False):
+def machine(start, full=True, client=False, role=0):
     m = Machine(full=full, client=client)
     for address, size in ((RING, 0x4000), (PAGES, 0x32000), (REPORTS, 0x10000), (FORWARD, 0x10000)):
         m.u.mem_map(address, size)
     for index, value in ((11, RING), (12, PAGES), (14, base + 0x4000),
                          (24, 1), (116, 0x6380), (117, 6), (68, REPORTS), (72, FORWARD)):
         m.put(mb + index * 4, value)
-    m.put(SEQ, 27); m.put(SEQ + 16, start)
+    domain=(7+(role>>4)) if role>>4 else role
+    m.seq=base+(0x1fd00 if not domain else 0x68c00+(domain-1)*20)
+    m.token=27|(domain<<27)
+    m.put(m.seq,27);m.put(m.seq+16,start)
+    m.put(base+0xd02c,role<<24)
     m.put(base + 0xd028, 24 << 16)
     # Ordinary native NI peer traffic (no multicast cookie). The new AP
     # BCMC producer will share this same non-QoS sequence space.
@@ -28,14 +32,14 @@ def machine(start, full=True, client=False):
         (len(m.frame) + m.header - 8) << 15 | 19 << 3))
     m.u.mem_write(payload + 64 + m.header, env['peer'])
     m.ingest()
-    assert m.get(payload + 28) == 27
+    assert m.get(payload + 28) == m.token
     m.put(bar + 0xc438, 10000)
     return m
 
 
 def select(m):
     assert m.call('ni_select', mb, base, requests) == 1
-    assert m.get(requests + 124) == 27
+    assert m.get(requests + 124) == m.token
     m.put(mb + 193 * 4, 1)
 
 
@@ -141,3 +145,44 @@ for sequence in (0, 1, 4094, 4095):
     assert struct.unpack('<H', m.u.mem_read(header + 7 * 128 + 22, 2))[0] == sequence << 4
     cases += 1
 print(f'Linked PE shared sequence: {cases} EPP/header/RPQ/EQ, CPU request copy, wrap, credit/ARM/PN stalls and generation withdrawal cases passed')
+
+# Domain selection follows the queued role, not the root sequence counter.
+for role in list(range(8))+[0x10,0x20,0x30,0x40]:
+    for withdraw in (False,True):
+        m=machine(4095,role=role);select(m)
+        if m.seq!=SEQ:m.put(SEQ,27);m.put(SEQ+16,123)
+        if withdraw:m.put(m.seq,28)
+        publish(m)
+        assert m.get(mb+194*4)==1
+        if withdraw:
+            assert not m.get(mb+10*4) and m.get(m.seq+16)==4095
+        else:
+            assert m.get(mb+10*4)==1 and m.get(m.seq+16)==0
+            assert m.get(RING+4) and m.get(m.get(RING+4)+12)&4095==4095
+        if m.seq!=SEQ:assert m.get(SEQ+16)==123
+# CPU preassigned numbers remain revocable after selection and before PCIe.
+for domain in range(12):
+    for phase in ('queued','selected'):
+        m=cpu['Machine'](paired=False);tx,mailbox=cpu['TX'],cpu['TXMB'];data=cpu['PAYLOAD']
+        seq=tx+(0x1fd00 if not domain else 0x68c00+(domain-1)*20)
+        m.put(seq,7);m.put(seq+16,99);m.put(tx+0x68800+7*4,7|domain<<27)
+        header=tx+0x14000;m.put(mailbox+14*4,header)
+        m.u.mem_write(data,ethernet);m.u.mem_write(header+7*128,ethernet[:14])
+        words=[0]*32;words[:6]=[7,0,98|24<<16|1<<24,4,1<<24|1<<18,0];words[8:10]=[data,80];words[31]=0x80000123
+        m.u.mem_write(tx+0x4000,struct.pack('<32I',*words));m.put(mailbox+9*4,0);m.put(mailbox+8*4,1)
+        if phase=='selected':
+            m.put(cpu['BAR']+0x1058,1<<16);m.run('PE1',12000);assert not m.get(mailbox+10*4)
+        m.put(seq,8);m.put(cpu['BAR']+0x1058,0);m.run('PE1',15000)
+        assert m.get(tx+0x1e400+7*4)==1 and not m.get(mailbox+10*4) and m.get(seq+16)==99
+print('Linked per-VIF sequences: 24 NI domain/withdrawal and24 stale CPU queued/selected requests passed')
+
+# An old domain can remain alive while a station template moves to another.
+# Same generation values in both domains must not make this an alias.
+for phase in ('queue','selected'):
+    m=machine(99,role=1);m.put(base+0x68c00+20,27);m.put(base+0x68c00+20+16,177)
+    if phase=='selected':select(m);m.put(requests+12,2<<24)
+    else:m.put(base+0xd02c,2<<24)
+    if phase=='selected':publish(m);assert m.get(mb+194*4)==1
+    else:assert not m.call('ni_select',mb,base,requests)
+    assert not m.get(mb+10*4) and m.get(m.seq+16)==99 and m.get(base+0x68c00+20+16)==177
+print('NI sequence domain changes reject queued/selected old requests even when both generations match')

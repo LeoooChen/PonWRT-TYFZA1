@@ -106,8 +106,7 @@ static unsigned rtl9617c_key_pn_token(struct rtl_key_pn *p){return p->shared?p->
 #define RTL_AX_TX_CPU_SELF 96
 #define RTL_AX_TX_PEER_SELF 0x68400
 #define RTL_KEY_PN_REQUEST 30
-#define RTL_SEQ_REQUEST 31
-#define RTL_SEQ_ASSIGNED 0x80000000U
+#include "'''+str(driver.parents[4]/'include/linux/rtl9617c-seq.h')+r'''"
 struct ieee80211_hdr {u16 frame_control,duration_id;u8 addr1[6],addr2[6],addr3[6];u16 seq_ctrl;} __attribute__((packed));
 struct ieee80211_bar {u16 frame_control,duration;u8 ra[6],ta[6];u16 control,start_seq_num;} __attribute__((packed));
 struct ieee80211_tx_rate {int idx;unsigned flags,count;};
@@ -282,6 +281,9 @@ int main(void){
   struct ieee80211_hw hw={};struct vif vif={.type=NL80211_IFTYPE_AP,.addr={2,0,0,0,1,2},.drv_priv={{{.port=2,.mbid=5}}}};
   u8 frame[84]={2};struct sk_buff skb={.data=frame,.len=84,.info={.flags=IEEE80211_TX_CTL_HW_80211_ENCAP,.control={.vif=&vif}}};
   t.peer_qos[7]=qos;unsigned calls=sequence_calls,before=maps;
+  /* VIF0x25 is invalid for allocation; use a real VAP domain for token capture. */
+  vif.drv_priv[0].identity.port=0;vif.drv_priv[0].identity.mbid=5;
+  put_unaligned_le32(7,memory+rtl_seq_offset(5));
   sequence_error=-ESTALE;
   if(!qos){
    assert(rtl_ax_tx_submit(&t,&hw,&skb,4,0,0,7,0,0)==-ESTALE);
@@ -289,9 +291,10 @@ int main(void){
   }
   sequence_error=0;assert(!rtl_ax_tx_submit(&t,&hw,&skb,4,0,0,7,0,0));
   assert(sequence_calls==calls+!qos&&maps==before+1);
-  assert((get_unaligned_le32(memory+0x4000+12)&RTL_AX_TX_ROLE_MASK)==0x25U<<24);
+  assert((get_unaligned_le32(memory+0x4000+12)&RTL_AX_TX_ROLE_MASK)==5U<<24);
   assert(get_unaligned_le32(memory+0x4000+12)&RTL_AX_TX_SELF_VALID);
   assert(!memcmp(headers+96,vif.addr,6));
+  assert(get_unaligned_le32(memory+RTL_SEQ_CPU_TOKENS)==(7|(5U<<RTL_SEQ_DOMAIN_SHIFT)));
   assert(get_unaligned_le32(memory+0x4000+124)==(qos?0:RTL_SEQ_ASSIGNED|0xabc));
  }
 }

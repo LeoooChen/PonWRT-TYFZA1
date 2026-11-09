@@ -647,8 +647,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 		u32 revoked = 0;
 		u32 seq = request[RTL_SEQ_REQUEST];
 		if (seq && !(seq & RTL_SEQ_ASSIGNED)) {
-			volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);
-			revoked = s->generation != seq;
+			revoked = !rtl_seq_current(memory, seq);
 		}
 		if (request[RTL_KEY_PN_REQUEST]) {
 			volatile struct rtl_key_pn_shared *key = (void *)(memory + RTL_KEY_PN_BASE +
@@ -656,6 +655,8 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			revoked |= key->generation != request[RTL_KEY_PN_REQUEST] ||
 				!(request[4] & BIT(15)) || (request[4] & BIT(16));
 		}
+		u32 cpu_seq = request[0] < 256 ? *(u32 *)(memory + RTL_SEQ_CPU_TOKENS + request[0] * 4) : 0;
+		revoked |= cpu_seq && !rtl_seq_current(memory, cpu_seq);
 		if (request[0] < 256 && (revoked || pe_fttr_stale(mailbox, request))) {
 			/* Never publish this WP to PCIe. ARM owns the skb/DMA mapping;
 			 * a per-WP release word also works without NI/RPQ offload. */
@@ -678,8 +679,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 				!*(volatile u32 *)(memory + 0x11a00 + macid * 4)));
 			if (((request[2] >> 16) & 63) == 24) {
 				const u32 *waiting = uncached(owners[id * 2]);
-				volatile struct rtl_seq_shared *s = (void *)(memory + RTL_SEQ_BASE);
-				revoked |= !waiting[7] || s->generation != waiting[7];
+				revoked |= !waiting[7] || waiting[7] != rtl_seq_token(memory, (request[3] >> 24) & 127);
 			}
 			if (revoked || ni_mcast_stale(mailbox, uncached(owners[id * 2])) ||
 			    ni_fttr_stale(mailbox, uncached(owners[id * 2]))) {

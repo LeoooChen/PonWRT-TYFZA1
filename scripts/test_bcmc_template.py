@@ -41,7 +41,9 @@ static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;
 #define IEEE80211_NUM_TIDS 16
 #define PE_PROBE_MAILBOX 0x2000
 struct net_device {unsigned refs;};
-struct ieee80211_vif {unsigned type;bool mld;u8 addr[6];struct {struct net_device *netdev;}wdev;};
+struct rtl_ax_role_identity {unsigned port,mbid;};
+struct rtl_ax_vif {struct rtl_ax_role_identity identity;};
+struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];unsigned type;bool mld;u8 addr[6];struct {struct net_device *netdev;}wdev;};
 struct ieee80211_key_conf {unsigned cipher,flags,hw_key_idx;int keyidx;unsigned rtl9617c_pn;};
 struct ieee80211_key {unsigned flags;struct ieee80211_key_conf conf;};
 struct wiphy {u32 frag_threshold;};
@@ -111,6 +113,8 @@ int main(void){
  assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN&&!b->generation);
  fail_wait=0;assert(!rtl_ax_tx_bcmc_stop(&t)&&!t.bcmc_retiring);
  t.bcmc_generation=~0U;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EOVERFLOW&&!b->generation);
+ s.vif.drv_priv[0].identity.mbid=1;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EOPNOTSUPP);
+ s.vif.drv_priv[0].identity.mbid=0;
  t.bcmc_generation=90;t.ni.retire_quiescing=true;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN);t.ni.retire_quiescing=false;
  s.vif.wdev.netdev=&other;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN&&!other.refs);s.vif.wdev.netdev=&dev;
  /* Partial NI preparation retains its netdev and retries cleanup first. */

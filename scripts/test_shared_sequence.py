@@ -82,7 +82,9 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define cpu_to_le16(v) (v)
 #define unlikely(v) (v)
 struct ieee80211_hdr {u16 frame_control;u8 addr1[6];u16 seq_ctrl;};
-struct ieee80211_vif {unsigned type;bool mld;};
+struct rtl_ax_role_identity {u8 port,mbid,macid,type;};
+struct rtl_ax_vif {struct rtl_ax_role_identity identity;};
+struct ieee80211_vif {unsigned type;bool mld;struct rtl_ax_vif drv_priv[1];};
 struct ieee80211_tx_info {unsigned flags;struct {struct ieee80211_vif *vif;unsigned flags;}control;};
 struct sk_buff {unsigned priority;u8 *data;struct ieee80211_tx_info info;};
 struct ieee80211_sub_if_data {struct ieee80211_vif vif;struct {struct {void *wiphy;}hw;}*local;struct rtl_seq_binding rtl9617c_sequence;u16 sequence_number,mld_mcast_seq;};
@@ -129,7 +131,7 @@ static unsigned fast_sequence(struct ieee80211_sub_if_data *sdata,struct sta_inf
 '''+fast+'return TX_CONTINUE;}\n'
 code+=r'''
 #define COUNT 8192
-static u8 memory[0x20000] __attribute__((aligned(64)));
+static u8 memory[0x80000] __attribute__((aligned(64)));
 static struct rtl_seq_binding binding;
 static u16 software;
 static _Atomic unsigned histogram[4096];
@@ -190,10 +192,40 @@ int main(void){
  assert(!rtl_ax_tx_sequence_bind(&radio,&fresh.vif)&&s->generation==1&&s->next==4094);
  assert(!ieee80211_rtl9617c_next_sequence(&fresh.vif,&result)&&result==0xffe0);
  assert(!rtl_ax_tx_sequence_unbind(&radio,&fresh.vif)&&revoked==1&&fresh.sequence_number==0xfff0);
- radio.sequence_generation=RTL_SEQ_ASSIGNED-1;
+ radio.sequence_generation=RTL_SEQ_GENERATION_MASK;
  assert(rtl_ax_tx_sequence_bind(&radio,&fresh.vif)==-EOVERFLOW&&!s->generation);
  radio.pe_active=false;assert(!rtl_ax_tx_sequence_bind(&radio,&fresh.vif)&&!s->generation);
  fresh.vif.type=7;radio.pe_active=true;assert(!rtl_ax_tx_sequence_bind(&radio,&fresh.vif));
+ /* Bind all12 actual interface domains together and interleave Linux/PE. */
+ struct ieee80211_sub_if_data interfaces[RTL_SEQ_DOMAINS]={};
+ struct rtl_ax_tx multi={.pe_active=true,.pe={memory}};memset(memory,0,sizeof(memory));
+ for(unsigned i=0;i<RTL_SEQ_DOMAINS;i++){
+  interfaces[i].vif.type=NL80211_IFTYPE_AP;
+  interfaces[i].vif.drv_priv[0].identity.port=i<8?0:i-7;
+  interfaces[i].vif.drv_priv[0].identity.mbid=i<8?i:0;
+  interfaces[i].sequence_number=(i*300)<<4;
+  assert(!rtl_ax_tx_sequence_bind(&multi,&interfaces[i].vif));
+ }
+ for(unsigned n=0;n<4100;n++)for(unsigned i=0;i<RTL_SEQ_DOMAINS;i++){
+  unsigned role=i<8?i:(i-7)<<4,token=rtl_seq_token(memory,role),seq;
+  assert(token==((i<<RTL_SEQ_DOMAIN_SHIFT)|(i+1)));
+  assert(!ieee80211_rtl9617c_next_sequence(&interfaces[i].vif,&result));
+  assert(result==((i*300+n*2)&4095)<<4);
+  assert(pe_sequence_next(memory,token,&seq)==1&&seq==((i*300+n*2+1)&4095));
+ }
+ for(unsigned i=0;i<RTL_SEQ_DOMAINS;i++){
+  unsigned role=i<8?i:(i-7)<<4,old=rtl_seq_token(memory,role),seq;
+  assert(!rtl_ax_tx_sequence_unbind(&multi,&interfaces[i].vif));
+  assert(!rtl_seq_current(memory,old)&&pe_sequence_next(memory,old,&seq)==2);
+  assert(!rtl_ax_tx_sequence_bind(&multi,&interfaces[i].vif));
+  assert(!rtl_seq_current(memory,old));
+ }
+ assert(!rtl_seq_token(memory,0x11)&&!rtl_seq_token(memory,0x50));
+ struct ieee80211_sub_if_data invalid={.vif={.type=NL80211_IFTYPE_AP,.drv_priv={{{.port=1,.mbid=1}}}}};
+ assert(rtl_ax_tx_sequence_bind(&multi,&invalid.vif)==-EINVAL);
+ assert(!rtl_seq_current(memory,1U<<RTL_SEQ_DOMAIN_SHIFT));
+ assert(rtl9617c_seq_bind(&invalid.rtl9617c_sequence,s,RTL_SEQ_GENERATION_MASK+1,&invalid.sequence_number)==-EINVAL);
+ puts("Per-VIF sequences: 12 concurrent interface bindings, 98400 Linux/PE alternations, independent rebind and invalid-domain rejection passed");
  puts("Shared sequence:24576 concurrent allocations,4100 actual Linux/PE alternations, wrap, control/QoS exclusions, interface replacement and timeout passed");
 }
 '''

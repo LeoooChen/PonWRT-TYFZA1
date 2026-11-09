@@ -30,7 +30,7 @@ int rtl9617c_seq_bind(struct rtl_seq_binding *binding, struct rtl_seq_shared *s,
 {
 	unsigned long flags;
 	int ret;
-	if (!s || !generation || (generation & RTL_SEQ_ASSIGNED)) return -EINVAL;
+	if (!s || !generation || generation > RTL_SEQ_GENERATION_MASK) return -EINVAL;
 	spin_lock_irqsave(&sequence_lock, flags);
 	if (binding->shared || binding->generation || READ_ONCE(s->generation)) { ret = -EBUSY; goto out; }
 	ret = sequence_peer_lock(s);

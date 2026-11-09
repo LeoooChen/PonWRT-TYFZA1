@@ -228,8 +228,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 			prefix[4] = 3;
 		}
 		u32 *waiting = uncached(buffer);
-		volatile struct rtl_seq_shared *sequence = (void *)(memory + RTL_SEQ_BASE);
-		waiting[7] = sequence->generation;
+		u32 role = macid ? (*(u32 *)(memory + 0xd000 + macid * 32 + 12) >> 24) & 127 : 0;
+		waiting[7] = rtl_seq_token(memory, role);
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16 | (macid && length > 1000 ? NI_PREFIX_READY : 0);
 		waiting[2] = now; waiting[3] = now >> 32;
@@ -342,8 +342,8 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			discard |= ni_mcast_stale(mailbox, waiting);
 			discard |= ni_fttr_stale(mailbox, waiting);
 			if (!macid || ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 24) {
-				volatile struct rtl_seq_shared *sequence = (void *)(memory + RTL_SEQ_BASE);
-				discard |= !waiting[7] || sequence->generation != waiting[7];
+				u32 role = macid ? (*(u32 *)(memory + 0xd000 + macid * 32 + 12) >> 24) & 127 : 0;
+				discard |= !waiting[7] || waiting[7] != rtl_seq_token(memory, role);
 			}
 			if (discard && mailbox[47]) continue;
 			if (!discard && (!ni_owner_available(memory) ||
