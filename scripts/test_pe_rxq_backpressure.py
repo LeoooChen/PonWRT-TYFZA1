@@ -805,21 +805,54 @@ for blocked in (None, 'ARM', 'NI', 'reorder'):
 
 # A pause arriving after descriptor preparation must be acknowledged only
 # after the current batch's pending NI prefix has reached the doorbell.
-paused=reorder_peer();paused.u.mem_map(0x10020000,4096)
-for i in range(4):paused.arrive(data_frame(0x123+i,2+i),True);paused.capture()
-for j,v in ((0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1)):paused.put(MB+j*4,v)
-publication=[];changed=[False];acknowledged=[False]
-def pause_after_prepare(uc,access,a,size,value,data):
- if (a&0x1fffffff)==MB+90*4 and not changed[0]:
-  changed[0]=True;paused.put(MB+3*4,2)
- if (a&0x1fffffff)==VP+0x68:publication.append(paused.get(VP+0x18))
- if (a&0x1fffffff)==MB+4*4 and value==2:
-  assert publication==[4] and paused.get(MB+90*4)==4
-  acknowledged[0]=True;uc.emu_stop()
-paused.u.hook_add(UC_HOOK_MEM_WRITE,pause_after_prepare)
-for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_SP,(B+0xfff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):paused.u.reg_write(reg,v)
-paused.u.emu_start(symbols['pe_main'],0x9fc0fff0,count=20000)
-assert changed[0] and acknowledged[0]
+pause_cases=[]
+for count in (1,4,17):
+ for start in (0,1020):
+  for trigger in ('first','last','doorbell'):
+   for command in (2,0xfffffffe):
+    paused=reorder_peer();paused.u.mem_map(0x10020000,4096)
+    paused.put(MB+90*4,start);paused.put(MB+91*4,start);paused.put(MB+118*4,start);paused.put(VP+0x1c,start&1023)
+    for i in range(count):paused.arrive(data_frame(0x123+i,2+i),True);paused.capture()
+    for j,v in ((0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1)):paused.put(MB+j*4,v)
+    publication=[];changed=[False];acknowledged=[False];batch=min(count,16)
+    def pause_after_prepare(uc,access,a,size,value,data):
+     a&=0x1fffffff
+     requested=(a==VP+0x68 if trigger=='doorbell' else a==MB+90*4 and value==start+(1 if trigger=='first' else batch))
+     if requested and not changed[0]:
+      changed[0]=True;paused.put(MB+3*4,command)
+     if a==VP+0x68:
+      publication.append(paused.get(VP+0x18))
+      assert publication[-1]==paused.get(MB+90*4)&1023
+     if a==MB+4*4 and value==command and not acknowledged[0]:
+      assert changed[0] and publication==[(start+batch)&1023] and paused.get(MB+90*4)==start+batch
+      for i in range(batch):
+       address=paused.get(NI+((start+i)&1023)*8)
+       assert bytes(uc.mem_read(address,12))==dst+peer
+      acknowledged[0]=True;uc.emu_stop()
+    # Scope observation to protocol registers. A global MIPS write hook also
+    # instruments stack stores in branch delay slots; Unicorn 2.1.4 then traps
+    # on a following J instruction before any descriptor work has run.
+    for address in (MB+90*4,VP+0x68,MB+4*4):
+     paused.u.hook_add(UC_HOOK_MEM_WRITE,pause_after_prepare,begin=address,end=address+3)
+    for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_SP,(B+0xfff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):paused.u.reg_write(reg,v)
+    paused.u.emu_start(symbols['pe_main'],0x9fc0fff0,count=20000)
+    assert changed[0] and acknowledged[0]
+    # ACK stops preparation, not DMA consumption. Queued/held payloads remain
+    # owned while the consumer has not moved; running the paused main cannot
+    # publish the seventeenth packet or recycle the submitted buffers.
+    before=(paused.get(MB+90*4),paused.get(MB+174*4),paused.get(MB+176*4),paused.get(MB+177*4),tuple(publication))
+    paused.u.emu_start(paused.u.reg_read(UC_MIPS_REG_PC),0x9fc0fff0,count=5000)
+    assert before==(paused.get(MB+90*4),paused.get(MB+174*4),paused.get(MB+176*4),paused.get(MB+177*4),tuple(publication))
+    paused.inventory()
+    # Native open advances the even command by two then sets the run bit.
+    resumed=((command+2)&0xffffffff)|1
+    paused.put(MB+3*4,resumed)
+    paused.u.emu_start(paused.u.reg_read(UC_MIPS_REG_PC),0x9fc0fff0,count=20000)
+    assert paused.get(MB+4*4)==resumed and paused.get(MB+90*4)==start+count
+    assert publication==[(start+batch)&1023]+([(start+count)&1023] if count>batch else [])
+    assert paused.get(ST+1024)==1<<31|(0x123+count)
+    paused.inventory()
+    pause_cases.append(dict(count=count,start=start,trigger=trigger,command=command,resumed=resumed))
 
 # An empty capture queue needs no worker, while a later packet still waits
 # for the outstanding ARM state handler before its PN/SN can advance.
@@ -1012,6 +1045,7 @@ for count,stop in ((1,'empty'),(16,'budget'),(7,'tag'),(7,'work_full'),(0,'empty
  assert len(publications)==(5 if count else 0) and len(set(publications))==len(publications)
  before=len(events);q.execute('pe_rxq_batch');assert len(events)==before
 print(json.dumps({'scope':'Actual linked production PE; modeled PCIe, ARM acknowledgement, NI consumption and W1C. No RF throughput simulation.',
+ 'full_main_pause_ack_cases':pause_cases,'pause_ACK_follows_NI_doorbell':True,'paused_payload_ownership_retained':True,
  'batch_BD_then_one16bit_notify':True,'short_unready_full_batch_flush':True,'empty_RX_worker_calls':empty_worker_calls,'empty_RX_shared_reads':len(idle_shared_reads),'queued_RX_waits_for_ARM_ACK':True,
  'interleaved_TID_order_and_protocol_barriers':True,
  'NI_backpressure_preserves_reorder_cursor_across_work_wrap':True,

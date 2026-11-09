@@ -8714,15 +8714,13 @@ the larger RX wrapper. Combined PE is32764 bytes, SHA256
 with conservative stack bound7368/8192; non-uplink remains13992 bytes.
 Image/modules and four source/generated-input hashes match. Eight linked
 identity/STA-RX/multicast/BCMC/drain/withdrawal/batch regressions pass against the
-combined image. Main's full RX-backpressure test reaches its newly added
-pause-ACK case but the simulator raises a CPU exception before any descriptor
-preparation; that whole-suite result is not a pass and the full-main pause-ACK
-claim remains unverified. The actual batch exit publication cases preceding it
-(normal, ARM, NI pressure and reorder) did pass. A scoped run replacing only the
-full-main pause case with direct actual batch execution also passes the remaining
-RX suite and verifies publication after a mid-batch pause request; it does not
-execute or claim the full-main ACK assertion. Reports use
-`artifacts/fttr/downlink-main-*-20261109.*`.
+combined image. The original full RX-backpressure run trapped in the new
+pause-ACK scenario before descriptor preparation. That was subsequently traced
+to Unicorn's global memory-write hook interacting with a MIPS branch-delay
+stack store. The corrected, narrowly scoped observer now executes the actual
+full main loop and all original assertions; the pause-ACK gap is resolved by
+[the full-main validation below](#full-pe-pause-ack-and-resume-validation).
+Historical reports remain `artifacts/fttr/downlink-main-*-20261109.*`.
 
 This supplies BSS selection, not an end-to-end generation fence. Wi-Fi ID reuse
 and late packets still depend on incomplete MCE/AFT retirement proof, and actual
@@ -8772,7 +8770,8 @@ multi-SSID acceptance. WMM0/EDCA, channel and port color remain shared hardware
 state, as distinct from the per-BSSID CAM colors. Independent per-VIF airtime,
 TSPEC policy and mixed AP/STA/multi-channel operation are not implemented.
 Wi-Fi ID reuse still lacks a proven full upstream packet-retirement barrier;
-existing quarantines and the documented whole-PE pause-ACK simulation gap remain.
+existing quarantines remain. Full PE pause-ACK simulation is now verified below;
+that does not prove upstream packet retirement.
 
 ### Per-VIF EDCA requests on shared WMM0
 
@@ -8842,8 +8841,8 @@ PE is32448 bytes, SHA256
 with conservative stack7360/8192; non-uplink builds to13992 bytes. Image/modules
 builds, seven changed kernel inputs and patch238's zero-fuzz apply/reverse round
 trip pass. Evidence is `artifacts/fttr/unicast-policy-*-20261109.*`. No physical
-device was accessed; full upstream packet retirement, ID reuse and the previously
-recorded full-main pause-ACK simulation gap remain outstanding.
+device was accessed; full upstream packet retirement and ID reuse remain
+outstanding. The full-main pause-ACK simulation gap is now resolved below.
 
 ### Retired Wi-Fi FE rules gate final NI release
 
@@ -9080,6 +9079,44 @@ mixed policies. ASan/UBSan reply parsing and existing Time/IPTV/port/store
 regressions pass. Host fttr-sync and musl fttr-sync/fttr-sync-policy compile;
 artifacts are `artifacts/fttr/web-password-*-20261109.*`. No physical device,
 credential installation or login was tested. Kernel/PE are unchanged.
+
+### Full PE pause ACK and resume validation
+
+The previous full-main pause test was blocked by its observation hook rather
+than by the PE implementation. A minimal execution of the actual MIPS pattern
+(conditional branch, delay-slot stack store, following absolute J) succeeds
+without a global write hook and traps with one in Unicorn2.1.4. The test now
+observes only the NI write cursor, NI doorbell and command-ACK mailbox words.
+No production instruction, firmware feature, acknowledgement assertion or DMA
+completion model was weakened to make it pass.
+
+The complete RX backpressure suite now passes without skipping the full-main
+case. Its pause matrix has36 cases:1/4/17 captured packets; normal and wrapped
+NI descriptor positions; pause requested at first/last descriptor preparation
+or at doorbell publication; ordinary and near-wrap command numbers. Every ACK
+follows the completed batch doorbell and exact descriptor payload checks. While
+paused, further main-loop execution neither publishes the seventeenth packet
+nor releases payloads still owned by NI. Resume acknowledges the new command,
+processes the remaining prefix once and preserves PN/SN and the514-buffer
+ownership inventory. The two-descriptor prefetch retention remains intact.
+
+Related linked PE1 TX staging/drain tests confirm no pause ACK while TXBD credit
+prevents pending submissions, independent PE0 pause, and eventual ACK after
+publication. ARM pause/open, NI queue restoration, inflight release and RX
+handoff regressions pass. Rebuilding PE from current sources produces exactly
+the committed32448-byte header, SHA256
+`f6d8b207b42d0f9f9cce54bc16616a524742c8752f0647d12b11e9a42c4a71f6`;
+stack bound7360/8192 and IMEM-entry checks pass. Reports are
+`artifacts/fttr/pe-pause-matrix-20261109.log` and
+`artifacts/fttr/pause-*-20261109.*`.
+
+This closes the specific full-main pause-ACK offline validation gap. It is not
+a new hardware retirement fence: ACK means PE has completed its local batch;
+NI DMA consumption, two prefetched payloads, MCE/AFT upstream work and ES/MiniOLT
+downstream traffic still have distinct ownership requirements. Safe hardware-ID
+reuse and physical timing/traffic acceptance remain incomplete. Production
+kernel/PE sources are unchanged in this increment and no physical device was
+accessed.
 
 ### Outstanding implementation and acceptance
 
