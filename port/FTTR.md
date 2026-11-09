@@ -8933,6 +8933,58 @@ regressions pass. Host fttr-sync and aarch64-musl fttr-sync/fttr-sync-policy bui
 pass; evidence is `artifacts/fttr/time-*-20261109.*`. Kernel/PE were unchanged and
 no physical device, real time service or downstream gateway was accessed.
 
+### Original downstream IPTV settings and durable readback
+
+The syncserv client now implements `GetIPTVSetting` / `SetIPTVSetting`:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa iptv-settings
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa iptv-apply /etc/fttr-iptv.json
+```
+
+An enabled private configuration contains exactly the original three fields:
+
+```json
+{"IPTVEnable":1,"IPTVVlan":100,"IPTVLanPort":"LAN1,LAN3"}
+```
+
+VID0 represents the original untagged recipe; other accepted VIDs are1..4094.
+The port list is the original ascending, nonduplicated LAN1..LAN4 string. Empty
+lists are representable: the target builder emits one when the selected WAN has
+only port-mask bits outside its four LAN positions. Disabling sends only
+`{"IPTVEnable":0}`; VLAN/port fields are deliberately omitted as in the target
+builder. Replies reporting disabled state are compared on that switch, without
+claiming that previous inactive VLAN values have been erased.
+
+`trace_stock_fttr_iptv.py` executes the actual controller builder over128
+port-mask/tag/VID cases. It confirms the first enabled mode0 WAN with service
+bit2 and a nonzero port mask supplies the profile; failed/ineligible MIB rows
+are skipped. The original independent request and reply methods, source MAC and
+slave multicast envelope are retained. Its Result response only acknowledges
+the request. Native application first queries a complete matching peer response,
+sends one write, then independently reads back, including after timeout/NACK.
+A re-registration cancels the transaction. `readable_fields_match` is separate
+from `traffic_verified:false`: no IPTV stream, forwarding or remote switch table
+has been verified by a matching JSON response.
+
+Resident peers accept optional `IPTV` with the same object, after WiFi, Radios
+and Time and before EasyMesh. Ready0 never writes. Record version5 pins the
+configuration to its Revision and fsyncs attempted bit20 before sending. Restart
+uses read-only reconciliation, including after SIGKILL immediately following
+Set; same-Revision configuration drift is refused. Policies without IPTV retain
+their existing record versions. This does not automatically import local WAN
+service policy or implement the separate Get/SetIPTVPortInfo methods.
+
+Validation includes the original128 builder cases,30 CLI/resident AF_PACKET
+network-namespace cases,40 schema checks and ASan/UBSan malformed-response tests.
+These cover enable/disable, untagged/all/empty port sets, MAC/method/source
+mismatch, partial replies, fragments, ACK/readback failures, Ready0, fsync failure,
+crash recovery and combined WiFi/Radio/Time/IPTV ordering. Time's27 cases, Radio,
+EasyMesh and existing persistent-store regressions pass. Host fttr-sync and
+musl fttr-sync/fttr-sync-policy compile successfully; reports are
+`artifacts/fttr/iptv-*-20261109.*`. Kernel and PE are unchanged; no physical device
+or actual IPTV forwarding path was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

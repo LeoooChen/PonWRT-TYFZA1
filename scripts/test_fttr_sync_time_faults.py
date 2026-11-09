@@ -14,8 +14,8 @@ static int decode(const char *text,size_t length,unsigned settings,bool *ack){
  const uint8_t peer[6]={2,0,0,0,0,1};
  struct fttr_sync_message m={.payload=(const uint8_t*)text,.length=length};
  struct json_object *summary=NULL,*observed=NULL;
- int ret=fttr_sync_reply_decode(&m,peer,settings,settings==8,ack,&summary,&observed);
- if(!ret && settings==7){assert(summary&&observed&&!fttr_sync_time_validate(observed));}
+ int ret=fttr_sync_reply_decode(&m,peer,settings,(settings==8 || settings==10),ack,&summary,&observed);
+ if(!ret && (settings==7 || settings==9)){assert(summary&&observed&&!(settings==9?fttr_sync_iptv_validate(observed):fttr_sync_time_validate(observed)));}
  else assert(!summary&&!observed);
  json_object_put(summary);json_object_put(observed);return ret;
 }
@@ -49,7 +49,31 @@ int main(void){
   const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
   assert(decode(text,strlen(text),7,&ack)==-EBADMSG);json_object_put(obj);
  }
- puts("Time parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
+ const char *iptv="{\"Result\":1,\"MAC\":\"020000000001\",\"IPTVEnable\":1,\"IPTVVlan\":100,\"IPTVLanPort\":\"LAN1,LAN3\"}";
+ assert(!decode(iptv,strlen(iptv),9,&ack));
+ assert(!decode("{\"Result\":1}",12,10,&ack));
+ const char *disabled="{\"Result\":1,\"MAC\":\"020000000001\",\"IPTVEnable\":0}";
+ assert(!decode(disabled,strlen(disabled),9,&ack));
+ for(unsigned i=0;i<3;i++) {
+  struct json_object *obj=json_tokener_parse(iptv);
+  json_object_object_add(obj,(const char*[]){"IPTVEnable","IPTVVlan","IPTVLanPort"}[i],json_object_new_boolean(1));
+  const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
+  assert(decode(text,strlen(text),9,&ack)==-EBADMSG);json_object_put(obj);
+ }
+ const char *ports[]={"LAN2,LAN1","LAN1,LAN1","LAN5","LAN1,","LAN1,,LAN2","LAN01","lan1","LAN1;echo"};
+ for(unsigned i=0;i<sizeof(ports)/sizeof(ports[0]);i++) {
+  struct json_object *obj=json_tokener_parse(iptv);
+  json_object_object_add(obj,"IPTVLanPort",json_object_new_string(ports[i]));
+  const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
+  assert(decode(text,strlen(text),9,&ack)==-EBADMSG);json_object_put(obj);
+ }
+ struct json_object *obj=json_tokener_parse(iptv);
+ json_object_object_add(obj,"IPTVLanPort",json_object_new_string_len("LAN1\0LAN2",9));
+ const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
+ assert(decode(text,strlen(text),9,&ack)==-EBADMSG);json_object_put(obj);
+ const char *partial="{\"Result\":1,\"MAC\":\"020000000001\",\"IPTVEnable\":1}";
+ assert(decode(partial,strlen(partial),9,&ack)==-EAGAIN);
+ puts("Time/IPTV parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
