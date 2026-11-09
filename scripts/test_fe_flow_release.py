@@ -54,7 +54,7 @@ static bool list_empty(struct list_head *h){return h->next==h;}
 struct rtl_fe;
 struct net_device {};
 struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid,bindings;bool retired;};
-struct rtl_fe_mac {unsigned int users,saved[5];u8 address[6];};
+struct rtl_fe_mac {unsigned int users,saved[5];u8 address[6];bool ready;};
 struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted;};
 struct rtl_fe_mtu {unsigned int users,size,saved;};
 struct work_struct {int unused;};

@@ -20,6 +20,7 @@ static inline int rtl_fe_cam_protocol_get(const struct rtl_dq_io *io,
 
  binding->bank=bank;binding->created=0;
  for(index=0;index<count;index++) {
+  if(io->read(io->context,0x3200)&0x80000000U)return -EBUSY;
   ret=io->indirect(io->context,0x3200,0x80000000U|(bank<<16)|index);
   if(ret)return ret;
   for(word=0;word<width;word++)words[word]=io->read(io->context,0x3214-word*4);
@@ -44,6 +45,7 @@ static inline int rtl_fe_cam_protocol_put(const struct rtl_dq_io *io,struct rtl_
  int ret;
 
  if(!binding->created)return 0;
+ if(io->read(io->context,0x3200)&0x80000000U)return -EBUSY;
  for(word=0;word<(binding->bank==2?5U:3U);word++)io->write(io->context,0x3214-word*4,binding->saved[word]);
  ret=io->indirect(io->context,0x3200,0xc0000000U|(binding->bank<<16)|binding->index);
  if(!ret)binding->created=0;
@@ -100,7 +102,9 @@ static inline int rtl_fe_classifier_write(const struct rtl_dq_io *io,unsigned in
 static inline int rtl_fe_source_mac_read(const struct rtl_dq_io *io,unsigned int index,unsigned int words[5])
 {
  unsigned int i;
- int ret=io->indirect(io->context,0x3200,0x80030000U|index);
+ int ret;
+ if(io->read(io->context,0x3200)&0x80000000U)return -EBUSY;
+ ret=io->indirect(io->context,0x3200,0x80030000U|index);
  if(ret)return ret;
  for(i=0;i<5;i++)words[i]=io->read(io->context,0x3214-i*4);
  return 0;
@@ -108,6 +112,7 @@ static inline int rtl_fe_source_mac_read(const struct rtl_dq_io *io,unsigned int
 static inline int rtl_fe_source_mac_write(const struct rtl_dq_io *io,unsigned int index,const unsigned int words[5])
 {
  unsigned int i;
+ if(io->read(io->context,0x3200)&0x80000000U)return -EBUSY;
  for(i=0;i<5;i++)io->write(io->context,0x3214-i*4,words[i]);
  return io->indirect(io->context,0x3200,0xc0030000U|index);
 }

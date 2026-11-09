@@ -85,6 +85,7 @@ struct rtl_fe_mc_binding {
 struct rtl_fe_mac {
  unsigned int users, saved[5];
  u8 address[ETH_ALEN];
+ bool ready;
 };
 struct rtl_fe_interface {
  unsigned int users, saved, source_mac, pppoe;
@@ -503,7 +504,7 @@ static int fe_restore(struct rtl_fe *fe)
  fe->prepared=false;
  return 0;
 }
-static int fe_source_get(struct rtl_fe *fe,const u8 *address,unsigned int *index)
+static int fe_source_get(struct rtl_fe *fe,const u8 *address,struct rtl_fe_flow *flow)
 {
  struct rtl_dq_io io=fe_io(fe);
  unsigned int i,words[5]={};
@@ -511,8 +512,9 @@ static int fe_source_get(struct rtl_fe *fe,const u8 *address,unsigned int *index
 
  for(i=0;i<FE_SOURCE_MACS;i++)
   if(fe->source_macs[i].users && ether_addr_equal(address,fe->source_macs[i].address)) {
+   if(!fe->source_macs[i].ready)return -EBUSY;
    fe->source_macs[i].users++;
-   *index=i;
+   flow->source_mac=i;flow->source_owned=true;
    return 0;
   }
  for(i=0;i<FE_SOURCE_MACS;i++)if(!fe->source_macs[i].users)break;
@@ -521,12 +523,15 @@ static int fe_source_get(struct rtl_fe *fe,const u8 *address,unsigned int *index
  if(ret)return ret;
  for(unsigned int byte=0;byte<ETH_ALEN;byte++)rtl_fe_bits_set(words,(5-byte)*8,8,address[byte]);
  words[1]|=BIT(16);
- ret=rtl_fe_source_mac_write(&io,i,words);
- if(ret)return ret;
+ /* A write timeout can mean the new MAC is already installed. Attach
+  * the original snapshot to this flow before the first hardware write. */
  ether_addr_copy(fe->source_macs[i].address,address);
  fe->source_macs[i].users=1;
- *index=i;
- return 0;
+ fe->source_macs[i].ready=false;
+ flow->source_mac=i;flow->source_owned=true;
+ ret=rtl_fe_source_mac_write(&io,i,words);
+ if(!ret)fe->source_macs[i].ready=true;
+ return ret;
 }
 static int fe_source_put(struct rtl_fe *fe,unsigned int index)
 {
@@ -534,6 +539,8 @@ static int fe_source_put(struct rtl_fe *fe,unsigned int index)
  int ret;
 
  if(fe->source_macs[index].users>1){fe->source_macs[index].users--;return 0;}
+ /* A failed last-owner restore must not be shared as an installed MAC. */
+ fe->source_macs[index].ready=false;
  ret=rtl_fe_source_mac_write(&io,index,fe->source_macs[index].saved);
  if(!ret)fe->source_macs[index].users=0;
  return ret;
@@ -1311,9 +1318,8 @@ static int fe_install(struct rtl_fe_port *port,struct rtl_fe_rule data,unsigned 
  list_add_tail(&flow->list,&fe->flows);
  fe_index_flow(fe,flow);
  if(!data.bridge) {
-  ret=fe_source_get(fe,data.source,&flow->source_mac);
+  ret=fe_source_get(fe,data.source,flow);
   if(ret)goto rollback;
-  flow->source_owned=true;
   ret=fe_destination_get(fe,flow,data.destination);
   if(ret)goto rollback;
   ret=fe_interface_get(fe,flow);

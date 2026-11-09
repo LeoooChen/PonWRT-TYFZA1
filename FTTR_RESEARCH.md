@@ -349,6 +349,8 @@
 
 172. 修复Hash撤销重试覆盖未完成窗口：年龄表read/update先检查3928 bit31，缓存操作在改38ac前检查38b0 bit0；忙时EBUSY走已有cookie/Hash保留重试。a86fe73实际删除链已复现第二流覆盖旧事务；原厂33年龄更新/2超时/4缓存忙分支确认寄存器语义，原缓存先写CMD后等忙不照搬。两流反复重试/最终一次释放、42退休多流、完整组播/FE/LAN/WiFi/共享NI回归、65536 age槽与64 mask表、Image/模块/输入一致通过。PE未改、未实机；仅处理两个撤销窗口，不代表全部FE窗口或全链路退场/ID复用完成。详见[Hash忙窗口归属](port/FTTR.md#hash-withdrawal-preserves-a-preceding-unfinished-command)。
 
+173. 修复源MAC首次CAM写超时没有归属：现在写前保存并绑定flow/source引用，写成功才ready可共享；最后恢复先撤ready，失败不允许新同MAC流共享。源/协议CAM均在改数据前检查3200忙位。4b35de5实际get→delete复现原缺口；15原厂槽位×成功/超时、已应用/未应用写失败、读失败、协议忙隔离、共享/最后恢复重试、九回归与Image/模块/两输入一致通过。PE未改、未实机；目的FDB/接口表仍需独立审查，未据此宣称完整退场或ID复用。详见[源MAC事务归属](port/FTTR.md#source-mac-acquisition-owns-its-snapshot-before-a-fallible-cam-write)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

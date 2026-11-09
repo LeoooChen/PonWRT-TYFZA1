@@ -154,6 +154,7 @@ int main(void){
  unsigned int old_bridge_mask[6][8];
  for(unsigned int i=0;i<0x10000/4;i++)f.reg[i]=0x80000000U+i;
  f.reg[0x1654/4]=0; /* idle shared destination-map window */
+ f.reg[0x3200/4]=0; /* idle source/protocol CAM window */
  f.reg[0x30a4/4]=0x0001b000U;
  for(unsigned int i=0;i<5;i++)f.reg[(0xa5f8+i*0x90)/4]=lan[i]=0x18100400U|(i<<24);
  for(unsigned int i=0;i<8;i++){f.mask[i]=old_mask[i]=0x55000000+i;f.wifi_mask[i]=old_wifi_mask[i]=0xaa550000+i;}

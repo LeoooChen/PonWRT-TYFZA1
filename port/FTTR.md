@@ -10347,6 +10347,38 @@ PE firmware is unchanged; no device was accessed. This guards the two Hash
 withdrawal windows, not every other FE table window, and does not establish
 end-to-end packet retirement or safe hardware-ID reuse.
 
+### Source MAC acquisition owns its snapshot before a fallible CAM write
+
+`fe_source_get` previously assigned the source-MAC reference only after a CAM
+write completed. A timed-out write could already have changed the hardware,
+but rollback had no source ownership and a later allocation could save the
+changed value as the original. The flow now owns the selected slot/reference
+and saved five-word snapshot before the write. Only a completed write marks
+that MAC ready for sharing. Last-owner restoration first clears readiness,
+so a failed restoration cannot be reused by a new flow with the same address.
+Failed cleanup retains the flow cookie and reference until restoration succeeds.
+
+Source and EtherType/PPP protocol CAM helpers share `0x3200` and its data words;
+they now refuse a still-busy access before changing command or staging data.
+This protects the original snapshot and failed source write from a later
+protocol operation. Existing live references continue sharing an unchanged
+ready MAC, and the last owner restores its original contents exactly once.
+
+The target `cam_hw_entry_set` executes all15 source slots with success/timeout,
+confirming five descending data words and bank3 access. Old `4b35de5` reproduces
+missing ownership after a write timeout. Native tests execute acquisition with
+actual flow deletion: unapplied/applied timeout, read failure, protocol access
+while busy, failed last-owner restore, same-address sharing rejection, recovery
+and final original-snapshot restoration. Nine related suites pass, including
+shared MAC teardown, Hash-busy withdrawal, multicast learning, FE rollback and
+shared NI tables. ASan/UBSan, Image/modules and two compiled-source identities
+pass. Evidence is `artifacts/fttr/source-cam-*-20261110.*`.
+
+PE firmware is unchanged and no hardware was accessed. This fixes source CAM
+transaction ownership; destination FDB and interface tables require their own
+ownership review. Complete in-flight packet retirement and safe ID reuse remain
+unfinished.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

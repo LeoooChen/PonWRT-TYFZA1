@@ -127,7 +127,7 @@ static int indirect(void *p,unsigned reg,unsigned command){
  return 0;
 }
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe,read_reg,write_reg,indirect};}
-static int fe_source_get(struct rtl_fe *f,const u8 *a,unsigned *i){(void)f;(void)a;(void)i;assert(0);return -1;}
+static int fe_source_get(struct rtl_fe *f,const u8 *a,struct rtl_fe_flow *v){(void)f;(void)a;(void)v;assert(0);return -1;}
 static int fe_destination_get(struct rtl_fe *f,struct rtl_fe_flow *v,const u8 *a){(void)f;(void)v;(void)a;assert(0);return -1;}
 static int fe_interface_get(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}
 static int fe_mtu_get(struct rtl_fe *f,struct rtl_fe_flow *v,unsigned n){(void)f;(void)v;(void)n;assert(0);return -1;}
