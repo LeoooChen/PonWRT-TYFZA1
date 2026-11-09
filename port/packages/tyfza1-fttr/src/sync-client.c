@@ -74,6 +74,65 @@ static int info_fields(struct json_object *value, struct json_object **observed)
 	return 0;
 }
 
+static int radio_reply(struct json_object *value, const uint8_t peer[6], bool writing,
+	bool *ack_seen, struct json_object **summary, struct json_object **observed)
+{
+	const char *expected=writing?"SetONURadioInfo":"GetWifiRadio";
+	struct json_object *rpc=NULL,*rows,*field,*filtered=NULL;
+	bool success=false;
+	int ret=-EBADMSG;
+	if (json_object_object_get_ex(value,"RPCMethod",&rpc)) {
+		if (!json_object_is_type(rpc,json_type_string) || (size_t)json_object_get_string_len(rpc)!=strlen(json_object_get_string(rpc))) return ret;
+		if (!strcmp(json_object_get_string(rpc),"Register")) return -ESTALE;
+		if (strcmp(json_object_get_string(rpc),expected)) return -EAGAIN;
+	}
+	if (json_object_object_get_ex(value,"Result",&field)) {
+		if (!json_object_is_type(field,json_type_int)) return ret;
+		if (json_object_get_int64(field)!=1) return -EREMOTEIO;
+		*ack_seen=true;success=true;
+	}
+	if (writing) return success?0:-EAGAIN;
+	if (!rpc && !success) return -EAGAIN;
+	if (!json_object_object_get_ex(value,"RadioInfo",&rows)) return -EAGAIN;
+	if (!json_object_is_type(rows,json_type_array) || json_object_array_length(rows)>2) return ret;
+	filtered=json_object_new_array();
+	if (!filtered) return -ENOMEM;
+	unsigned seen=0;
+	static const char *const names[]={"OnuMAC","MAC","RadioType","Enable","TransmitPower","Standard","Channel",
+		"StaNum","AutoChannelEnable","ChannelsInUse","FrequencyWidth","CurrentChannelWidth","Noise",
+		"IdlePercent","RecvPackets","SendPackets","BeaconFails","CountryCode"};
+	for (size_t n=0;n<json_object_array_length(rows);n++) {
+		struct json_object *row=json_object_array_get_idx(rows,n),*copy;
+		char mac[18];uint8_t address[6];
+		if (!json_object_is_type(row,json_type_object)) goto out;
+		copy=json_object_new_object();
+		if (!copy) {ret=-ENOMEM;goto out;}
+		json_object_array_add(filtered,copy);
+		for (unsigned j=0;j<sizeof(names)/sizeof(*names);j++) {
+			if (!json_object_object_get_ex(row,names[j],&field)) continue;
+			if (!json_object_is_type(field,json_type_string) || json_object_get_string_len(field)>256 ||
+			    (size_t)json_object_get_string_len(field)!=strlen(json_object_get_string(field))) goto out;
+			json_object_object_add(copy,names[j],json_object_get(field));
+		}
+		if (!json_object_object_get_ex(copy,"OnuMAC",&field) || json_object_get_string_len(field)!=12) goto out;
+		for (unsigned i=0;i<6;i++) {mac[3*i]=json_object_get_string(field)[2*i];mac[3*i+1]=json_object_get_string(field)[2*i+1];mac[3*i+2]=i==5?0:':';}
+		if (fttr_sync_mac_parse(mac,address) || memcmp(address,peer,6)) {ret=-ESTALE;goto out;}
+		const char *type=json_object_object_get_ex(copy,"RadioType",&field)?json_object_get_string(field):"";
+		unsigned bit=!strcmp(type,"2.4G")?1:!strcmp(type,"5G")?2:0;
+		if (!bit || (seen&bit)) goto out;
+		seen|=bit;
+	}
+	struct json_object *result=json_object_new_object();
+	if (!result) {ret=-ENOMEM;goto out;}
+	json_object_object_add(result,"event",json_object_new_string("sync_radio_info"));
+	json_object_object_add(result,"RadioInfo",json_object_get(filtered));
+	json_object_object_add(result,"identity_authenticated",json_object_new_boolean(0));
+	if (observed) *observed=json_object_get(filtered);
+	*summary=result;ret=0;
+out:
+	json_object_put(filtered);return ret;
+}
+
 int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
 			unsigned int settings, bool writing, bool *ack_seen,
 			struct json_object **summary, struct json_object **observed)
@@ -95,6 +154,9 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    json_tokener_get_parse_end(parser) != message->length ||
 	    !json_object_is_type(value, json_type_object))
 		goto out;
+	if (settings==4 || settings==5) {
+		ret=radio_reply(value,peer,settings==5,ack_seen,summary,observed);goto out;
+	}
 	if (settings == 3) {
 		struct json_object *rpc, *fields = NULL;
 		bool result_present = false;
@@ -293,11 +355,19 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 3 || (settings == 2 && !configuration)) return -EINVAL;
+	if (settings > 5 || ((settings == 2 || settings == 5) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
-	if (settings == 3)
+	if (settings == 4) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"GetWifiRadio\"}");
+	else if (settings == 5) {
+		struct json_object *request=json_object_new_object();
+		if (!request) return -ENOMEM;
+		json_object_object_add(request,"RPCMethod",json_object_new_string("SetONURadioInfo"));
+		json_object_object_foreach(configuration,key,field) json_object_object_add(request,key,json_object_get(field));
+		length=snprintf(payload,sizeof(payload),"%s",json_object_to_json_string_ext(request,JSON_C_TO_STRING_PLAIN));
+		json_object_put(request);
+	} else if (settings == 3)
 		length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetONUInfo\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 			source[0], source[1], source[2], source[3], source[4], source[5]);
 	else if (settings)
@@ -307,7 +377,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], settings, content);
 	if (length < 0 || (size_t)length >= sizeof(payload))
 		return -E2BIG;
-	ret = fttr_sync_pack(source, fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
+	ret = fttr_sync_pack(source, settings>=4?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
 		payload, length, frame, sizeof(frame));
 	if (ret < 0)
 		return ret;

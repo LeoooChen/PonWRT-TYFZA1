@@ -13,4 +13,6 @@ int fttr_sync_wifi_validate(struct json_object *desired);
 int fttr_sync_wifi_check(struct json_object *entries, struct json_object *desired,
 			bool compare);
 
+int fttr_sync_radio_validate(struct json_object *desired);
+int fttr_sync_radio_check(struct json_object *entries, struct json_object *desired, bool compare);
 #endif

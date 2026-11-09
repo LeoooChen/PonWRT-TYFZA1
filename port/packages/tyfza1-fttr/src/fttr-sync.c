@@ -248,14 +248,16 @@ int main(int argc, char **argv)
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
 	bool easymesh = argc == 7 && !strcmp(argv[5], "easymesh");
 	bool info = argc == 6 && !strcmp(argv[5], "onu-info");
+	bool radio_apply = argc == 7 && !strcmp(argv[5], "radio-apply");
+	bool radio_info = argc == 6 && !strcmp(argv[5], "radio-info");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
-	unsigned int settings = info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
+	unsigned int settings = radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && !resident && fttr_sync_mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [onu-info | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n"
 			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0]);
 		return 2;
@@ -280,6 +282,12 @@ int main(int argc, char **argv)
 		if (ret)
 			goto out;
 		ret = -EINVAL;
+	}
+	if (radio_apply) {
+		ret=fttr_sync_json_load_private(argv[6],&desired);
+		if (!ret) ret=fttr_sync_radio_validate(desired);
+		if (ret) goto out;
+		ret=-EINVAL;
 	}
 	if (registering) {
 		ret = fttr_sync_json_load_private(argv[6], &desired);
@@ -376,13 +384,13 @@ int main(int argc, char **argv)
 		json_object_object_add(summary, "error", json_object_new_int(ret));
 		goto out;
 	}
-	if (apply) {
+	if (apply || radio_apply) {
 		struct json_object *observed = NULL;
 		int write_result = 0, read_result = 0;
 
-		ret = exchange(fd, source, peer, ethertype, slot, true, NULL, &ack_seen, &summary, &observed);
+		ret = exchange(fd, source, peer, ethertype, slot, radio_apply?4:1, NULL, &ack_seen, &summary, &observed);
 		if (!ret)
-			ret = fttr_sync_wifi_check(observed, desired, false);
+			ret = radio_apply?fttr_sync_radio_check(observed,desired,false):fttr_sync_wifi_check(observed, desired, false);
 		json_object_put(observed);
 		observed = NULL;
 		json_object_put(summary);
@@ -392,25 +400,25 @@ int main(int argc, char **argv)
 		ret = drain(fd);
 		if (ret)
 			goto out;
-		write_result = exchange(fd, source, peer, ethertype, slot, true, desired, &ack_seen, &summary, NULL);
+		write_result = exchange(fd, source, peer, ethertype, slot, radio_apply?5:1, desired, &ack_seen, &summary, NULL);
 		/* A lost ACK does not imply the remote write was not applied. Always
 		 * attempt independent readback; never replay a password blindly. */
-		read_result = drain(fd);
+		read_result = write_result==-ESTALE?-ESTALE:drain(fd);
 		if (!read_result)
-			read_result = exchange(fd, source, peer, ethertype, slot, true, NULL, &ack_seen, &summary, &observed);
+			read_result = exchange(fd, source, peer, ethertype, slot, radio_apply?4:1, NULL, &ack_seen, &summary, &observed);
 		if (!read_result)
-			read_result = fttr_sync_wifi_check(observed, desired, true);
+			read_result = radio_apply?fttr_sync_radio_check(observed,desired,true):fttr_sync_wifi_check(observed, desired, true);
 		json_object_put(observed);
 		json_object_put(summary);
 		summary = json_object_new_object();
-		json_object_object_add(summary, "event", json_object_new_string("sync_wifi_apply"));
+		json_object_object_add(summary, "event", json_object_new_string(radio_apply?"sync_radio_apply":"sync_wifi_apply"));
 		json_object_object_add(summary, "peer", json_object_new_string(argv[2]));
 		json_object_object_add(summary, "slot", json_object_new_int(slot));
 		{
 			struct json_object *ssid_index;
 
-			json_object_object_get_ex(desired, "SSIDIndex", &ssid_index);
-			json_object_object_add(summary, "ssid_index", json_object_get(ssid_index));
+			json_object_object_get_ex(desired, radio_apply?"RadioType":"SSIDIndex", &ssid_index);
+			json_object_object_add(summary, radio_apply?"radio_type":"ssid_index", json_object_get(ssid_index));
 		}
 		json_object_object_add(summary, "write_attempted", json_object_new_boolean(1));
 		json_object_object_add(summary, "write_result", json_object_new_int(write_result));
@@ -430,7 +438,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : easymesh ? "easymesh" : apply ? "wifi-apply" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);

@@ -158,12 +158,14 @@ with tempfile.TemporaryDirectory() as directory:
   wifi={'act':'config','SSIDIndex':'1','SSID':'synthetic-name','ENCRYPT':4,
         'Enable':1,'PWD':'synthetic-passphrase','SSIDAdvertisementEnabled':'true','Standard':'11bgn'}
   if case=='wifi-first':
-   for entry in policy['Peers']:entry['WiFi']=[wifi]
+   for entry in policy['Peers']:
+    entry['WiFi']=[wifi]
+    entry['Radios']=[{'RadioType':'2.4G','Enable':'1','TransmitPower':'80','Standard':'11bgn','Channel':'6','FrequencyWidth':'40M'}]
   if case=='changed-policy':policy['Peers'][0]['EasyMesh']=False
   if case=='bad-mesh-type':policy['Peers'][0]['EasyMesh']=1
   config.write_text(json.dumps(policy));config.chmod(0o600)
   while select.select([peer],[],[],0)[0]:peer.recv(16384)
-  counts=[0,0];registered=[0,0];wifi_writes=[0,0];wifi_reads=[0,0];info_reads=[0,0]
+  counts=[0,0];registered=[0,0];wifi_writes=[0,0];wifi_reads=[0,0];info_reads=[0,0];radio_reads=[0,0];radio_writes=[0,0]
   with (d/'stdout').open('w+') as stdout,(d/'stderr').open('w+') as stderr:
    env=dict(os.environ)
    if case=='fail-store':env.update(LD_PRELOAD=str(d/'fault.so'),FTTR_TEST_SYNC_FAULT='fail-file')
@@ -187,6 +189,16 @@ with tempfile.TemporaryDirectory() as directory:
      value=json.loads(frame[20:20+int.from_bytes(frame[16:20],'big')])
      if frame[14]&15==7:
       registered[frame[14]>>4]+=1;continue
+     if value['RPCMethod'] in ('GetWifiRadio','SetONURadioInfo'):
+      i=frame[14]>>4;assert case=='wifi-first' and not counts[i] and wifi_reads[i]>0
+      desired_radio=policy['Peers'][i]['Radios'][0]
+      if value['RPCMethod']=='GetWifiRadio':
+       radio_reads[i]+=1
+       emit(i,dict(RPCMethod='GetWifiRadio',RadioInfo=[dict(desired_radio,AutoChannelEnable='0',OnuMAC=addresses[i].hex().upper())]))
+      else:
+       assert not restart and value==dict(RPCMethod='SetONURadioInfo',**desired_radio)
+       radio_writes[i]+=1;emit(i,{'Result':1})
+      continue
      if value['RPCMethod']=='GetONUInfo':
       i=frame[14]>>4;info_reads[i]+=1
       info=dict(RPCMethod='GetONUInfo',Result=1,MAC=addresses[i].hex().upper(),easymeshCapability=str(int(i==0)))
@@ -208,10 +220,10 @@ with tempfile.TemporaryDirectory() as directory:
        assert value['content']==wifi;wifi_writes[i]+=1;emit(i,{'Result':1})
       continue
      assert value['Flag']==2 and value['content']=={'act':'config','EnableEasymesh':str(int(i==0))}
-     if case=='wifi-first':assert wifi_reads[i]==2 and wifi_writes[i]==1
+     if case=='wifi-first':assert wifi_reads[i]==2 and wifi_writes[i]==1 and radio_reads[i]==2 and radio_writes[i]==1
      counts[i]+=1;assert counts[i]==1 and registered[i] and not restart
      record=json.loads((state_dir/(addresses[i].hex()+f'-{revision}.json')).read_text())
-     assert record['version']==2 and record['attempted']==((1<<16)|(1 if case=='wifi-first' else 0)) and record['easymesh']==bool(i==0)
+     assert record['version']==(3 if case=='wifi-first' else 2) and record['attempted']==((1<<16)|((1<<17)|1 if case=='wifi-first' else 0)) and record['easymesh']==bool(i==0)
      emit(i,{'Result':1})
      if case=='reregister' and i==0:
       emit(i,dict(RPCMethod='Register',SN='peer-0'))

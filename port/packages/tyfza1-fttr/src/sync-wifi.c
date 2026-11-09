@@ -153,3 +153,61 @@ int fttr_sync_wifi_check(struct json_object *entries, struct json_object *desire
 		strcmp(standard, string(desired, "Standard")) ||
 		strcmp(advertisement, string(desired, "SSIDAdvertisementEnabled")) ? -EUCLEAN : 0;
 }
+
+int fttr_sync_radio_validate(struct json_object *desired)
+{
+	const char *radio=string(desired,"RadioType"), *enable=string(desired,"Enable");
+	const char *power=string(desired,"TransmitPower"), *width=string(desired,"FrequencyWidth");
+	const char *channel=string(desired,"Channel");
+	unsigned int chan=0;
+	bool low=radio && !strcmp(radio,"2.4G");
+	if (!json_object_is_type(desired,json_type_object) || json_object_object_length(desired)!=6 ||
+	    !radio || (!low && strcmp(radio,"5G")) || !enable || (strcmp(enable,"0") && strcmp(enable,"1")) ||
+	    !power || (strcmp(power,"100") && strcmp(power,"80") && strcmp(power,"60") && strcmp(power,"40") && strcmp(power,"20")) ||
+	    !standard_valid(string(desired,"Standard"),low?1:9) || !width ||
+	    (strcmp(width,"20M") && strcmp(width,"40M") && strcmp(width,"Auto20M40M") &&
+	     (low || (strcmp(width,"Auto20M40M80M") && strcmp(width,"Auto20M40M80M160M")))) ||
+	    !channel || !*channel || strlen(channel)>3 || (channel[0]=='0' && channel[1])) return -EINVAL;
+	for (unsigned int i=0;channel[i];i++) {
+		if (channel[i]<'0' || channel[i]>'9') return -EINVAL;
+		chan=chan*10+channel[i]-'0';
+	}
+	/* Zero selects automatic channel. Actual regulatory/hardware acceptance
+	 * belongs to the remote radio; these are only the original wire bounds. */
+	return chan>255 || (chan && (low?chan>14:chan<32)) ? -EINVAL : 0;
+}
+
+int fttr_sync_radio_check(struct json_object *entries, struct json_object *desired, bool compare)
+{
+	struct json_object *selected=NULL;
+	unsigned int seen=0;
+	const char *band=string(desired,"RadioType");
+	if (fttr_sync_radio_validate(desired) || !json_object_is_type(entries,json_type_array)) return -EINVAL;
+	for (size_t i=0;i<json_object_array_length(entries);i++) {
+		struct json_object *row=json_object_array_get_idx(entries,i);
+		const char *type=string(row,"RadioType");
+		unsigned bit=type&&!strcmp(type,"2.4G")?1:type&&!strcmp(type,"5G")?2:0;
+		if (!bit || (seen&bit)) return -EBADMSG;
+		seen|=bit;
+		if (!strcmp(type,band)) selected=row;
+	}
+	if (!selected) return -ENODEV;
+	json_object_object_foreach(desired,key,want) {
+		const char *have=string(selected,key);
+		if (!have) return -ENODATA;
+		if (!compare) continue;
+		if (!strcmp(key,"Channel") && !strcmp(json_object_get_string(want),"0")) {
+			const char *automatic=string(selected,"AutoChannelEnable");
+			if (!automatic) return -ENODATA;
+			if (strcmp(automatic,"1")) return -EUCLEAN;
+		} else {
+			if (strcmp(have,json_object_get_string(want))) return -EUCLEAN;
+			if (!strcmp(key,"Channel")) {
+				const char *automatic=string(selected,"AutoChannelEnable");
+				if (!automatic) return -ENODATA;
+				if (strcmp(automatic,"0")) return -EUCLEAN;
+			}
+		}
+	}
+	return 0;
+}

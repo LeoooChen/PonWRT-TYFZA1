@@ -24,7 +24,7 @@ enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, 
 
 struct policy_peer {
 	uint8_t mac[6];
-	struct json_object *registration, *wifi, *mesh;
+	struct json_object *registration, *wifi, *mesh, *radios;
 	struct json_object *input, *record;
 	unsigned int attempted;
 	bool blocked;
@@ -59,7 +59,7 @@ static int64_t now_ms(void)
 
 static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYNC_PEERS])
 {
-	struct json_object *list, *entry, *mac, *registration, *wifi, *revision, *mesh;
+	struct json_object *list, *entry, *mac, *registration, *wifi, *revision, *mesh, *radios;
 	size_t i, j, k, count;
 	uint8_t address[6];
 
@@ -94,6 +94,20 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 			}
 		}
 		j = wifi ? 3 : 2;
+		radios=NULL;
+		if (json_object_object_get_ex(entry,"Radios",&radios)) {
+			if (!json_object_is_type(radios,json_type_array) || json_object_array_length(radios)>2) return -EINVAL;
+			unsigned seen=0;
+			for (size_t r=0;r<json_object_array_length(radios);r++) {
+				struct json_object *row=json_object_array_get_idx(radios,r),*type;
+				if (fttr_sync_radio_validate(row)) return -EINVAL;
+				json_object_object_get_ex(row,"RadioType",&type);
+				unsigned bit=!strcmp(json_object_get_string(type),"2.4G")?1:2;
+				if (seen&bit) return -EINVAL;
+				seen|=bit;
+			}
+			j++;
+		}
 		mesh = NULL;
 		if (json_object_object_get_ex(entry, "EasyMesh", &mesh)) {
 			if (!json_object_is_type(mesh, json_type_boolean)) return -EINVAL;
@@ -113,6 +127,7 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 		peers[i].registration = registration;
 		peers[i].wifi = wifi;
 		peers[i].mesh = mesh;
+		peers[i].radios = radios;
 		peers[i].input = entry;
 	}
 	return 0;
@@ -123,6 +138,26 @@ int fttr_sync_controller_policy(struct json_object *policy)
 	struct policy_peer peers[FTTR_SYNC_PEERS] = { 0 };
 
 	return policies(policy, peers);
+}
+
+static bool radio_configuration(const struct session *session)
+{
+	return session->configuration >= (session->policy->wifi ? json_object_array_length(session->policy->wifi) : 0);
+}
+
+static struct json_object *desired(const struct session *session)
+{
+	unsigned int wifi=session->policy->wifi?json_object_array_length(session->policy->wifi):0;
+	if (session->configuration<wifi) return json_object_array_get_idx(session->policy->wifi,session->configuration);
+	unsigned int radio=session->configuration-wifi;
+	return session->policy->radios && radio<json_object_array_length(session->policy->radios)?
+		json_object_array_get_idx(session->policy->radios,radio):NULL;
+}
+
+static unsigned int configuration_bit(const struct session *session)
+{
+	unsigned int wifi=session->policy->wifi?json_object_array_length(session->policy->wifi):0;
+	return 1U << (session->configuration<wifi ? session->configuration : 17+session->configuration-wifi);
 }
 
 static void event(const char *name, const struct session *session, const struct fttr_sync_peer *peer,
@@ -169,8 +204,9 @@ static void event(const char *name, const struct session *session, const struct 
 	if (!strcmp(name, "sync_resident_recovery")) {
 		struct json_object *index;
 
-		json_object_object_get_ex(json_object_array_get_idx(session->policy->wifi, session->configuration), "SSIDIndex", &index);
-		json_object_object_add(value, "ssid_index", json_object_get(index));
+		bool radio=radio_configuration(session);
+		json_object_object_get_ex(desired(session),radio?"RadioType":"SSIDIndex",&index);
+		json_object_object_add(value,radio?"radio_type":"ssid_index",json_object_get(index));
 		json_object_object_add(value, "prior_write_outcome_unknown", json_object_new_boolean(1));
 		json_object_object_add(value, "write_replayed", json_object_new_boolean(0));
 		json_object_object_add(value, "readable_fields_match", json_object_new_boolean(!result));
@@ -178,8 +214,9 @@ static void event(const char *name, const struct session *session, const struct 
 	if (!strcmp(name, "sync_resident_apply")) {
 		struct json_object *index;
 
-		json_object_object_get_ex(json_object_array_get_idx(session->policy->wifi, session->configuration), "SSIDIndex", &index);
-		json_object_object_add(value, "ssid_index", json_object_get(index));
+		bool radio=radio_configuration(session);
+		json_object_object_get_ex(desired(session),radio?"RadioType":"SSIDIndex",&index);
+		json_object_object_add(value,radio?"radio_type":"ssid_index",json_object_get(index));
 		json_object_object_add(value, "write_attempted", json_object_new_boolean(1));
 		json_object_object_add(value, "write_result", json_object_new_int(session->write_result));
 		json_object_object_add(value, "readback_result", json_object_new_int(readback));
@@ -210,17 +247,10 @@ static void revoke(struct session *session, const struct fttr_sync_peer *peer, i
 	session->generation++;
 }
 
-static struct json_object *desired(struct session *session)
-{
-	if (!session->policy->wifi || session->configuration >= json_object_array_length(session->policy->wifi))
-		return NULL;
-	return json_object_array_get_idx(session->policy->wifi, session->configuration);
-}
-
 static void next_configuration(struct session *session)
 {
 	if (desired(session))
-		phase(session, session->policy->attempted & (1u << session->configuration) ? RECOVER_SEND : PREFLIGHT_SEND);
+		phase(session, session->policy->attempted & configuration_bit(session) ? RECOVER_SEND : PREFLIGHT_SEND);
 	else {
 		struct json_object *ready;
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
@@ -274,7 +304,7 @@ static void completed(struct session *session, const struct fttr_sync_peer *peer
 	} else if (session->phase == PREFLIGHT) {
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
 		if (!result && desired(session) && json_object_get_int(ready) && !session->policy->blocked &&
-		    !(session->policy->attempted & (1u << session->configuration))) {
+		    !(session->policy->attempted & configuration_bit(session))) {
 			phase(session, WRITE_SEND);
 		} else {
 			event("sync_resident_observed", session, peer, slot, result, result);
@@ -338,14 +368,16 @@ static int receive_message(int fd, const uint8_t source[6], uint16_t ethertype,
 		return 0;
 	message.slot = slot;
 	bool info_phase = session->phase == INFO || session->phase == MESH_READ;
-	ret = fttr_sync_reply_decode(&message, peer->mac, info_phase ? 3 : session->phase == MESH ? 2 : 1, session->phase == WRITE || session->phase == MESH,
+	bool radio=desired(session) && radio_configuration(session);
+	ret = fttr_sync_reply_decode(&message, peer->mac, info_phase ? 3 : session->phase == MESH ? 2 : radio?(session->phase==WRITE?5:4):1, session->phase == WRITE || session->phase == MESH,
 		&session->ack_seen, &summary, &observed);
 	json_object_put(summary);
 	if (session->ack_seen)
 		session->protocol = 2;
 	if (!ret && info_phase) ret = fttr_sync_info_mesh(observed, &session->mesh_state);
 	if (!ret && !info_phase && session->phase != WRITE && session->phase != MESH && desired(session))
-		ret = fttr_sync_wifi_check(observed, desired(session), session->phase == READBACK || session->phase == RECOVER);
+		ret = radio?fttr_sync_radio_check(observed,desired(session),session->phase==READBACK || session->phase==RECOVER):
+			fttr_sync_wifi_check(observed, desired(session), session->phase == READBACK || session->phase == RECOVER);
 	json_object_put(observed);
 	if (ret != -EAGAIN)
 		completed(session, peer, slot, ret);
@@ -375,7 +407,8 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 		for (slot = 0; slot < FTTR_SYNC_PEERS; slot++) {
 			struct policy_peer *peer = &configured[slot];
 
-			if ((!peer->wifi || !json_object_array_length(peer->wifi)) && !peer->mesh)
+			if ((!peer->wifi || !json_object_array_length(peer->wifi)) && !peer->mesh &&
+			    (!peer->radios || !json_object_array_length(peer->radios)))
 				continue;
 			ret = fttr_sync_store_load(store, source, peer->mac, ethertype, peer->input, &peer->record, &peer->attempted);
 			if (ret)
@@ -459,7 +492,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 			enum phase current = session->phase;
 
 			if (current == PREFLIGHT_SEND || current == WRITE_SEND || current == READBACK_SEND || current == RECOVER_SEND || current == MESH_SEND || current == INFO_SEND || current == MESH_READ_SEND) {
-				unsigned int bit = current == MESH_SEND ? MESH_ATTEMPTED : 1u << session->configuration;
+				unsigned int bit = current == MESH_SEND ? MESH_ATTEMPTED : desired(session)?configuration_bit(session):0;
 				struct json_object *mesh_request = NULL;
 				if (session->receivers[0].count || session->receivers[1].count) {
 					for (i = 0; i < 2; i++)
@@ -486,7 +519,8 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 					json_object_object_add(mesh_request, "EnableEasymesh", json_object_new_string(
 						json_object_get_boolean(session->policy->mesh) ? "1" : "0"));
 				}
-				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, (current == INFO_SEND || current == MESH_READ_SEND) ? 3 : current == MESH_SEND ? 2 : 1,
+				bool radio=desired(session) && radio_configuration(session);
+				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, (current == INFO_SEND || current == MESH_READ_SEND) ? 3 : current == MESH_SEND ? 2 : radio?(current==WRITE_SEND?5:4):1,
 					mesh_request ? mesh_request : current == WRITE_SEND ? desired(session) : NULL);
 				json_object_put(mesh_request);
 				if (ret)

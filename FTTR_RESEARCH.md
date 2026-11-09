@@ -254,6 +254,8 @@
 
 118. 接入GetONUInfo及EasyMesh独立回读：执行原厂查询/完整解析/待定Result分派，确认56项设备能力/状态字段；执行管理程序将MIB字节1127的easymeshCapability输出为Enableeasymesh（支持标志另列），纠正第117项尚无回读依据的限制。显式onu-info校验来源/MAC/方法，字段保留原名与值，缺项不补零；EasyMesh写前读取有效0/1、写后独立比对，缺项/非法/漂移/超时明确失败，重启持久已尝试只读恢复不重发。19CLI/12信息查询/20常驻持久场景、37常驻/38Wi-Fi持久回归及双架构构建通过；内核/PE不变、未实机。reported_state_matches仅为从端报告一致，不等于实际Mesh/漫游验证，完整退场、多VIF、TSPEC和其他管理缺口仍待补。详见[设备信息与回读](port/FTTR.md#getonuinfo-and-independent-easymesh-state-readback)。
 
+119. 接入原厂Radio查询/配置及持久恢复：执行GetWifiRadio、SetONURadioInfo构造、完整双频回复解析和libmib功率/带宽转换。显式radio-info/radio-apply使用目标单播，六项字符串输入、写前可读字段检查、单次发送及独立回读；自动信道按AutoChannelEnable核对，原厂字段顺序依赖未照搬。常驻Radios双频策略按WiFi→Radios→EasyMesh执行，v3记录bit17/18意图先落盘，重启只读已尝试项、不重放，同Revision漂移拒绝。100枚举/19CLI/3非法策略/7持久生命周期、组合顺序及37常驻/38持久回归和双架构编译通过。内核/PE不变、未实机；回读仅验证从端报告，实际信道/功率/安装、完整硬件退场、多VIF、TSPEC及其他管理缺口仍未完成。详见[Radio配置与恢复](port/FTTR.md#original-radio-rpc-configuration-and-durable-recovery)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

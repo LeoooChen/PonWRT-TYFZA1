@@ -7962,6 +7962,66 @@ Mesh/roaming validation. No slave application code or physical device was run;
 kernel/PE code is unchanged. Full hardware retirement/ID reuse, multi-VIF, TSPEC
 and remaining factory-management behavior remain open.
 
+### Original Radio RPC configuration and durable recovery
+
+The native syncserv client implements the original `GetWifiRadio` and
+`SetONURadioInfo` methods:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa radio-info
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa radio-apply /root/radio.json
+```
+
+The private input file contains exactly six string fields, for example:
+
+```json
+{"RadioType":"2.4G","Enable":"1","TransmitPower":"80","Standard":"11bgn","Channel":"6","FrequencyWidth":"40M"}
+```
+
+`RadioType` is `2.4G` or `5G`; `Enable` is `0` or `1`. The original power
+converter maps `100/80/60/40/20` to codes0/1/2/3/4. Supported width strings are
+`20M`, `40M`, `Auto20M40M`, and, on5G, `Auto20M40M80M` and
+`Auto20M40M80M160M`. Standards use the existing band-specific Wi-Fi strings.
+Channel0 requests automatic selection. Fixed channel input is canonical decimal
+within1..14 on2.4G and32..255 on5G; these wire bounds do not establish actual
+regulatory or hardware channel support.
+
+Queries and writes use the selected peer's Ethernet unicast address: the
+original Radio JSON builders have no DMAC field to restrict a multicast write.
+Query results retain the18 known RadioInfo fields as bounded strings, reject
+more than two rows, duplicate bands and a mismatched OnuMAC, and discard unknown
+fields. Field order does not affect native parsing. The original consumer is
+order-dependent (its MAC branch reloads the MIB row), which native does not copy.
+A bare ACK cannot complete a query. Re-registration cancels the exchange.
+
+Apply first requires the selected band and all six readable fields, sends once,
+and independently reads again even after a lost ACK. A successful read cannot
+erase a write error. Fixed-channel comparison also requires AutoChannelEnable0;
+Channel0 requires AutoChannelEnable1 and permits the selected actual channel.
+Other fields compare exactly, including the configured FrequencyWidth rather
+than CurrentChannelWidth. This verifies reported fields only; it does not prove
+physical frequency, power, regulatory acceptance or subordinate installation.
+Preflight checks presence/type, not a complete capability profile.
+
+Resident peer policies accept an optional `Radios` array containing up to two
+such objects, with one object per band. Execution order is WiFi, Radios, then
+EasyMesh. Version3 durable records preserve the exact Radio policy and reserve
+attempted bits17/18 (EasyMesh remains16). The send intent must be fsynced before
+a write. Restart only reads previously attempted rows, writes unattempted rows,
+and rejects changed policy under the same Revision. Policies without Radios
+retain version1/2 compatibility. Radio events expose radio_type and separate
+write/readback outcomes; configuration_verified remains false.
+
+`trace_stock_fttr_radio.py` executes both original builders, the full two-band
+reply consumer and libmib width/power converters. `test_fttr_radio.py` passes100
+input-enum cases,19 actual CLI/veth cases, three invalid-policy cases and seven
+dual-band durable runs, including SIGKILL, fsync failure, drift and read-only
+recovery. The combined WiFi→Radio→EasyMesh scenario and existing37 controller
+and38 persistent Wi-Fi tests pass. Host and aarch64-musl builds pass; reports
+are `artifacts/fttr/radio-*-20261109.*`. Kernel/PE code is unchanged and no
+physical device was accessed. Full hardware retirement/ID reuse, multi-VIF,
+TSPEC and other factory-management gaps remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
