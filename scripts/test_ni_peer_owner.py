@@ -7,7 +7,7 @@ f=root/'scripts/test_wifi_offload_transaction.py';ns={'__file__':str(f)}
 text=f.read_text();exec(compile(text[:text.index("cases = r'''")],str(f),'exec'),ns)
 common,function=ns['common'],ns['function']
 common=common.replace('static int ni_uplink_start(struct rtl_ax_tx *tx){assert(tx==active_tx);return 0;}', 'static unsigned starts;static int uplink_error;static int ni_uplink_start(struct rtl_ax_tx *tx){assert(tx==active_tx);starts++;return uplink_error;}')
-common=common.replace('static int rtl9617c_wifi_id(struct net_device *dev){(void)dev;return 1;}', 'static struct net_device *devices[2];static int rtl9617c_wifi_id(struct net_device *dev){return dev==devices[0]?1:17;}')
+common=common.replace('static int rtl9617c_wifi_id(struct net_device *dev){(void)dev;return 1;}', 'static unsigned second_id=17;static struct net_device *devices[2];static int rtl9617c_wifi_id(struct net_device *dev){return dev==devices[0]?1:second_id;}')
 common=common.replace('static int rtl_ax_rx_uplink_enable(void *rx,unsigned id,unsigned wifi){(void)rx;assert(id==1&&wifi==1);return 0;}', 'static unsigned rx_id[128];static int rtl_ax_rx_uplink_enable(void *rx,unsigned id,unsigned wifi){(void)rx;rx_id[id]=wifi;return 0;}')
 common=common.replace('static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;assert(id==1);}', 'static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;rx_id[id]=0;}')
 common=common.replace('static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;assert(id==1);}', 'static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;rx_id[id]=0;}')
@@ -44,8 +44,10 @@ int main(void){
   assert(ret==(failure?-ETIMEDOUT:1));assert(dev[0].references==2&&dev[1].references==1);
   assert(tx.ni.peer_dev[1]==&dev[0]&&tx.ni.peer_dev[2]==&dev[1]);
   assert(rx_id[1]==1&&rx_id[2]==(failure?0:17));
+  assert(get_unaligned_le32(memory+0x11a04)==1&&get_unaligned_le32(memory+0x11a08)==17);
   fail_stage=0;assert(rtl_ax_tx_ni_peer(&tx,&dev[1],2)==(failure?1:0));assert(rx_id[2]==17);
   assert(rtl_ax_tx_ni_peer(&tx,&dev[0],2)==-ESTALE&&dev[1].references==1);
+  second_id=18;assert(rtl_ax_tx_ni_peer(&tx,&dev[1],2)==-ESTALE&&get_unaligned_le32(memory+0x11a08)==17);second_id=17;
   memory[0xe410+5]^=1;assert(rtl_ax_tx_ni_peer(&tx,&dev[1],2)==-ESTALE);memory[0xe410+5]^=1;
   /* The old binding survives FE delete failure and uses its captured MAC. */
   fail_stage=failure;fail_index=1;ret=rtl_ax_tx_ni_retire_peer(&tx,2);

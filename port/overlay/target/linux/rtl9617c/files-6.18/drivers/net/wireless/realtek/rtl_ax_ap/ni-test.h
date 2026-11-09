@@ -40,18 +40,20 @@ static void ni_state_init(struct rtl_ax_tx *tx)
 static int ni_peer_bind(struct rtl_ax_tx *tx, struct net_device *dev, unsigned int macid)
 {
  const u8 *address;
+ int id;
  if(!dev || !macid || macid>=128)return -EINVAL;
+ id=rtl9617c_wifi_id(dev);if(id<0)return id;if(!id || id>60)return -EINVAL;
  address=tx->pe.memory+0xe400+macid*8;
  if(tx->ni.peer_dev[macid])
-  return tx->ni.peer_dev[macid]==dev && ether_addr_equal(tx->ni.peer_address[macid],address)?0:-ESTALE;
- dev_hold(dev);tx->ni.peer_dev[macid]=dev;
+  return tx->ni.peer_dev[macid]==dev && tx->ni.peer_wifi[macid]==id && ether_addr_equal(tx->ni.peer_address[macid],address)?0:-ESTALE;
+ dev_hold(dev);tx->ni.peer_dev[macid]=dev;tx->ni.peer_wifi[macid]=id;
  ether_addr_copy(tx->ni.peer_address[macid],address);
  return 0;
 }
 static void ni_peer_put(struct rtl_ax_tx *tx, unsigned int macid)
 {
  if(tx->ni.peer_dev[macid])dev_put(tx->ni.peer_dev[macid]);
- tx->ni.peer_dev[macid]=NULL;
+ tx->ni.peer_dev[macid]=NULL;tx->ni.peer_wifi[macid]=0;
 }
 static int ni_peer_withdraw(struct rtl_ax_tx *tx, unsigned int macid)
 {
@@ -671,7 +673,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		if (i != macid || !tx->peer_authorized[i] ||
 		    !(get_unaligned_le32(tx->pe.memory + 0xd000 + i * 32 + 16) & BIT(18))) continue;
 		ret=ni_peer_bind(tx,netdev,i);if(ret)goto unlock;
-		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + i * 4);
+		put_unaligned_le32(tx->ni.peer_wifi[i], tx->pe.memory + 0x11a00 + i * 4);
 		dma_wmb();
 		WRITE_ONCE(tx->ni.route_peers[i], true);
 		ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + i * 8, 16 + tx->ni.cpu);
@@ -686,7 +688,8 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 {
 	int id, ret;
 	if(!netdev || !macid || macid>=128)return -EINVAL;
-	if(tx->ni.peer_dev[macid] && (tx->ni.peer_dev[macid]!=netdev ||
+	id=rtl9617c_wifi_id(netdev);if(id<0)return id;if(!id || id>60)return -EINVAL;
+	if(tx->ni.peer_dev[macid] && (tx->ni.peer_dev[macid]!=netdev || tx->ni.peer_wifi[macid]!=id ||
 	   !ether_addr_equal(tx->ni.peer_address[macid],tx->pe.memory+0xe400+macid*8)))return -ESTALE;
 	/* Preserve the active retirement fence; existing peers keep their routes. */
 	if (READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed) ||
@@ -694,8 +697,6 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
 	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
 	if (!(get_unaligned_le32(tx->pe.memory + 0xd000 + macid * 32 + 16) & BIT(18))) return -ENOLINK;
-	id = rtl9617c_wifi_id(netdev);
-	if (id < 0) return id;
 	if (!tx->ni.active) {
 		ret = rtl_ax_tx_ni_route(tx, netdev, macid);
 		if (ret) return ret;
@@ -708,7 +709,7 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	if(ret){mutex_unlock(&ni_test_lock);return ret;}
 	ret = ni_uplink_start(tx);
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
-	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
+	put_unaligned_le32(id, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
 	/* Own the prepared path before FE can publish even its first rule.
 	 * A failed publish retains admission and is retried by offload_work. */
@@ -902,6 +903,7 @@ int rtl_ax_tx_ni_test(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid
 	if (!tx->ni.test_memory) { ret = -ENOMEM; goto out; }
 	ret = ni_test_prepare(tx, macid);
 	if (ret) goto out;
+	tx->ni.peer_wifi[macid]=1; /* diagnostic DMA producer uses fixed sw_id1 */
 	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
 	WRITE_ONCE(tx->ni.route_peers[macid], true);
 	for (i = 28; i < 31; i++) put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + i * 4);

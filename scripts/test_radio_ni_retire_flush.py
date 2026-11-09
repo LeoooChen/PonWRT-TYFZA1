@@ -53,7 +53,7 @@ struct rtl_ax_tx {struct net_device *bcmc_dev[12];
  struct pci_dev *pdev;
  void *rx;
  struct {void *memory;} pe;
- struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;void *vp,*regs;struct net_device *route_dev,*peer_dev[128];u8 peer_address[128][6];
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;void *vp,*regs;struct net_device *route_dev,*peer_dev[128];u8 peer_address[128][6],peer_wifi[128];
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
 };
 struct rtl_ax_ap {struct rtl_ax_tx *tx;};
@@ -156,7 +156,7 @@ int main(void) {
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
   drop_calls=pause_calls=poll_calls=0;fail_drop=failure==1;withhold_rpq=failure==2;fail_withdraw=failure==3;withhold_fence=failure==4;
-  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.route_macid=1;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.peer_wifi[1]=3;tx.ni.route_macid=1;
   tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
   memset(registers,0,sizeof(registers));
   if(other) {
@@ -164,7 +164,7 @@ int main(void) {
    put_unaligned_le32(32760,memory+EPP_CONSUMERS+28);
   }
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=true;
-  tx.ni.route_peers[2]=other;if(other){tx.ni.peer_dev[2]=&dev;tx.ni.peer_address[2][0]=2;}
+  tx.ni.route_peers[2]=other;if(other){tx.ni.peer_dev[2]=&dev;tx.ni.peer_address[2][0]=2;tx.ni.peer_wifi[2]=3;}
   memory[0xe408]=1;memory[0xe410]=2;
   put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(other,memory+0x11a08);
   pending[1]=(!other && failure==2)?8:5;tick();
@@ -233,7 +233,7 @@ int main(void) {
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));
   memset(rx_active,0,sizeof(rx_active));memset(rx_retired,0,sizeof(rx_retired));
   fail_drop=fail_withdraw=withhold_rpq=withhold_fence=0;published=drop_calls=0;
-  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.regs=registers;tx.ni.cpu=3;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.peer_wifi[1]=3;tx.ni.regs=registers;tx.ni.cpu=3;
   memset(registers,0,sizeof(registers));
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=rx_active[1]=true;
   rx_active[2]=other_rx;memory[0xe408]=1;memory[0xe410]=2;
@@ -262,9 +262,9 @@ int main(void) {
   memset(rx_active,0,sizeof(rx_active));memset(rx_retired,0,sizeof(rx_retired));memset(registers,0,sizeof(registers));
   fail_drop=fail_withdraw=fail_release=withhold_fence=0;withhold_rpq=true;
   release_calls=drop_calls=pause_calls=poll_calls=published=0;
-  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.route_macid=1;tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.peer_wifi[1]=3;tx.ni.route_macid=1;tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=rx_active[1]=true;
-  rx_active[2]=other!=0;tx.ni.route_peers[2]=other==2;if(other){tx.ni.peer_dev[2]=&dev;tx.ni.peer_address[2][0]=2;}
+  rx_active[2]=other!=0;tx.ni.route_peers[2]=other==2;if(other){tx.ni.peer_dev[2]=&dev;tx.ni.peer_address[2][0]=2;tx.ni.peer_wifi[2]=3;}
   if(other==2){registers[0x7060/4]=24;registers[0x707c/4]=8;put_unaligned_le32(32760,memory+EPP_CONSUMERS+28);}
   memory[0xe408]=1;memory[0xe410]=2;put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(other!=0,memory+0x11a08);
   pending[1]=8;tick();assert(rtl_ax_tx_ni_retire_ba(&tx,1)==-ETIMEDOUT);
@@ -288,7 +288,7 @@ int main(void) {
   memset(rx_active,0,sizeof(rx_active));memset(registers,0,sizeof(registers));
   fail_drop=fail_withdraw=withhold_rpq=withhold_fence=0;fail_release=failures;
   release_calls=drop_calls=pause_calls=poll_calls=0;
-  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.route_macid=1;tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.peer_wifi[1]=3;tx.ni.route_macid=1;tx.ni.regs=registers;tx.ni.vp=registers;tx.ni.cpu=3;
   tx.ni.route_peers[1]=!rx_only;tx.peer_offloaded[1]=rx_active[1]=true;
   memory[0xe408]=1;put_unaligned_le32(!rx_only,memory+0x11a04);pending[1]=rx_only?0:8;tick();
   for(unsigned n=0;n<failures;n++) {
@@ -310,7 +310,7 @@ int main(void) {
   struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
   memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(rx_active,0,sizeof(rx_active));memset(registers,0,sizeof(registers));
   fail_drop=fail_release=fail_withdraw=withhold_rpq=withhold_fence=0;release_calls=bcmc_drops=0;
-  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.route_macid=1;tx.ni.regs=tx.ni.vp=registers;tx.ni.cpu=3;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.peer_wifi[1]=3;tx.ni.route_macid=1;tx.ni.regs=tx.ni.vp=registers;tx.ni.cpu=3;
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=true;memory[0xe408]=1;put_unaligned_le32(1,memory+0x11a04);
   pending[1]=1;tick();assert(!rtl_ax_tx_ni_retire_peer(&tx,1));
   assert(tx.ni.active&&tx.ni.route_dev==&dev&&tx.bcmc_enabled&&!release_calls&&!bcmc_drops);

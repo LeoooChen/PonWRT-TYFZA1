@@ -60,7 +60,7 @@ for peer,tid in set(rows):
 put(NI+0x659c,0x81<<24);put(NI+0x707c,8)
 at=PAYLOAD+80*2048
 u.mem_write(at+64,struct.pack(">II",0x80000000,72<<15|1)+bytes(8)+mac[1]+bytes.fromhex("02000000000308004520")+bytes(48))
-u.mem_write(EPP+(7<<15),struct.pack("<II",at|0x50,80))
+u.mem_write(EPP+(7<<15),struct.pack("<II",at|0x50,(1<<14)|80))
 call("ni_ingest"); assert get(NI+0x717c)==8
 put(NI+0x707c,16)
 call("ni_ingest"); assert get(NI+0x717c)==8
@@ -99,7 +99,7 @@ def lookup_probe(withdraw, compact=True):
   at=PAYLOAD+n*2048;frame=mac[1]+bytes.fromhex('0200000000030800')+bytes([n])*50
   put(at,0xdeadbe80)
   frames.append(frame);u.mem_write(at+64,struct.pack('>II',0x80000000,72<<15)+bytes(8)+frame)
-  u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,(1<<14 if compact else 0)|80))
+  u.mem_write(EPP+n*8,struct.pack('<II',at|0x50,(1<<14)|80))
  reads={'route':0,'address':0,'EPP_head':0,'EPP_base':0,'clock':0,'TSF_low':0,'TSF_high':0,'header1':0};revoked=False
  def observe(uc,access,at,size,value,data):
   nonlocal revoked
@@ -133,11 +133,10 @@ def lookup_probe(withdraw, compact=True):
  return reads
 
 repeated=lookup_probe(False);withdrawn=lookup_probe(True)
-normal=lookup_probe(False,False)
 if '--before' in sys.argv:assert repeated['address']>=24
 else:
  assert repeated['address']<=4
  assert repeated['EPP_head']==8 and repeated['EPP_base']==1 and repeated['clock']==0, repeated
  assert repeated['TSF_low']==1 and repeated['TSF_high']==2, repeated
- assert repeated['header1']==normal['header1']==8, (repeated,normal)
+ assert repeated['header1']==8, repeated
 print(json.dumps(dict(batch_budget=64,wrapped_ring=True,mixed_peer_TID_FIFO=True,compact_EPP=True,retire_fence_after_queue_and_consumer=True,COS_priority=True,invalid_entry_not_consumed=True,active_TID_round_robin=True,stale_active_mask_reset=True,repeated_peer_DDR_reads=repeated,withdrawn_peer_DDR_reads=withdrawn,mid_batch_admission_withdrawal_preserved=True)))

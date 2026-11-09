@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compare native L3FE action packing with this board's original ARM64 converter."""
+import argparse
 import ctypes
 import hashlib
 import json
@@ -19,6 +20,11 @@ from unicorn.arm64_const import UC_ARM64_REG_X0, UC_ARM64_REG_X1, UC_ARM64_REG_L
 reference = root / "evidence/rtl-workspace/downloads/reference/ca-network-drivers-20261005/ca-network-engine/1.0-r0/ca-network-engine-1.0/aal-77c/include/aal_common.h"
 binary = root / "analysis/private/live-files/lib/modules/5.10.70/extra/ca-ne.ko"
 header = root / "port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-fe-format.h"
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--reference',type=Path,default=reference)
+parser.add_argument('--module',type=Path,default=binary)
+parser.add_argument('--output',type=Path,default=root/'logs/fe-action-oracle.json')
+args=parser.parse_args();reference=args.reference;binary=args.module
 text = reference.read_text()
 
 
@@ -102,5 +108,5 @@ record = {"scope": "actual stock ARM64 conversion emulated offline; no original 
           "action_groups": [18, 20], "action_bits": 224, "slot_bytes": 32,
           "fields": len(fields), "vectors": len(cases), "all_match_stock_machine_code": True,
           "hardware_forwarding_verified": False}
-(root / "logs/fe-action-oracle.json").write_text(json.dumps(record, indent=2) + "\n")
+args.output.write_text(json.dumps(record, indent=2) + "\n")
 print(json.dumps(record, indent=2))

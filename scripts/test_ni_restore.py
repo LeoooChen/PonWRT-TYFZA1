@@ -53,7 +53,7 @@ typedef uint32_t u32;
 #define RTL_AX_TX_RINGS 6
 #define TEST_MEMORY_BYTES 128
 struct rtl_ax_tx {void *dma_device,*rx;unsigned producer[6];struct {void *memory;}pe;
- struct {void *route_dev,*peer_dev[128];bool active,vp_active;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
+ struct {void *route_dev,*peer_dev[128];unsigned char peer_wifi[128];bool active,vp_active;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
  unsigned cpu,eq,registers[14],saved[14],arb[8],attrs[2][2],epp_bases[8],epp_eq[8],vp_saved[5],vp_index;}ni;};
 static u32 mmio[0x10000/4],dma[0x1000/4],arb[512],attr[64][2];static unsigned char memory[0x80000];
 static unsigned accesses,fail_at,polls,mmio_writes,opens,released,paused;

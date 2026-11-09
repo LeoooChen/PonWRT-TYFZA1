@@ -15,7 +15,8 @@ directory = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'artifacts/pe-rad
 binary = (directory / 'pe-tx.bin').read_bytes()
 
 
-def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None, source=0, prepare_prefix=True, encrypted=True, gcmp=False, extended=False, role=0, self_address=None):
+def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, observe=None, ni_header=16, compact_epp=False, client=False, multicast=False, noack=False, preserve_group=False, preload=True, policy=None, source=0, prepare_prefix=True, encrypted=True, gcmp=False, extended=False, role=0, self_address=None, wifi_id=1):
+    if from_epp and not multicast: ni_header = 16
     base, mb, pages, headers, payload, ring, bar, ni, reports = (
         0x04000000, 0x04002000, 0x05100000, 0x05400000, 0x06000000,
         0x05000000, 0x12000000, 0x10000000, 0x06200000)
@@ -57,7 +58,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     put(base + 0x12020, 32)  # negotiated BA limit, as consumed by ni_select
     effective_policy = policy if policy is not None else 3793 if cap == 3839 else 7433 if cap == 7935 else 10896
     put(base + 0x39004, effective_policy | (0 if not effective_policy else 2 if effective_policy <= 3793 else 4 if effective_policy <= 7433 else 7) << 16)
-    put(base + 0x11a04, 1)
+    put(base + 0x11a04, wifi_id)
     put(base + 0x11804, len(lengths))
     put(base + 0x13020, len(lengths))
     put(base + 0x18020, len(lengths))
@@ -97,7 +98,7 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
         if from_epp:
             if multicast:u.mem_write(at+64+ni_header,bytes.fromhex('01005e010203'))
             u.mem_write(at + 64, struct.pack('>II', ((1 << 31) if ni_header == 16 else 0)|(265<<18 if multicast else 0), (length + ni_header - 8) << 15 | source<<9 | (19<<3 if multicast else 0)) + bytes(ni_header - 8))
-            u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
+            u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (wifi_id << 14 if not multicast or compact_epp else 0) | (length + 16)))
         else:
             # This fixture bypasses ni_ingest. Prepare the same large-frame
             # prefix and metadata flag; real EPP cases exercise admission.

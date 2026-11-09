@@ -23,7 +23,9 @@ def machine(source=6, cos=0, full=True, cookie=True):
     m.put(table + 16 + 9 * 96 + 4, 1 | source << 16)
     m.u.mem_write(payload + 64, struct.pack('>II', (1 << 31 if full else 0) | (265 << 18 if cookie else 0),
         (len(m.frame) + m.header - 8) << 15 | source << 9 | 19 << 3 | cos))
-    if not cookie: m.u.mem_write(payload + 64 + m.header, env['peer'])
+    if not cookie:
+        m.u.mem_write(payload + 64 + m.header, env['peer'])
+        if full:m.put(epp+cos*4096+4,(1<<14)|(len(m.frame)+16))
     return m
 
 
@@ -145,7 +147,7 @@ for count in (2, 7, 8):
     original = bytes(m.u.mem_read(payload, 512))
     for i in range(count):
         m.u.mem_write(payload + i * 512, original)
-        m.u.mem_write(epp + i * 8, struct.pack('<II', (payload + i * 512) | 0x50, 0))
+        m.u.mem_write(epp + i * 8, struct.pack('<II', (payload + i * 512) | 0x50, (1<<14)|(len(m.frame)+16)))
     m.put(ni + 0x7060, count * 8); m.put(base + 0xe204, 7935 << 18)
     m.call('ni_ingest', mb, base); m.put(bar + 0xc438, 10000)
     assert m.get(DRAIN + 8) == count and m.call('ni_select', mb, base, requests) == count
@@ -167,7 +169,7 @@ for count in (2, 7, 8):
 m = machine(cookie=False); original = bytes(m.u.mem_read(payload, 512))
 m.u.mem_write(payload + 512, original)
 m.u.mem_write(payload + 512 + 68, struct.pack('>I', (len(m.frame) + m.header - 8) << 15 | 19 << 3))
-m.u.mem_write(epp + 8, struct.pack('<II', (payload + 512) | 0x50, 0))
+m.u.mem_write(epp + 8, struct.pack('<II', (payload + 512) | 0x50, (1<<14)|(len(m.frame)+16)))
 m.put(ni + 0x7060, 16); m.put(base + 0xe204, 7935 << 18)
 m.call('ni_ingest', mb, base); m.put(bar + 0xc438, 10000)
 assert m.get(DRAIN + 8) == 1 and m.call('ni_select', mb, base, requests) == 1

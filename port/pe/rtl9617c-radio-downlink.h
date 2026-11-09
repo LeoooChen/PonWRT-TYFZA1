@@ -126,11 +126,14 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
 		u32 macid = 0, ether0 = 0, ether1 = 0, qos = 0, cookie = ni_mcast_cookie(buffer);
 		u32 admitted = ni_fttr_receive(mailbox, memory, buffer);
+  u32 wifi_id=(entry[1]>>14)&63;
   ((u32 *)uncached(buffer))[4]=cookie;
   if(cookie)mc_drain->pending++;
-		if (admitted && length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
+		if (admitted && (cookie || wifi_id) && length >= 14 && length <= RTL_QM_DATA_BYTES - header) {
 			if (cookie) macid = ni_mcast_admit(mailbox, memory, buffer, ethernet, length, cookie, &tid);
 			else {
+   /* FE mdata_byte becomes EPP sw_id[19:14]. A nonzero identity is
+    * required even for a routed STA catch-all; POL cookies stay separate. */
 			const u32 *destination = (const void *)ethernet;
 			u32 low = destination[0];
 			ether0 = low;
@@ -139,11 +142,11 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 			/* Cache only this batch's destination; admission can be revoked
 			 * asynchronously and must still be checked for every packet. */
 			if (cached_peer && low == cached_low && high == cached_high &&
-			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4)) {
+			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4)==wifi_id) {
 				macid = cached_peer; qos = cached_qos;
 			} else {
 				for (u32 peer = 1; peer < 128; peer++) {
-					if (!*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)) continue;
+					if (*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)!=wifi_id) continue;
 					const u32 *address = (const void *)(memory + 0xe400 + peer * 8);
 					/* A routed STA uses its associated AP for every Ethernet DA. */
 					if ((*(u32 *)(memory + 0xd000 + peer * 32 + 16) & BIT(23)) ||

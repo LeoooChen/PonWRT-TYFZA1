@@ -31,7 +31,7 @@ typedef uint8_t u8;
 #define dma_wmb() ((void)0)
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
-struct rtl_ax_tx {struct rtl_mc_pe_table *mcast_table;bool peer_authorized[128],pe_active;struct {void *memory;} pe;struct {bool route_peers[128];} ni;};
+struct rtl_ax_tx {struct rtl_mc_pe_table *mcast_table;bool peer_authorized[128],pe_active;struct {void *memory;} pe;struct {bool route_peers[128];u8 peer_wifi[128];} ni;};
 struct rtl_ax_ap {struct rtl_ax_tx *tx; bool sta_4addr,peer_authorized[128]; int offload_result; u8 sta_bssid[6];struct {u8 peer[6];} retired_stations[128];};
 struct rtl_ax_station { unsigned macid; };
 struct ieee80211_sta {void *drv_priv;u8 addr[6];};
@@ -67,7 +67,7 @@ int main(void) {
  unsigned char memory[131072]={};
  struct rtl_mc_pe_table table={.epoch=7};
  struct rtl_ax_tx tx={.mcast_table=&table,.pe_active=true,.pe={memory}};
- tx.peer_authorized[1]=tx.ni.route_peers[1]=true;
+ tx.peer_authorized[1]=tx.ni.route_peers[1]=true;tx.ni.peer_wifi[1]=17;
  struct rtl_ax_ap radio={.tx=&tx};radio.peer_authorized[1]=true;
  struct ieee80211_hw hw={&radio};struct rtl_ax_station station={.macid=1};struct ieee80211_sta sta={.drv_priv=&station};struct ieee80211_vif vif={};
  put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(1,memory+0x11a08);
@@ -77,7 +77,7 @@ int main(void) {
  assert(!table.epoch&&policy_epoch==2&&!writer);
  assert(get(memory+0x11a08)==1);
  assert(!rtl_ax_sta_state(&hw,&vif,&sta,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED));
- assert(get(memory+0x11a04)==1);
+ assert(get(memory+0x11a04)==17);
  assert(!table.epoch&&policy_epoch==2);
  tx.pe_active=false;tx.pe.memory=NULL;
  rtl_ax_tx_peer_authorized(&tx,1,false);assert(!tx.peer_authorized[1]);

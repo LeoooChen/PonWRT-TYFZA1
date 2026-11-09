@@ -16,7 +16,7 @@ struct rtl_ax_ni_state {
  struct net_device *route_dev;
  /* Borrowed under ni_test_lock until FE withdrawal and packet drain finish. */
  struct net_device *peer_dev[128];
- u8 peer_address[128][6];
+ u8 peer_address[128][6],peer_wifi[128];
  unsigned int route_macid;
  u32 route_tim[128];
  u32 ps_seen[2][128];

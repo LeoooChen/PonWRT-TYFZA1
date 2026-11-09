@@ -11,7 +11,7 @@ ns = {'__file__': str(fixture)}
 exec(compile(fixture.read_text().split('\nrows = []')[0], str(fixture), 'exec'), ns)
 BASE, PAYLOAD, EPP, NI = ns['BASE'], ns['ns']['PAYLOAD'], ns['ns']['EPP'], ns['ns']['NI']
 rows = []
-for header in (8, 16):
+for header in (16,):
     for length in (14, 15, 64, 1000, 1001, 1500):
         machine = ns['ns']['Radio']()
         machine.packets([1])

@@ -8678,6 +8678,40 @@ shared-policy arbitration and upstream/downstream hardware retirement remain
 open. Existing EPP/packet fences do not establish full MCE/AFT retirement or safe
 hardware-ID reuse. No physical device was accessed.
 
+### NI downlink EPP interface selection
+
+The normal FE action already writes the output Wi-Fi interface to `mdata_byte`.
+The target `ca_ni_rx_napi_get_header_from_64bit_epp` extracts EPP bits[19:14]
+(second word) as that interface's software ID, and nonzero IDs consume16 bytes
+of internal headers. Executing the target decoder covers384 ID/length cases;
+the existing FE action converter comparison covers330 vectors and the native
+Wi-Fi DMA contract covers300 original instruction cases. These establish the
+software format contract; physical FE-to-EPP delivery remains untested.
+
+NI peer admission now publishes its recorded Wi-Fi ID instead of boolean1.
+Ordinary PE downlink lookup and the batch destination cache both require that
+ID to match the EPP before choosing a station, including STA catch-all routes.
+Authorization restores the retained ID; a netdev whose registered ID changed
+cannot silently reuse an existing binding. ID0, reserved and unmatched inputs
+cannot reach an ordinary station. POL multicast cookies retain their separate
+complete-recipient admission and do not depend on unicast EPP identity.
+
+The linked two-BSS test uses identical destination MACs with alternating and
+repeated IDs in one EPP batch, checks exact BID chains/selected peer and role,
+and injects revocation on a cache hit. Unowned/zero/reserved IDs recycle each BID
+once without TXBD publication. Existing batching, PS, A-MSDU/prefix, multicast,
+BCMC, FTTR drain and selected-peer withdrawal tests pass. Fixtures for ordinary
+radio packets now supply the real nonzero-ID EPP format; multicast still tests
+both8- and16-byte HeaderA forms. The pre-main-alignment image is32704 bytes with
+stack bound7360/8192; artifacts are `artifacts/fttr/downlink-*-20261109.*` and
+`artifacts/fttr/ni-downlink-id-pe-20261109/`.
+
+This supplies BSS selection, not an end-to-end generation fence. Wi-Fi ID reuse
+and late packets still depend on incomplete MCE/AFT retirement proof, and actual
+interface allocation/shared policies remain unfinished. The developer-only NI
+bypass traffic generator also needs its raw metadata contract checked before
+using it with this strict admission. No physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

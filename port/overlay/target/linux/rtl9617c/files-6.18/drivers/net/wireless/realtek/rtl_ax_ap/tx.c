@@ -679,7 +679,7 @@ void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool au
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 		dma_wmb();
 	} else if (tx->pe_active && READ_ONCE(tx->ni.route_peers[macid])) {
-		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
+		put_unaligned_le32(READ_ONCE(tx->ni.peer_wifi[macid]), tx->pe.memory + 0x11a00 + macid * 4);
 		dma_wmb();
 	}
 }

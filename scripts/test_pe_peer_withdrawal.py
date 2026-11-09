@@ -41,7 +41,7 @@ for tid,tos,ring in ((0,0,0),(1,32,1),(4,128,2),(6,192,3)):
  m=machine(cookie=False);m.u.mem_write(payload+64+m.header+15,bytes([tos]))
  m.put(base+0xe204,7935<<18)
  second=payload+2048;m.u.mem_write(second,bytes(m.u.mem_read(payload,2048)))
- m.u.mem_write(e['epp']+8,struct.pack('<II',second|0x50,0));m.put(ni+0x7060,16)
+ m.u.mem_write(e['epp']+8,struct.pack('<II',second|0x50,(1<<14)|(len(m.frame)+16)));m.put(ni+0x7060,16)
  m.call('ni_ingest',mb,base);m.put(bar+0xc438,10000)
  assert m.call('ni_select',mb,base,requests)==2
  quota=base+0x3e000+(4+ring)*4
