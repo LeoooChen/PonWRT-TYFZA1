@@ -298,6 +298,7 @@ def main():
                 elif op==0x55:
                     assert bytes(self.upgrade_data)==self.upgrade_expected
                     assert struct.unpack('>II',body[8:16])==(crc(self.upgrade_expected),len(self.upgrade_expected))
+                    if self.upgrade_mode=='retry-end-held':return None
                     if self.upgrade_mode=='reject-end' and not self.upgrade_rejections:
                         self.upgrade_rejections+=1
                         return stock.frame(tci,0x35,b'\x06',onu=self.id,class_id=7,instance=id)[16:]
@@ -1321,7 +1322,7 @@ static int recovery_run(const char *path,const char *command) {
             image=root/'image.bin';image.write_bytes(bytes(i%251 for i in range(1923)))
             def command(action='download',serial=None):
                 return subprocess.Popen([str(args.upgrade_control.resolve()),str(store),'onu-upgrade','7',
-                    nodes[7].serial.hex() if serial is None else serial,action]+([str(image)] if action=='download' else []),
+                    nodes[7].serial.hex() if serial is None else serial,action]+([str(image)] if action in ('download','retry-download') else []),
                     stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
             def finish(client,error=0,seconds=8):
                 until(lambda s:client.poll() is not None,seconds=seconds)
@@ -1331,15 +1332,18 @@ static int recovery_run(const char *path,const char *command) {
                 if stdout:assert json.loads(stdout)['boot_verified'] is False
             def stop():
                 process.send_signal(signal.SIGTERM)
-                until(lambda s:process.poll() is not None,allow_exit=True)
-                assert process.wait(timeout=2)==0,process.stderr.read()
+                # Shutdown cancels jobs and closes its raw socket; queued
+                # modeled replies are no longer part of this transaction.
+                stdout,stderr=process.communicate(timeout=8)
+                assert process.returncode==0,(stdout,stderr)
             try:
-                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail','resume-io','resume-stale','held-deactivate','pinned-selection','pinned-version','pinned-flags','pinned-commit-version'):
+                for mode in ('ok','reject-window','reject-end','abort','replace','shutdown','client-gone','peer-admin','withdraw-fail','drop-start','snapshot','crash-download','crash-activate','crash-commit','store-fail','verify-store-fail','resume-io','resume-stale','held-deactivate','pinned-selection','pinned-version','pinned-flags','pinned-commit-version','retry-download','retry-repeat','retry-slot-drift','retry-end-held','retry-store-fail'):
+                    print('upgrade scenario',args.backend,mode,flush=True)
                     while select.select([peer],[],[],0)[0]:peer.recv(2048)
                     nodes[7]=Node(7,'5445535400000007',0x107,False)
                     nodes[9]=Node(9,'5445535400000009',0x203,True)
                     for receipt in upgrade_store.iterdir():receipt.unlink()
-                    nodes[7].upgrade_mode='hold' if mode in ('abort','replace','shutdown','peer-admin','crash-download') else mode
+                    nodes[7].upgrade_mode='hold' if mode in ('abort','replace','shutdown','peer-admin','crash-download','retry-download','retry-repeat','retry-slot-drift','retry-store-fail') else mode
                     nodes[7].upgrade_expected=image.read_bytes()
                     hardware();process=launch()
                     until(lambda s:all(s['onus'][id]['phase']=='configured' for id in (7,9)))
@@ -1381,15 +1385,50 @@ static int recovery_run(const char *path,const char *command) {
                     assert datapath(9)==healthy and 'fttr-u7' not in ports()
                     if mode=='snapshot':image.write_bytes(b'changed after controller snapshot')
                     if mode=='client-gone':client.kill();client.wait()
-                    if mode in ('abort','replace','shutdown','peer-admin','crash-download'):
+                    if mode in ('abort','replace','shutdown','peer-admin','crash-download','retry-download','retry-repeat','retry-slot-drift','retry-store-fail'):
                         until(lambda s:any(op==0x54 for _,op,_,_ in nodes[7].operations))
-                        if mode=='crash-download':
+                        if mode in ('crash-download','retry-download','retry-repeat','retry-slot-drift','retry-store-fail'):
                             process.kill();process.wait();client.kill();client.wait()
                             before_ops=len(nodes[7].operations)
                             process=launch()
                             until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
                             assert not nodes[7].operations[before_ops:] and 'fttr-u7' not in ports()
                             finish(command('download'),errno.EALREADY);finish(command('check'),errno.ENODATA)
+                            if mode.startswith('retry-'):
+                                receipt=upgrade_store/(nodes[7].serial.hex()+'.upgrade');saved=receipt.read_bytes()
+                                before_ops=len(nodes[7].operations);before_accel=len(accel_events())
+                                original_image=image.read_bytes()
+                                image.write_bytes(original_image+b'x');finish(command('retry-download'),errno.ESTALE)
+                                image.write_bytes(bytes([original_image[0]^1])+original_image[1:]);finish(command('retry-download'),errno.ESTALE)
+                                image.write_bytes(original_image)
+                                assert receipt.read_bytes()==saved and len(nodes[7].operations)==before_ops and len(accel_events())==before_accel
+                                if mode=='retry-store-fail':
+                                    staging=upgrade_store/(nodes[7].serial.hex()+'.upgrade.new');staging.mkdir()
+                                    failed=command('retry-download')
+                                    until(lambda s:process.poll() is not None,allow_exit=True)
+                                    stdout,stderr=failed.communicate(timeout=2)
+                                    assert process.returncode==1 and failed.returncode==1 and f'({-errno.EISDIR})' in stderr
+                                    assert not any(op==0x53 for _,op,_,_ in nodes[7].operations[before_ops:]) and receipt.read_bytes()==saved
+                                    staging.rmdir();process=launch()
+                                    until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                                if mode=='retry-slot-drift':
+                                    nodes[7].upgrade_images[1]=(0,1,0)
+                                    finish(command('retry-download'),errno.ESTALE)
+                                    assert not any(op==0x53 for _,op,_,_ in nodes[7].operations[before_ops:]) and receipt.read_bytes()==saved
+                                    nodes[7].upgrade_images[1]=(0,0,0)
+                                if mode=='retry-repeat':
+                                    retry_client=command('retry-download')
+                                    until(lambda s:sum(op==0x54 for _,op,_,_ in nodes[7].operations[before_ops:])==1)
+                                    process.kill();process.wait();retry_client.kill();retry_client.wait()
+                                    process=launch();until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                                healthy=datapath(9) # Restart legitimately recreates the other ONU netdev.
+                                nodes[7].upgrade_mode='ok';nodes[7].upgrade_images[0]=(0,0,1)
+                                before_ops=len(nodes[7].operations);finish(command('retry-download'))
+                                sent=nodes[7].operations[before_ops:]
+                                assert sum(op==0x53 for _,op,_,_ in sent)==1 and nodes[7].upgrade_data==original_image
+                                assert status()['onus'][7]['upgrade_verified'] and datapath(9)==healthy
+                                finish(command('retry-download'),errno.EALREADY)
+                                stop();process=None;checks.append(mode);continue
                             result=subprocess.run([str(args.upgrade_control.resolve()),str(store),'onu-admin','7',nodes[7].serial.hex(),'resume'],capture_output=True,text=True,timeout=3)
                             assert result.returncode==0,(result.stdout,result.stderr)
                             if args.backend=='fpga1':hardware()
@@ -1411,6 +1450,13 @@ static int recovery_run(const char *path,const char *command) {
                             stdout,stderr=client.communicate(timeout=2)
                             assert client.returncode==1 and f'({-errno.ECANCELED})' in stderr
                             assert process.wait(timeout=2)==0;process=None;checks.append(mode);continue
+                    elif mode=='retry-end-held':
+                        until(lambda s:any(op==0x55 for _,op,_,_ in nodes[7].operations))
+                        process.kill();process.wait();client.kill();client.wait();before_ops=len(nodes[7].operations)
+                        receipt=upgrade_store/(nodes[7].serial.hex()+'.upgrade');saved=receipt.read_bytes()
+                        process=launch();until(lambda s:s['onus'][7]['phase']=='upgrade-wait' and s['onus'][9]['phase']=='configured')
+                        finish(command('retry-download'),errno.EBUSY)
+                        assert not nodes[7].operations[before_ops:] and receipt.read_bytes()==saved
                     elif mode=='verify-store-fail':
                         until(lambda s:process.poll() is not None,allow_exit=True)
                         stdout,stderr=client.communicate(timeout=2)

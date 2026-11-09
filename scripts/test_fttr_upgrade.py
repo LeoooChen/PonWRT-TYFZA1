@@ -35,6 +35,7 @@ int fttr_miniolt_same(int fd,unsigned int id,const struct fttr_onu_state *identi
  (void)fd;(void)id;(void)identity;return -ESTALE;
 }
 int begin(int action,const void *data,size_t size){sends=0;send_error=0;return fttr_upgrade_start(&job,7,&counter,action,data,size);}
+int restart(const void *data,size_t size,int image,const unsigned char *version){sends=0;send_error=0;return fttr_upgrade_restart(&job,7,&counter,data,size,image,version);}
 int check(int action,int image,const unsigned char *version){sends=0;send_error=0;
  return fttr_upgrade_check(&job,7,&counter,action,image,version);}
 int pin(int image,const unsigned char *version){return fttr_upgrade_pin(&job,image,version);}
@@ -58,6 +59,7 @@ with tempfile.TemporaryDirectory() as d:
     subprocess.run(['cc','-shared','-fPIC','-O2','-std=c11','-Wall','-Wextra','-Werror','-ffunction-sections','-Wl,--gc-sections','-I'+str(src),str(d/'shim.c'),str(a.source or src/'omci-upgrade.c'),str(src/'omci-me.c'),str(src/'omci-wire.c'),'-o',str(d/'native.so')],check=True)
     lib=C.CDLL(str(d/'native.so'));lib.frame.restype=C.c_void_p
     lib.begin.argtypes=[C.c_int,C.c_void_p,C.c_size_t]
+    lib.restart.argtypes=[C.c_void_p,C.c_size_t,C.c_int,C.c_void_p]
     def frame():return C.string_at(lib.frame(),44)
     def response(status=0,payload=b'',now=0,wrong=False):
         f=bytearray(frame());f[2]=(f[2]&31)|32;f[8:40]=(bytes([status])+payload).ljust(32,b'\0')
@@ -70,7 +72,31 @@ with tempfile.TemporaryDirectory() as d:
             assert lib.transmit(0)==0;assert frame()[2:10] in (bytes.fromhex('490a00070000f000'),bytes.fromhex('490a00070001f000'))
             ret=image_reply(*row)
         return ret
-    checks=0
+    # Retry is a fresh transfer pinned to the previously selected slot, even
+    # if slot0 now also qualifies. Never use any stale acknowledged offset.
+    for image in (0,1):
+        for drift in ('none','version','active','committed'):
+            data=bytes(range(63));assert not lib.restart(data,len(data),image,b'VERSION0000001')
+            for slot in (0,1):
+                assert not lib.transmit(0)
+                attrs=(1,0,0) if slot==image and drift=='committed' else (0,1,0) if slot==image and drift=='active' else (0,0,0)
+                version=b'OTHER-VERSION!' if slot==image and drift=='version' else b'VERSION0000001'
+                ret=response(payload=b'\xf0\0'+version+bytes(attrs))
+            if drift!='none':assert ret==-errno.ESTALE;continue
+            assert ret==1 and lib.confirmed()==0
+            assert not lib.transmit(0) and frame()[6:8]==image.to_bytes(2,'big') and frame()[2]==0x53
+            assert response(payload=b'\x1e')==1
+            for section in range(3):
+                assert not lib.transmit(0);assert frame()[8]==section
+                assert frame()[9:40]==data[section*31:(section+1)*31].ljust(31,b'\0')
+            assert response(payload=b'\x02')==1
+            assert not lib.transmit(0) and frame()[2]==0x55
+            assert response()==1
+            assert not lib.transmit(0)
+            # After End, version may change; the old version pin was only
+            # authorization to overwrite that same pre-download slot.
+            assert response(payload=b'\xf0\0'+b'NEW-VERSION001'+bytes((0,0,1)))==1 and lib.verified()
+    checks=8
     for binary in (a.relay,a.fpga_relay):
         stock=Upgrade(binary)
         for size in (1,30,31,32,62,63,960,961,962,1923):

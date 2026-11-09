@@ -103,6 +103,18 @@ int fttr_upgrade_pin(struct fttr_upgrade_job *job, uint16_t image, const uint8_t
 	return 0;
 }
 
+int fttr_upgrade_restart(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
+	const uint8_t *data, size_t size, uint16_t image, const uint8_t version[14])
+{
+	int ret = fttr_upgrade_start(job, onu, counter, FTTR_UPGRADE_DOWNLOAD, data, size);
+	if (ret) return ret;
+	if (image > 1 || !version) return fail(job, -EINVAL);
+	job->image = image;
+	memcpy(job->expected_version, version, 14);
+	job->pinned = true;
+	return 0;
+}
+
 int fttr_upgrade_check(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
 		       enum fttr_upgrade_action action, uint16_t image, const uint8_t version[14])
 {
@@ -223,7 +235,8 @@ int fttr_upgrade_reply(struct fttr_upgrade_job *job, uint16_t *counter,
 		return 1;
 	case FTTR_UPGRADE_VERIFY:
 		if (job->me.reply[25] > 1 || job->me.reply[26] > 1 || job->me.reply[27] != 1 ||
-		    ((job->checking || job->pinned) && memcmp(job->me.reply + 11, job->expected_version, 14)) ||
+		    ((job->checking || (job->pinned && job->action != FTTR_UPGRADE_DOWNLOAD)) &&
+		     memcmp(job->me.reply + 11, job->expected_version, 14)) ||
 		    (job->action == FTTR_UPGRADE_COMMIT ? job->me.reply[25] != 1 :
 		     job->action == FTTR_UPGRADE_ACTIVATE ? job->me.reply[26] != 1 :
 		     job->me.reply[25] || job->me.reply[26]))

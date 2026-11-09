@@ -303,6 +303,8 @@
 
 149. 补齐邻居原文到原厂JSON字段转换：执行管理程序实际输出块确认MAC/RadioType/SSIDName/BSSID/NetworkType/Channel/RSSI/Standard及RSSI负号规则；接收窗口结束后再解析完整拼接文本，支持跨段行/CRLF/末行无换行，校验八字段、BSSID、数字与字节界限，畸形尾行或分配失败不返回半表。原文保留且scan_complete仍为false。77原厂/原生字段比较、39 glibc/38打包musl网络场景、62分配故障ASan/UBSan及终端/QoS回归、整包/67输入/四程序一致通过；首次网络首包超时重试后通过，未据此归因。内核/PE未改、未实机；完整扫描、自动采集/漫游、全链路退场/ID复用仍未完成。详见[邻居字段转换](port/FTTR.md#structured-neighbor-fields-from-the-retained-manager)。
 
+150. 接入下载中断后的显式retry-download：仅当前控制器/后端/SN的待定START记录可重试，私有文件快照长度/原厂CRC先核对，重新读双槽并固定原槽/旧14字节版本及非活动/未提交条件，发送前再次持久化，从字节0重传。原厂ONU Start实际执行16场景证明删除临时文件/释放窗口/清零接收状态；无远端偏移查询依据，End意图已存时拒绝重启。102状态机/原厂报文、三后端各28实际守护进程/CLI场景含二次崩溃/错文件/槽漂移/End待定/持久化失败，记录/管理回归及host/musl整包/67输入/四程序一致通过。内核/PE未改、未实机；CRC不等于签名，跨进程偏移续传、End后未知恢复、机型/签名和启动验证仍待补齐。详见[下载重试](port/FTTR.md#restarting-a-recorded-download-before-end-download)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

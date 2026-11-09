@@ -609,7 +609,8 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	char *end;
 	int fd, ret, image_fd = -1;
 	union { int32_t error; struct fttr_optical_reply optical; } result;
-	bool upgrade = !strcmp(action, "download") || !strcmp(action, "activate") ||
+	bool retry_download = !strcmp(action, "retry-download");
+	bool upgrade = retry_download || !strcmp(action, "download") || !strcmp(action, "activate") ||
 		!strcmp(action, "commit") || !strcmp(action, "abort") || !strcmp(action, "check");
 	ssize_t size;
 
@@ -649,11 +650,11 @@ static int onu_admin(int directory, const char *id, const char *serial, const ch
 	}
 	if (upgrade) {
 		request.version = 3;
-		request.action = !strcmp(action, "download") ? FTTR_ADMIN_DOWNLOAD :
+		request.action = retry_download ? FTTR_ADMIN_DOWNLOAD_RETRY : !strcmp(action, "download") ? FTTR_ADMIN_DOWNLOAD :
 			!strcmp(action, "activate") ? FTTR_ADMIN_ACTIVATE :
 			!strcmp(action, "commit") ? FTTR_ADMIN_COMMIT :
 			!strcmp(action, "check") ? FTTR_ADMIN_UPGRADE_CHECK : FTTR_ADMIN_UPGRADE_ABORT;
-		if ((request.action == FTTR_ADMIN_DOWNLOAD) != (image_path != NULL)) return -EINVAL;
+		if ((request.action == FTTR_ADMIN_DOWNLOAD || retry_download) != (image_path != NULL)) return -EINVAL;
 		if (image_path) {
 			image_fd = open(image_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
 			if (image_fd < 0) return -errno;
@@ -754,7 +755,7 @@ int main(int argc, char **argv)
 			"       %s <miniolt-sysfs-directory> wifi <hardware-ID> <config-file> [interface=fttr0]\n"
 			"       %s <miniolt-sysfs-directory> wait-link <NI-sysfs-directory>\n",
 			argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0], argv[0]);
-		fprintf(stderr, "       %s <controller-state-directory> onu-upgrade <hardware-ID> <serial-hex> <download image-file|activate|commit|abort|check>\n", argv[0]);
+		fprintf(stderr, "       %s <controller-state-directory> onu-upgrade <hardware-ID> <serial-hex> <download image-file|retry-download image-file|activate|commit|abort|check>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-admin <hardware-ID> <serial-hex> <block|resume|deactivate|reboot>\n", argv[0]);
 		fprintf(stderr, "       %s <controller-state-directory> onu-move <source-ID> <source-serial-hex> <target-ID> <target-serial-hex>\n", argv[0]);
 		fprintf(stderr, "       %s <optical-sysfs-directory> optical\n", argv[0]);
@@ -786,12 +787,12 @@ int main(int argc, char **argv)
 	if (!strcmp(argv[2], "onu-upgrade") || !strcmp(argv[2], "onu-admin") || !strcmp(argv[2], "onu-move")) {
 		bool move = !strcmp(argv[2], "onu-move"), upgrade = !strcmp(argv[2], "onu-upgrade");
 
-		if (argc != (move || (upgrade && argc > 5 && !strcmp(argv[5], "download")) ? 7 : 6))
+		if (argc != (move || (upgrade && argc > 5 && (!strcmp(argv[5], "download") || !strcmp(argv[5], "retry-download"))) ? 7 : 6))
 			return 2;
 		if ((!move && !strcmp(argv[5], "move")) ||
-		    (!upgrade && (!strcmp(argv[5], "download") || !strcmp(argv[5], "activate") ||
+		    (!upgrade && (!strcmp(argv[5], "download") || !strcmp(argv[5], "retry-download") || !strcmp(argv[5], "activate") ||
 		     !strcmp(argv[5], "commit") || !strcmp(argv[5], "abort") || !strcmp(argv[5], "check"))) ||
-		    (upgrade && strcmp(argv[5], "download") && strcmp(argv[5], "activate") &&
+		    (upgrade && strcmp(argv[5], "download") && strcmp(argv[5], "retry-download") && strcmp(argv[5], "activate") &&
 		     strcmp(argv[5], "commit") && strcmp(argv[5], "abort") && strcmp(argv[5], "check")))
 			return 2;
 		directory = open(argv[1], O_RDONLY | O_DIRECTORY | O_CLOEXEC);

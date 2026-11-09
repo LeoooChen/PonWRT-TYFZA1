@@ -32,6 +32,10 @@ int fttr_upgrade_start(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *cou
 /* Pin a new activate/commit transaction to a prior confirmed image record.
  * Selection still reads both remote slots; no mutation on version/flag drift. */
 int fttr_upgrade_pin(struct fttr_upgrade_job *job, uint16_t image, const uint8_t version[14]);
+/* Restart a recorded pre-End download from byte zero. Both slots are read
+ * again; the recorded target must retain its version and be inactive/uncommitted. */
+int fttr_upgrade_restart(struct fttr_upgrade_job *job, uint16_t onu, uint16_t *counter,
+	const uint8_t *data, size_t size, uint16_t image, const uint8_t version[14]);
 /* One frame per call lets the resident dispatcher service other ONUs. Caller
  * checks registration identity before every send and before accepting replies.
  */

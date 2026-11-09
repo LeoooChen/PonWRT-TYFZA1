@@ -2982,13 +2982,14 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	struct onu *u;
 	uint8_t *data = NULL;
 	size_t size = 0;
+	bool retry = request->action == FTTR_ADMIN_DOWNLOAD_RETRY;
 	int ret;
 
 	*fatal = 0;
 	if (request->version != 3 || request->id >= FTTR_ONUS || request->target ||
 	    memcmp(request->target_serial, (uint8_t[8]){0}, 8) || request->action < FTTR_ADMIN_DOWNLOAD ||
-	    request->action > FTTR_ADMIN_UPGRADE_CHECK ||
-	    ((request->action == FTTR_ADMIN_DOWNLOAD) != (image_fd >= 0))) return -EINVAL;
+	    (request->action > FTTR_ADMIN_UPGRADE_CHECK && !retry) ||
+	    ((request->action == FTTR_ADMIN_DOWNLOAD || retry) != (image_fd >= 0))) return -EINVAL;
 	if (request->action == FTTR_ADMIN_UPGRADE_ABORT) {
 		if (!c->upgrade.active || c->upgrade.request.id != request->id ||
 		    memcmp(c->upgrade.request.serial, request->serial, 8)) return -ESTALE;
@@ -3006,7 +3007,14 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	ret = upgrade_record_load(c, request->serial, &u->upgrade_record);
 	if (ret && ret != -ENOENT) return ret;
 	u->upgrade_held = !ret;
-	if (request->action == FTTR_ADMIN_UPGRADE_CHECK) {
+	if (retry) {
+		if (ret) return ret;
+		if (!u->upgrade_record.pending || u->upgrade_record.action != FTTR_UPGRADE_DOWNLOAD)
+			return -EALREADY;
+		/* End may already have started flash programming. There is no
+		 * proven remote cancel/offset query, so never restart that phase. */
+		if (u->upgrade_record.stage != FTTR_UPGRADE_START) return -EBUSY;
+	} else if (request->action == FTTR_ADMIN_UPGRADE_CHECK) {
 		if (ret) return ret;
 		/* An incomplete download has no verified expected new version. */
 		if (u->upgrade_record.action == FTTR_UPGRADE_DOWNLOAD && u->upgrade_record.pending) return -ENODATA;
@@ -3015,6 +3023,9 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	if (image_fd >= 0) {
 		ret = upgrade_image(image_fd, &data, &size);
 		if (ret) return ret;
+		if (retry && (size != u->upgrade_record.size || fttr_omci_crc(data, size) != u->upgrade_record.crc)) {
+			free(data); return -ESTALE;
+		}
 	}
 	ret = forwarding(c, false);
 	if (!ret) ret = cancel_state(c, request->id, true, true);
@@ -3026,7 +3037,8 @@ static int upgrade_request(struct controller *c, const struct fttr_admin_request
 	u->hardware = observed;
 	u->upgrade_store_error = 0;
 	u->upgrade_marked = false;
-	ret = request->action == FTTR_ADMIN_UPGRADE_CHECK ?
+	ret = retry ? fttr_upgrade_restart(&u->upgrade, request->id, &c->transaction, data, size,
+			u->upgrade_record.image, u->upgrade_record.version) : request->action == FTTR_ADMIN_UPGRADE_CHECK ?
 		fttr_upgrade_check(&u->upgrade, request->id, &c->transaction, u->upgrade_record.action,
 			u->upgrade_record.image, u->upgrade_record.version) :
 		fttr_upgrade_start(&u->upgrade, request->id, &c->transaction,
@@ -3101,7 +3113,8 @@ static int receive_control(struct controller *c)
 	}
 	if (!((request.version == 1 && size == offsetof(struct fttr_admin_request, target)) ||
 	      ((request.version == 2 || request.version == 3) && size == sizeof(request))) ||
-	    fd_count > 1 || (fd_count && (request.version != 3 || request.action != FTTR_ADMIN_DOWNLOAD)) ||
+	    fd_count > 1 || (fd_count && (request.version != 3 ||
+	     (request.action != FTTR_ADMIN_DOWNLOAD && request.action != FTTR_ADMIN_DOWNLOAD_RETRY))) ||
 	    message.msg_flags & (MSG_TRUNC | MSG_CTRUNC))
 		result = -EINVAL;
 	else if (!authorized)

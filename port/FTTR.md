@@ -9462,6 +9462,62 @@ access occurred; this increment was package-tested, not included in the prior
 full RAM FIT receipt. Complete scan identity/termination, resident neighbor
 collection, roaming decisions and physical RF verification remain open.
 
+### Restarting a recorded download before End Download
+
+A new explicit command retries an interrupted download without removing its
+durable ownership or re-enabling the ONU's service first:
+
+```sh
+fttrctl /var/run/tyfza1-fttr onu-upgrade 7 5445535400000007 retry-download /path/to/image.bin
+```
+
+The record must belong to the current controller/backend/SN, be a pending
+download and still record the pre-End START stage. The supplied regular file
+is copied into an immutable buffer and its length and original OMCI CRC must
+match the retained record before any new datapath or OMCI operation. This is
+accidental-change/transport consistency checking, not a cryptographic identity,
+signature or model-compatibility check. No file path from a prior process is
+implicitly reopened, and no automatic retry is started after a crash.
+
+Both Software Image slots are read again. The recorded slot and14-byte old
+version must still match, and the slot must remain inactive and uncommitted;
+another eligible slot cannot replace it. New START intent is fsynced before
+sending. The transfer restarts at byte zero with the normal negotiated window
+and existing retry rules. After End succeeds, independent readback accepts
+the new version and saves that identity for later activate/commit. The old
+version pin authorizes replacement of the selected slot, not a requirement
+that the downloaded version remain old. Download retry never activates or
+commits an image.
+
+`tools/trace_stock_fttr_download_restart.py` executes the original ONU
+normalizer, Start handler and response serializer. Four window sizes and
+inactive/valid/active/committed flags confirm that a new Start removes the
+partial file, frees the old window and clears partial receive state; active or
+committed slots refuse it. MIB, file/allocation/timer boundaries and the
+flash-validity feature are modeled. This establishes restart semantics, not
+arbitrary offset resume. Once End intent has been stored, retry-download
+returns EBUSY: flash programming may already be in progress and no proven
+cancel/remote-offset API is available. Confirmed downloads and pending
+activate/commit records are also not accepted by this retry entry.
+
+Validation:102 native state-machine/original relay wire scenarios,16 actual
+ONU Start/reset cases, and28 real daemon/CLI/FD/veth scenarios per ASIC9690,
+FPGA1 and FPGA2. New cases cover SIGKILL during download, changed size/content,
+target flag drift, a second crash during retry, End already sent, and failed
+retry intent persistence before START. They verify complete retransmitted
+bytes, preserved original record on rejection/failure and the other ONU's
+datapath during each live retry. Existing upgrade-record corruption/fsync and
+admin-release checks pass. Shutdown testing now waits for the actual process
+instead of replying to queued packets after the test has requested termination;
+runtime packet failures remain errors. Host daemon/control and full musl
+packages build;67 source/header inputs and four installed programs match
+package staging. Artifacts are `artifacts/fttr/download-retry-*-20261109.*` and
+`download-restart-original-20261109.json`.
+
+No kernel/PE code changed and no device was accessed. Resume at a confirmed
+remote byte offset, recovery after End with unknown outcome, cryptographic
+image/model verification and physical flashing/boot acceptance remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
