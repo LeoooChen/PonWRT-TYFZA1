@@ -47,10 +47,8 @@ status)
 	[ ! -e /sys/class/net/ponfeed0 ] || "$BASE/queue" ponfeed0
 	if [ -r "$STATE/output" ]; then
 		output=$(cat "$STATE/output")
-		case "$output" in
-		ap5|ap2) [ ! -r "/sys/class/net/$output/device/radio_tx" ] ||
-			grep -E 'PE_NI_sent=|PE_Cause=' "/sys/class/net/$output/device/radio_tx";;
-		esac
+		[ ! -r "/sys/class/net/$output/device/radio_tx" ] ||
+			grep -E 'PE_NI_sent=|PE_Cause=' "/sys/class/net/$output/device/radio_tx"
 	fi
 	[ ! -e /sys/class/net/ponsink0/queues/rx-0/rps_cpus ] || {
 		printf "sink_rps_cpus="; cat /sys/class/net/ponsink0/queues/rx-0/rps_cpus
@@ -58,12 +56,13 @@ status)
 	}
 	exit 0;;
 start) ;;
-*) echo "Usage: $0 start tcp|udp ap5|ap2|lan1|lan2|lan3|lan4 PEER_IP PEER_MAC | stop | status" >&2; exit 2;;
+*) echo "Usage: $0 start tcp|udp INTERFACE PEER_IP PEER_MAC | stop | status" >&2; exit 2;;
 esac
 [ "$#" = 5 ] || exit 2
 protocol=$2 output=$3 peer_ip=$4 peer_mac=$5
 case "$protocol" in tcp) udp=0;; udp) udp=1;; *) exit 2;; esac
-case "$output" in ap5|ap2|lan1|lan2|lan3|lan4) ;; *) exit 2;; esac
+# A live OpenWrt AP is typically phyN-apM; do not tie the endpoint to an alias.
+case "$output" in ''|*[!a-zA-Z0-9_.:-]*) echo 'Invalid output interface name' >&2; exit 2;; esac
 [ -d "/sys/class/net/$output" ] || { echo "Output $output unavailable" >&2; exit 1; }
 [ "$(cat "/sys/class/net/$output/carrier")" = 1 ] || { echo "Output $output has no link" >&2; exit 1; }
 if ip rule list | grep -q '^22000:'; then echo 'IP rule priority 22000 already in use' >&2; exit 1; fi

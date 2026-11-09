@@ -221,6 +221,39 @@ int main(void){
 }
 '''
 
+# Actual hardware-to-EQ selection, independent of aliases and parent depth.
+eq_prefix = r'''
+#include <assert.h>
+#include <stddef.h>
+#define EOPNOTSUPP 95
+#define PCI_VENDOR_ID_REALTEK 0x10ec
+struct device {struct device *parent; int pci;};
+struct pci_dev {struct device dev;unsigned vendor,device;};
+struct net_device {struct device dev;char name[16];};
+#define dev_is_pci(d) ((d)->pci)
+#define to_pci_dev(d) ((struct pci_dev *)(d))
+'''
+eq_checks = r'''
+int main(void){
+ struct pci_dev c={.dev={.pci=1},.vendor=0x10ec,.device=0xc852};
+ struct pci_dev xb={.dev={.pci=1},.vendor=0x10ec,.device=0x0192};
+ struct device intermediate={.parent=&c.dev};
+ struct net_device n={.dev={.parent=&c.dev},.name="phy86-ap0"};
+ assert(radio_eq(&n)==6);
+ n.dev.parent=&intermediate;assert(radio_eq(&n)==6);
+ n.dev.parent=&xb.dev;assert(radio_eq(&n)==7);
+ xb.vendor=0x1234;assert(radio_eq(&n)==-EOPNOTSUPP);
+ xb.vendor=0x10ec;xb.device=0x1234;assert(radio_eq(&n)==-EOPNOTSUPP);
+ n.dev.parent=0;assert(radio_eq(&n)==-EOPNOTSUPP);
+}
+'''
+with tempfile.TemporaryDirectory(prefix='pon-feed-eq-') as directory:
+    eq_path = Path(directory)
+    (eq_path/'eq.c').write_text(eq_prefix + function('radio_eq') + eq_checks)
+    subprocess.run(['cc','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',
+                    str(eq_path/'eq.c'),'-o',str(eq_path/'eq')],check=True)
+    subprocess.run([str(eq_path/'eq')],check=True)
+
 with tempfile.TemporaryDirectory(prefix='pon-tcp-feed-') as directory:
     path = Path(directory)
     program = prefix + '\n'.join(function(n) for n in ('room', 'tick', 'copy_payload', 'transmit')) + checks
