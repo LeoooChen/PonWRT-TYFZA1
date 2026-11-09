@@ -9038,6 +9038,49 @@ fttr-sync-policy build successfully; reports are
 `artifacts/fttr/iptv-port-*-20261109.*`. Kernel/PE and physical devices were not
 changed or exercised.
 
+### Original web-password synchronization with redacted output
+
+The native client implements the retained `GetWebPassword` / `SetWebPassword`
+RPCs. The target controller's builders read MIB175 into a30-byte string buffer
+and emit `WebAdminPassword`, alongside method and source MAC. The offline oracle
+executes these builders, their nested form, Ethernet encoder and pending ACK
+branches using synthetic values only; no real saved password is read.
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa web-password
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa web-password-apply /etc/fttr-web-password.json
+```
+
+The private file contains exactly `WebAdminPassword` as a string of0..29 UTF-8
+bytes, without embedded NUL. This preserves the original field capacity; it does
+not infer the subordinate's login acceptance rules. The value is supplied in a
+file, not a command-line argument. Query output reports only that a valid field
+was returned, never the password. Apply performs a complete identity-correlated
+preflight, one Set and independent readback, including after a lost/rejected ACK.
+It reports `password_matches` separately from `credentials_verified:false`:
+matching reported text does not prove that an HTTP login succeeds. The inherited
+syncserv Ethernet protocol carries the value as JSON without encryption; output
+redaction does not change its wire format.
+
+Resident peers accept `WebPassword` with the same one-field object, after WiFi,
+Radios, Time and any IPTV configuration, before EasyMesh. Ready0 does not write.
+With persistent state, version7 includes the exact desired value in the existing
+private mode0600 record and commits attempted bit22 before transmission. This
+record contains credentials and must retain its private directory permissions.
+Recovery reads and compares without replaying Set; same-Revision changes are
+rejected. Other policies retain their existing version. Password strings and
+field values are omitted from CLI/event/test reports; private desired state is
+not mislabeled as an encrypted secret store.
+
+Validation covers five original synthetic length/escaping recipes,31 actual
+AF_PACKET CLI/resident cases and15 schema cases, including29-byte/UTF-8 bounds,
+empty passwords, escaping, output redaction, mode0600 state, errors/timeout,
+re-registration, fsync failure, SIGKILL/restart, Ready0, revision drift and ordered
+mixed policies. ASan/UBSan reply parsing and existing Time/IPTV/port/store
+regressions pass. Host fttr-sync and musl fttr-sync/fttr-sync-policy compile;
+artifacts are `artifacts/fttr/web-password-*-20261109.*`. No physical device,
+credential installation or login was tested. Kernel/PE are unchanged.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

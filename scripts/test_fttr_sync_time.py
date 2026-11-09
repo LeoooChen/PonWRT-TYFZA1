@@ -6,10 +6,14 @@ ROOT=Path(__file__).resolve().parents[1]
 import sys
 sys.path.insert(0,str(ROOT/'tools'))
 from trace_stock_fttr_time import TimeOriginal
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--controller',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--iptv',action='store_true');p.add_argument('--ports',action='store_true');a=p.parse_args()
-assert not (a.iptv and a.ports)
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--controller',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--iptv',action='store_true');p.add_argument('--ports',action='store_true');p.add_argument('--password',action='store_true');a=p.parse_args()
+assert sum((a.iptv,a.ports,a.password))<=1
 assert {x['ifname'] for x in json.loads(subprocess.check_output(['ip','-j','link'],text=True))}=={'lo'}
-if a.ports:
+if a.password:
+ from trace_stock_fttr_web_password import PasswordOriginal
+ stock=PasswordOriginal(a.controller);original=stock.password_request;setting='WebPassword';command='web-password';read_method='GetWebPassword';write_method='SetWebPassword'
+ enabled=mismatch='WebAdminPassword';verification='credentials_verified';version=7;attempt=1<<22
+elif a.ports:
  from trace_stock_fttr_iptv_port import PortOriginal
  stock=PortOriginal(a.controller);original=stock.ports;setting='IPTVPorts';command='iptv-ports';read_method='GetIPTVPortInfo';write_method='SetIPTVPortInfo'
  enabled='IPTVLanPort';mismatch='IPTVVlanId';verification='traffic_verified';version=6;attempt=1<<21
@@ -23,14 +27,17 @@ else:
  enabled='TimeEnable';mismatch='TimeZone';verification='clock_synchronized';version=4;attempt=1<<19
 host=stock.mac;target=stock.peer;group=bytes.fromhex('0110ec000002');master=bytes.fromhex('0110ec000001')
 config={k:v for k,v in original(True).items() if k not in ('RPCMethod','MAC')}
-base={'IPTVLanPort':''} if a.ports else {enabled:0} if a.iptv else dict(config,TimeEnable=0,TimeZone=0)
+base={enabled:'synthetic-old-password'} if a.password else {'IPTVLanPort':''} if a.ports else {enabled:0} if a.iptv else dict(config,TimeEnable=0,TimeZone=0)
 src=ROOT/'port/packages/tyfza1-fttr/src'
 with tempfile.TemporaryDirectory() as temp:
  work=Path(temp);binary=work/'fttr-sync';files=('fttr-sync','sync-client','sync-controller','sync-store','sync-wire','sync-peer','sync-wifi','sync-json','sync-register','omci-socket','omci-wire')
  subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror',*[str(src/(n+'.c')) for n in files],'-ljson-c','-o',str(binary)],check=True)
  subprocess.run(['cc','-std=c11','-O1','-Wall','-Wextra','-Werror','-shared','-fPIC',*[str(src/(n+'.c')) for n in ('sync-client','sync-wire','sync-peer')],'-ljson-c','-o',str(work/'client.so')],check=True)
- lib=C.CDLL(str(work/'client.so'));lib.json_tokener_parse.argtypes=[C.c_char_p];lib.json_tokener_parse.restype=C.c_void_p;lib.json_object_put.argtypes=[C.c_void_p];validate=lib.fttr_sync_iptv_ports_validate if a.ports else lib.fttr_sync_iptv_validate if a.iptv else lib.fttr_sync_time_validate;validate.argtypes=[C.c_void_p]
- if a.ports:
+ lib=C.CDLL(str(work/'client.so'));lib.json_tokener_parse.argtypes=[C.c_char_p];lib.json_tokener_parse.restype=C.c_void_p;lib.json_object_put.argtypes=[C.c_void_p];validate=lib.fttr_sync_web_password_validate if a.password else lib.fttr_sync_iptv_ports_validate if a.ports else lib.fttr_sync_iptv_validate if a.iptv else lib.fttr_sync_time_validate;validate.argtypes=[C.c_void_p]
+ if a.password:
+  valid=[config,dict(WebAdminPassword=''),dict(WebAdminPassword='x'*29),dict(WebAdminPassword='合成密码'),dict(WebAdminPassword='a"\\b')]
+  invalid=[None,[],{},dict(WebAdminPassword=None),dict(WebAdminPassword=True),dict(WebAdminPassword=1),dict(WebAdminPassword='x'*30),dict(WebAdminPassword='密'*10),dict(WebAdminPassword='a\0b'),dict(config,extra=1)]
+ elif a.ports:
   invalid=[None,[],{},dict(config,IPTVVlanId=100),dict(config,IPTVVlanId='4095'),dict(config,IPTVVlanId='-1'),dict(config,IPTVVlanId='01'),dict(config,extra=1)]
   invalid += [dict(config,IPTVLanPort=x) for x in ('1,1','0','01','-1','1,','1,,2','1;2','LAN1','1\0,2','2147483648','1,'*16+'2')]
   valid=[config,dict(config,IPTVLanPort=''),dict(config,IPTVLanPort='17,23',IPTVVlanId='0'),dict(config,IPTVLanPort='2147483647',IPTVVlanId='4094'),dict(config,IPTVLanPort='3,1'),dict(config,IPTVLanPort='12345678,12345679,12345680,1234')]
@@ -68,6 +75,8 @@ with tempfile.TemporaryDirectory() as temp:
  cases=[]
  def run(case):
   desired=copy.deepcopy(config);state=copy.deepcopy(base)
+  if a.password and case in ('empty-password','max-password','utf8-password','escaped-password'):
+   desired={enabled:{'empty-password':'','max-password':'x'*29,'utf8-password':'合成密码','escaped-password':'a"\\b'}[case]};stock.password=desired[enabled]
   if case=='clear-ports':desired=dict(config,IPTVLanPort='');state=copy.deepcopy(config)
   if case=='numeric-ports':desired=dict(config,IPTVLanPort='17,23',IPTVVlanId='0')
   if case=='disable':desired={enabled:0};state=copy.deepcopy(config);stock.rows=[]
@@ -76,7 +85,7 @@ with tempfile.TemporaryDirectory() as temp:
   path=work/'time.json';path.write_text(json.dumps(desired)+'\n');path.chmod(0o600)
   if case=='private-mode':path.chmod(0o644)
   if case=='invalid':path.write_text(json.dumps(dict(desired,**{enabled:2})))
-  list(packets());cmd=[str(binary),'time-host',target.hex(':'),'auto' if case=='auto' else '5','0x88aa',(command if a.ports else command+'-settings') if case=='read-only' else command+'-apply']
+  list(packets());cmd=[str(binary),'time-host',target.hex(':'),'auto' if case=='auto' else '5','0x88aa',(command if a.ports or a.password else command+'-settings') if case=='read-only' else command+'-apply']
   if case!='read-only':cmd.append(str(path))
   proc=subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True);deadline=time.monotonic()+12;gets=writes=0
   try:
@@ -92,8 +101,8 @@ with tempfile.TemporaryDirectory() as temp:
       if case=='preflight-timeout' or case=='ack-only':send({'Result':1});continue
       if case=='readback-timeout' and gets==2:continue
       if case=='wrong-mac':send(dict(state,Result=1,MAC='02000000BEEF'));continue
-      if case=='malformed':send(dict(state,Result=1,MAC=target.hex().upper(),**{enabled:1 if a.ports else '1'}));continue
-      if case=='partial':send(dict(Result=1,MAC=target.hex().upper(),**({'IPTVVlanId':'100'} if a.ports else {enabled:1})));continue
+      if case=='malformed':send(dict(state,Result=1,MAC=target.hex().upper(),**{enabled:1 if a.ports or a.password else '1'}));continue
+      if case=='partial':send(dict(Result=1,MAC=target.hex().upper(),**({'unrelated':'value'} if a.password else {'IPTVVlanId':'100'} if a.ports else {enabled:1})));continue
       if case=='unrelated':send(dict(state,Result=1,MAC=target.hex().upper(),RPCMethod='GetWifi'),other=False)
       if case=='foreign-source':send(dict(state,Result=1,MAC=target.hex().upper()),other=True)
       read_reply(state,method=case!='no-method',fragment=case=='fragments')
@@ -103,8 +112,13 @@ with tempfile.TemporaryDirectory() as temp:
       if case=='registration':send({'RPCMethod':'Register'});continue
       if case=='write-timeout':continue
       send({'Result':0 if case=='nack' else 1,**({'RPCMethod':write_method} if case!='no-method' else {})})
-   out,err=proc.communicate();result=json.loads(out) if out.strip() else None
-   good=case in ('ok','no-method','fragments','unrelated','foreign-source','auto','read-only','disable','untagged','empty-ports','clear-ports','numeric-ports')
+   out,err=proc.communicate()
+   if a.password:
+    assert 'WebAdminPassword' not in out+err
+    for secret in (config[enabled],base[enabled],desired[enabled]):
+     if secret:assert secret not in out+err and json.dumps(secret,ensure_ascii=True)[1:-1] not in out+err
+   result=json.loads(out) if out.strip() else None
+   good=case in ('ok','no-method','fragments','unrelated','foreign-source','auto','read-only','disable','untagged','empty-ports','clear-ports','numeric-ports','empty-password','max-password','utf8-password','escaped-password')
    assert (proc.returncode==0)==good,(case,proc.returncode,out,err)
    if case in ('private-mode','invalid','preflight-timeout','ack-only','wrong-mac','malformed','partial'):assert writes==0
    if case=='registration':assert gets==1 and writes==1
@@ -113,7 +127,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert result['write_attempted'] and not result[verification] and not result['configuration_verified']
     assert result['readable_fields_match']==(case not in ('mismatch','readback-timeout','registration'))
     if case in ('nack','write-timeout'):assert result['write_result'] and not result['readback_result']
-   if case=='read-only':assert result['reported']==base and not result[verification]
+   if case=='read-only':
+    if a.password:assert result['password_reported'] and result['values_redacted'] and 'reported' not in result and not result['credentials_verified']
+    else:assert result['reported']==base and not result[verification]
    cases.append(dict(case=case,gets=gets,writes=writes,exit=proc.returncode))
   finally:
    if proc.poll() is None:proc.kill();proc.communicate()
@@ -123,6 +139,9 @@ with tempfile.TemporaryDirectory() as temp:
   stock.rows=[stock.row(mask=5,vid=100)]
  if a.ports:
   for case in ('clear-ports','numeric-ports'):run(case)
+ if a.password:
+  for case in ('empty-password','max-password','utf8-password','escaped-password'):run(case)
+  stock.password=config[enabled]
  # Resident automatic transaction with durable revision and read-only restart.
  faults=ast.parse((ROOT/'scripts/test_fttr_sync_store.py').read_text())
  fault_code=next(ast.literal_eval(n.value) for n in faults.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='FAULTS' for t in n.targets))
@@ -146,20 +165,25 @@ with tempfile.TemporaryDirectory() as temp:
      query=json.loads(frame[20:])
      if frame[14]&15==7 or query.get('RPCMethod')=='Register':continue
      if query['RPCMethod']==read_method:
-      if case=='mixed':assert order==(['WiFi','Radio','Time'] if a.iptv or a.ports else ['WiFi','Radio'])
+      if case=='mixed':assert order==(['WiFi','Radio','Time','IPTV'] if a.password else ['WiFi','Radio','Time'] if a.iptv or a.ports else ['WiFi','Radio'])
       gets+=1;read_reply(state)
       if case in ('restart','ready-zero'):end=min(end,time.monotonic()+1)
      elif query['RPCMethod']==write_method:
       writes+=1;records=list(store.glob('*.json'));assert len(records)==1
-      record=json.loads(records[0].read_text());assert record['version']==version and record['attempted']==(attempt|(1<<17)|1|((1<<19) if a.iptv or a.ports else 0) if case=='mixed' else attempt) and record[setting.lower()]==config
+      assert records[0].stat().st_mode&0o777==0o600
+      record=json.loads(records[0].read_text());assert record['version']==version and record['attempted']==(attempt|(1<<17)|1|((1<<19) if a.iptv or a.ports or a.password else 0)|((1<<20) if a.password else 0) if case=='mixed' else attempt) and record[setting.lower()]==config
       state=copy.deepcopy(config)
       if kill_after_write:proc.kill();break
       send({'Result':1})
-     elif (a.iptv or a.ports) and query['RPCMethod']=='GetTimeSetting':
+     elif (a.iptv or a.ports or a.password) and query['RPCMethod']=='GetTimeSetting':
       assert case=='mixed' and order in (['WiFi','Radio'],['WiFi','Radio','Time'])
       send(dict(policy['Peers'][0]['Time'],Result=1,MAC=target.hex().upper()))
-     elif (a.iptv or a.ports) and query['RPCMethod']=='SetTimeSetting':
+     elif (a.iptv or a.ports or a.password) and query['RPCMethod']=='SetTimeSetting':
       assert case=='mixed' and order==['WiFi','Radio'];order.append('Time');send({'Result':1})
+     elif a.password and query['RPCMethod']=='GetIPTVSetting':
+      assert case=='mixed' and order in (['WiFi','Radio','Time'],['WiFi','Radio','Time','IPTV']);send(dict(policy['Peers'][0]['IPTV'],Result=1,MAC=target.hex().upper()))
+     elif a.password and query['RPCMethod']=='SetIPTVSetting':
+      assert case=='mixed' and order==['WiFi','Radio','Time'];order.append('IPTV');send({'Result':1})
      elif query['RPCMethod']=='SetAllSetting':
       assert case=='mixed' and not gets and query['Flag']==1
       want=policy['Peers'][0]['WiFi'][0]
@@ -176,6 +200,7 @@ with tempfile.TemporaryDirectory() as temp:
     if (case in ('initial','mixed') and gets==2) or (case in ('restart','ready-zero') and gets==1):
      time.sleep(0.05);proc.terminate();break
    out,err=proc.communicate(timeout=3)
+   if a.password:assert config[enabled] not in out+err and base[enabled] not in out+err
    events=[json.loads(x) for x in out.splitlines()]
    if case in ('initial','mixed'):assert writes==1 and gets==2 and any(x['event']=='sync_resident_apply' and x.get('setting')==setting and x['readable_fields_match'] for x in events),(out,err)
    if case=='restart':assert writes==0 and gets==1 and any(x['event']=='sync_resident_recovery' and x.get('setting')==setting and not x['write_replayed'] for x in events),(out,err)
@@ -186,7 +211,7 @@ with tempfile.TemporaryDirectory() as temp:
    cases.append(dict(case='resident-'+case,gets=gets,writes=writes))
   finally:
    if proc.poll() is None:proc.kill();proc.communicate()
- resident('initial');resident('restart');policy['Peers'][0][setting]=dict(config,**{mismatch:'0' if a.ports else 0});resident('drift')
+ resident('initial');resident('restart');policy['Peers'][0][setting]=dict(config,**{mismatch:'synthetic-other-password' if a.password else '0' if a.ports else 0});resident('drift')
  policy['Peers'][0][setting]=config
  if a.ports:
   policy['Peers'][0]['IPTV']={'IPTVEnable':0};resident('conflict');del policy['Peers'][0]['IPTV']
@@ -205,7 +230,8 @@ with tempfile.TemporaryDirectory() as temp:
  policy['Peers'][0]['Registration']['Ready']=1
  policy['Peers'][0]['WiFi']=[{'act':'config','SSIDIndex':'1','SSID':'time-test','PWD':'','ENCRYPT':0,'Enable':1,'Standard':'11bgn','SSIDAdvertisementEnabled':'true'}]
  policy['Peers'][0]['Radios']=[{'RadioType':'2.4G','Enable':'1','TransmitPower':'80','Standard':'11bgn','Channel':'6','FrequencyWidth':'20M'}]
- if a.iptv or a.ports:policy['Peers'][0]['Time']={'TimeEnable':1,'TimeZone':24,'NTPServer1':'192.0.2.123','NTPServer2':''}
+ if a.iptv or a.ports or a.password:policy['Peers'][0]['Time']={'TimeEnable':1,'TimeZone':24,'NTPServer1':'192.0.2.123','NTPServer2':''}
+ if a.password:policy['Peers'][0]['IPTV']={'IPTVEnable':0}
  resident('mixed')
  remote.close()
 a.output.write_text(json.dumps({'cases':cases,'validation_cases':len(invalid)+len(valid),'scope':'Actual CLI/controller over AF_PACKET/veth; original request builders, synthetic remote reports, no physical peer, time synchronization or IPTV forwarding.'},indent=2)+'\n')

@@ -274,12 +274,30 @@ int fttr_sync_iptv_ports_check(struct json_object *observed,struct json_object *
  return compare && !json_object_equal(have,want)?-EUCLEAN:0;
 }
 
+/* Preserve the original MIB175 byte bound without guessing login policy.
+ * Returned values are used only for in-memory comparison, never summaries. */
+int fttr_sync_web_password_validate(struct json_object *value)
+{
+ struct json_object *field;
+ if(!value || !json_object_is_type(value,json_type_object) || json_object_object_length(value)!=1 ||
+    !json_object_object_get_ex(value,"WebAdminPassword",&field) || !json_object_is_type(field,json_type_string) ||
+    json_object_get_string_len(field)>29 || (size_t)json_object_get_string_len(field)!=strlen(json_object_get_string(field)))return -EINVAL;
+ return 0;
+}
+
+int fttr_sync_web_password_check(struct json_object *observed,struct json_object *desired,bool compare)
+{
+ if(fttr_sync_web_password_validate(desired))return -EINVAL;
+ if(fttr_sync_web_password_validate(observed))return -EBADMSG;
+ return compare && !json_object_equal(observed,desired)?-EUCLEAN:0;
+}
+
 static int settings_reply(struct json_object *value,const uint8_t peer[6],unsigned int settings,
  bool *ack_seen,struct json_object **summary,struct json_object **observed)
 {
  struct json_object *field,*result=NULL,*fields=NULL;
- bool ports=settings==11 || settings==12,iptv=settings==9 || settings==10,writing=settings==8 || settings==10 || settings==12;
- const char *expected=ports?(writing?"SetIPTVPortInfo":"GetIPTVPortInfo"):iptv?(writing?"SetIPTVSetting":"GetIPTVSetting"):(writing?"SetTimeSetting":"GetTimeSetting");
+ bool password=settings==13 || settings==14,ports=settings==11 || settings==12,iptv=settings==9 || settings==10,writing=settings==8 || settings==10 || settings==12 || settings==14;
+ const char *expected=password?(writing?"SetWebPassword":"GetWebPassword"):ports?(writing?"SetIPTVPortInfo":"GetIPTVPortInfo"):iptv?(writing?"SetIPTVSetting":"GetIPTVSetting"):(writing?"SetTimeSetting":"GetTimeSetting");
  int ret=-EBADMSG;
  if(json_object_object_get_ex(value,"RPCMethod",&field)) {
   if(!json_object_is_type(field,json_type_string) || (size_t)json_object_get_string_len(field)!=strlen(json_object_get_string(field)))return ret;
@@ -303,8 +321,9 @@ static int settings_reply(struct json_object *value,const uint8_t peer[6],unsign
  const char *time_names[]={"TimeEnable","NTPServer1","NTPServer2","TimeZone"};
  const char *iptv_names[]={"IPTVEnable","IPTVVlan","IPTVLanPort"};
  const char *port_names[]={"IPTVLanPort"};
- const char *const *names=ports?port_names:iptv?iptv_names:time_names;
- unsigned int count=ports?1:iptv?3:4;
+ const char *password_names[]={"WebAdminPassword"};
+ const char *const *names=password?password_names:ports?port_names:iptv?iptv_names:time_names;
+ unsigned int count=password || ports?1:iptv?3:4;
  if(iptv) {
   if(!json_object_object_get_ex(value,"IPTVEnable",&field)) {ret=-EAGAIN;goto out;}
   if(!json_object_is_type(field,json_type_int))goto out;
@@ -314,12 +333,16 @@ static int settings_reply(struct json_object *value,const uint8_t peer[6],unsign
   if(!json_object_object_get_ex(value,names[i],&field)){ret=-EAGAIN;goto out;}
   json_object_object_add(fields,names[i],json_object_get(field));
  }
- if(ports?iptv_ports_field(fields):iptv?fttr_sync_iptv_validate(fields):fttr_sync_time_validate(fields))goto out;
+ if(password?fttr_sync_web_password_validate(fields):ports?iptv_ports_field(fields):iptv?fttr_sync_iptv_validate(fields):fttr_sync_time_validate(fields))goto out;
  result=json_object_new_object();if(!result){ret=-ENOMEM;goto out;}
- json_object_object_add(result,"event",json_object_new_string(ports?"sync_iptv_ports":iptv?"sync_iptv_settings":"sync_time_settings"));
- json_object_object_add(result,"reported",json_object_get(fields));
+ json_object_object_add(result,"event",json_object_new_string(password?"sync_web_password":ports?"sync_iptv_ports":iptv?"sync_iptv_settings":"sync_time_settings"));
+ if(password) {
+  json_object_object_add(result,"values_redacted",json_object_new_boolean(1));
+  json_object_object_add(result,"password_reported",json_object_new_boolean(1));
+  json_object_object_add(result,"credentials_verified",json_object_new_boolean(0));
+ } else json_object_object_add(result,"reported",json_object_get(fields));
  if(ports)json_object_object_add(result,"vlan_verified",json_object_new_boolean(0));
- json_object_object_add(result,iptv || ports?"traffic_verified":"clock_synchronized",json_object_new_boolean(0));
+ if(!password)json_object_object_add(result,iptv || ports?"traffic_verified":"clock_synchronized",json_object_new_boolean(0));
  json_object_object_add(result,"identity_authenticated",json_object_new_boolean(0));
  if(observed)*observed=json_object_get(fields);
  *summary=result;ret=0;
@@ -348,7 +371,7 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    json_tokener_get_parse_end(parser) != message->length ||
 	    !json_object_is_type(value, json_type_object))
 		goto out;
-	if(settings>=7 && settings<=12) {ret=settings_reply(value,peer,settings,ack_seen,summary,observed);goto out;}
+	if(settings>=7 && settings<=14) {ret=settings_reply(value,peer,settings,ack_seen,summary,observed);goto out;}
 	if (settings == 6) {
 		ret = wan_reply(value, ack_seen);
 		goto out;
@@ -554,16 +577,16 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 12 || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12) && !configuration)) return -EINVAL;
+	if (settings > 14 || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
- if(settings>=7 && settings<=12) {
-  bool ports=settings>=11,iptv=settings==9 || settings==10,writing=settings==8 || settings==10 || settings==12;
-  if(writing && (ports?fttr_sync_iptv_ports_validate(configuration):iptv?fttr_sync_iptv_validate(configuration):fttr_sync_time_validate(configuration)))return -EINVAL;
+ if(settings>=7 && settings<=14) {
+  bool password=settings>=13,ports=settings==11 || settings==12,iptv=settings==9 || settings==10,writing=settings==8 || settings==10 || settings==12 || settings==14;
+  if(writing && (password?fttr_sync_web_password_validate(configuration):ports?fttr_sync_iptv_ports_validate(configuration):iptv?fttr_sync_iptv_validate(configuration):fttr_sync_time_validate(configuration)))return -EINVAL;
   struct json_object *request=json_object_new_object();if(!request)return -ENOMEM;
   char mac[13];snprintf(mac,sizeof(mac),"%02X%02X%02X%02X%02X%02X",source[0],source[1],source[2],source[3],source[4],source[5]);
-  json_object_object_add(request,"RPCMethod",json_object_new_string(ports?(writing?"SetIPTVPortInfo":"GetIPTVPortInfo"):iptv?(writing?"SetIPTVSetting":"GetIPTVSetting"):(writing?"SetTimeSetting":"GetTimeSetting")));
+  json_object_object_add(request,"RPCMethod",json_object_new_string(password?(writing?"SetWebPassword":"GetWebPassword"):ports?(writing?"SetIPTVPortInfo":"GetIPTVPortInfo"):iptv?(writing?"SetIPTVSetting":"GetIPTVSetting"):(writing?"SetTimeSetting":"GetTimeSetting")));
   json_object_object_add(request,"MAC",json_object_new_string(mac));
   if(writing) {
    json_object_object_foreach(configuration,key,field) {json_object_object_add(request,key,json_object_get(field));}

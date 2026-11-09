@@ -248,6 +248,8 @@ int main(int argc, char **argv)
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
 	bool easymesh = argc == 7 && !strcmp(argv[5], "easymesh");
 	bool info = argc == 6 && !strcmp(argv[5], "onu-info");
+	bool password_apply=argc==7 && !strcmp(argv[5],"web-password-apply");
+	bool password_info=argc==6 && !strcmp(argv[5],"web-password");
 	bool ports_apply=argc==7 && !strcmp(argv[5],"iptv-ports-apply");
 	bool ports_info=argc==6 && !strcmp(argv[5],"iptv-ports");
 	bool iptv_apply=argc==7 && !strcmp(argv[5],"iptv-apply");
@@ -258,13 +260,13 @@ int main(int argc, char **argv)
 	bool wan = argc == 7 && !strcmp(argv[5], "wan-ip");
 	bool radio_info = argc == 6 && !strcmp(argv[5], "radio-info");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
-	unsigned int settings = ports_apply?12:ports_info?11:iptv_apply?10:iptv_info?9:time_apply?8:time_info?7:wan?6:radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
+	unsigned int settings = password_apply?14:password_info?13:ports_apply?12:ports_info?11:iptv_apply?10:iptv_info?9:time_apply?8:time_info?7:wan?6:radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && !resident && fttr_sync_mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [iptv-ports | iptv-ports-apply <private-json-file> | iptv-settings | iptv-apply <private-json-file> | time-settings | time-apply <private-json-file> | wan-ip <IPv4-or-IPv6> | onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [web-password | web-password-apply <private-json-file> | iptv-ports | iptv-ports-apply <private-json-file> | iptv-settings | iptv-apply <private-json-file> | time-settings | time-apply <private-json-file> | wan-ip <IPv4-or-IPv6> | onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n"
 			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0]);
 		return 2;
@@ -290,9 +292,9 @@ int main(int argc, char **argv)
 			goto out;
 		ret = -EINVAL;
 	}
-	if (time_apply || iptv_apply || ports_apply) {
+	if (time_apply || iptv_apply || ports_apply || password_apply) {
 		ret=fttr_sync_json_load_private(argv[6],&desired);
-		if(!ret)ret=ports_apply?fttr_sync_iptv_ports_validate(desired):iptv_apply?fttr_sync_iptv_validate(desired):fttr_sync_time_validate(desired);
+		if(!ret)ret=password_apply?fttr_sync_web_password_validate(desired):ports_apply?fttr_sync_iptv_ports_validate(desired):iptv_apply?fttr_sync_iptv_validate(desired):fttr_sync_time_validate(desired);
 		if(ret)goto out;
 		ret=-EINVAL;
 	}
@@ -415,13 +417,13 @@ int main(int argc, char **argv)
 		json_object_object_add(summary, "error", json_object_new_int(ret));
 		goto out;
 	}
-	if (apply || radio_apply || time_apply || iptv_apply || ports_apply) {
+	if (apply || radio_apply || time_apply || iptv_apply || ports_apply || password_apply) {
 		struct json_object *observed = NULL;
 		int write_result = 0, read_result = 0;
 
-		ret = exchange(fd, source, peer, ethertype, slot, ports_apply?11:iptv_apply?9:time_apply?7:radio_apply?4:1, NULL, &ack_seen, &summary, &observed);
+		ret = exchange(fd, source, peer, ethertype, slot, password_apply?13:ports_apply?11:iptv_apply?9:time_apply?7:radio_apply?4:1, NULL, &ack_seen, &summary, &observed);
 		if (!ret)
-			ret = ports_apply?fttr_sync_iptv_ports_check(observed,desired,false):iptv_apply?fttr_sync_iptv_check(observed,desired,false):time_apply?fttr_sync_time_check(observed,desired,false):radio_apply?fttr_sync_radio_check(observed,desired,false):fttr_sync_wifi_check(observed, desired, false);
+			ret = password_apply?fttr_sync_web_password_check(observed,desired,false):ports_apply?fttr_sync_iptv_ports_check(observed,desired,false):iptv_apply?fttr_sync_iptv_check(observed,desired,false):time_apply?fttr_sync_time_check(observed,desired,false):radio_apply?fttr_sync_radio_check(observed,desired,false):fttr_sync_wifi_check(observed, desired, false);
 		json_object_put(observed);
 		observed = NULL;
 		json_object_put(summary);
@@ -431,21 +433,21 @@ int main(int argc, char **argv)
 		ret = drain(fd);
 		if (ret)
 			goto out;
-		write_result = exchange(fd, source, peer, ethertype, slot, ports_apply?12:iptv_apply?10:time_apply?8:radio_apply?5:1, desired, &ack_seen, &summary, NULL);
+		write_result = exchange(fd, source, peer, ethertype, slot, password_apply?14:ports_apply?12:iptv_apply?10:time_apply?8:radio_apply?5:1, desired, &ack_seen, &summary, NULL);
 		/* A lost ACK does not imply the remote write was not applied. Always
 		 * attempt independent readback; never replay a password blindly. */
 		read_result = write_result==-ESTALE?-ESTALE:drain(fd);
 		if (!read_result)
-			read_result = exchange(fd, source, peer, ethertype, slot, ports_apply?11:iptv_apply?9:time_apply?7:radio_apply?4:1, NULL, &ack_seen, &summary, &observed);
+			read_result = exchange(fd, source, peer, ethertype, slot, password_apply?13:ports_apply?11:iptv_apply?9:time_apply?7:radio_apply?4:1, NULL, &ack_seen, &summary, &observed);
 		if (!read_result)
-			read_result = ports_apply?fttr_sync_iptv_ports_check(observed,desired,true):iptv_apply?fttr_sync_iptv_check(observed,desired,true):time_apply?fttr_sync_time_check(observed,desired,true):radio_apply?fttr_sync_radio_check(observed,desired,true):fttr_sync_wifi_check(observed, desired, true);
+			read_result = password_apply?fttr_sync_web_password_check(observed,desired,true):ports_apply?fttr_sync_iptv_ports_check(observed,desired,true):iptv_apply?fttr_sync_iptv_check(observed,desired,true):time_apply?fttr_sync_time_check(observed,desired,true):radio_apply?fttr_sync_radio_check(observed,desired,true):fttr_sync_wifi_check(observed, desired, true);
 		json_object_put(observed);
 		json_object_put(summary);
 		summary = json_object_new_object();
-		json_object_object_add(summary, "event", json_object_new_string(ports_apply?"sync_iptv_ports_apply":iptv_apply?"sync_iptv_apply":time_apply?"sync_time_apply":radio_apply?"sync_radio_apply":"sync_wifi_apply"));
+		json_object_object_add(summary, "event", json_object_new_string(password_apply?"sync_web_password_apply":ports_apply?"sync_iptv_ports_apply":iptv_apply?"sync_iptv_apply":time_apply?"sync_time_apply":radio_apply?"sync_radio_apply":"sync_wifi_apply"));
 		json_object_object_add(summary, "peer", json_object_new_string(argv[2]));
 		json_object_object_add(summary, "slot", json_object_new_int(slot));
-		if(!time_apply && !iptv_apply && !ports_apply) {
+		if(!time_apply && !iptv_apply && !ports_apply && !password_apply) {
 			struct json_object *ssid_index;
 
 			json_object_object_get_ex(desired, radio_apply?"RadioType":"SSIDIndex", &ssid_index);
@@ -455,6 +457,7 @@ int main(int argc, char **argv)
 		json_object_object_add(summary, "write_result", json_object_new_int(write_result));
 		json_object_object_add(summary, "readback_result", json_object_new_int(read_result));
 		json_object_object_add(summary, "readable_fields_match", json_object_new_boolean(!read_result));
+		if(password_apply)json_object_object_add(summary,"password_matches",json_object_new_boolean(!read_result));
 		if(ports_apply){
    json_object_object_add(summary,"ports_match",json_object_new_boolean(!read_result));
    json_object_object_add(summary,"vlan_verified",json_object_new_boolean(0));
@@ -475,7 +478,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : ports_apply ? "iptv-ports-apply" : ports_info ? "iptv-ports" : iptv_apply ? "iptv-apply" : iptv_info ? "iptv-settings" : time_apply ? "time-apply" : time_info ? "time-settings" : wan ? "wan-ip" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : password_apply ? "web-password-apply" : password_info ? "web-password" : ports_apply ? "iptv-ports-apply" : ports_info ? "iptv-ports" : iptv_apply ? "iptv-apply" : iptv_info ? "iptv-settings" : time_apply ? "time-apply" : time_info ? "time-settings" : wan ? "wan-ip" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);

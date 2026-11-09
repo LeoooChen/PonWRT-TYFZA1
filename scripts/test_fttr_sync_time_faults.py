@@ -14,9 +14,14 @@ static int decode(const char *text,size_t length,unsigned settings,bool *ack){
  const uint8_t peer[6]={2,0,0,0,0,1};
  struct fttr_sync_message m={.payload=(const uint8_t*)text,.length=length};
  struct json_object *summary=NULL,*observed=NULL;
- int ret=fttr_sync_reply_decode(&m,peer,settings,(settings==8 || settings==10 || settings==12),ack,&summary,&observed);
+ int ret=fttr_sync_reply_decode(&m,peer,settings,(settings==8 || settings==10 || settings==12 || settings==14),ack,&summary,&observed);
  if(!ret && (settings==7 || settings==9)){assert(summary&&observed&&!(settings==9?fttr_sync_iptv_validate(observed):fttr_sync_time_validate(observed)));}
  else if(!ret && settings==11)assert(summary&&observed);
+ else if(!ret && settings==13){
+  assert(summary&&observed&&!fttr_sync_web_password_validate(observed));
+  const char *printed=json_object_to_json_string_ext(summary,JSON_C_TO_STRING_PLAIN);
+  assert(!strstr(printed,"WebAdminPassword")&&!strstr(printed,"secret-example"));
+ }
  else assert(!summary&&!observed);
  json_object_put(summary);json_object_put(observed);return ret;
 }
@@ -89,7 +94,16 @@ int main(void){
  json_object_object_add(obj,"IPTVLanPort",json_object_new_string("1"));
  assert(fttr_sync_iptv_ports_check(obj,desired,true)==-EUCLEAN);
  json_object_put(obj);json_object_put(desired);
- puts("Time/IPTV/port parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
+ const char *password="{\"Result\":1,\"MAC\":\"020000000001\",\"WebAdminPassword\":\"secret-example\"}";
+ assert(!decode(password,strlen(password),13,&ack));assert(!decode("{\"Result\":1}",12,14,&ack));
+ assert(decode("{\"Result\":1}",12,13,&ack)==-EAGAIN);
+ for(unsigned i=0;i<3;i++) {
+  struct json_object *obj=json_tokener_parse(password);
+  json_object_object_add(obj,"WebAdminPassword",i==0?json_object_new_boolean(1):i==1?json_object_new_string("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"):json_object_new_string_len("a\0b",3));
+  const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
+  assert(decode(text,strlen(text),13,&ack)==-EBADMSG);json_object_put(obj);
+ }
+ puts("Settings/password parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
