@@ -87,7 +87,9 @@ static inline void rtl_fe_ingress_lpb(unsigned int words[3],unsigned int source,
 static inline int rtl_fe_classifier_read(const struct rtl_dq_io *io,unsigned int index,unsigned int words[7])
 {
  unsigned int i;
- int ret=io->indirect(io->context,0x33b0,0x80000000U|index);
+ int ret;
+ if(io->read(io->context,0x33b0)&0x80000000U)return -EBUSY;
+ ret=io->indirect(io->context,0x33b0,0x80000000U|index);
  if(ret)return ret;
  for(i=0;i<7;i++)words[i]=io->read(io->context,0x33cc-i*4);
  return 0;
@@ -95,6 +97,7 @@ static inline int rtl_fe_classifier_read(const struct rtl_dq_io *io,unsigned int
 static inline int rtl_fe_classifier_write(const struct rtl_dq_io *io,unsigned int index,const unsigned int words[7])
 {
  unsigned int i;
+ if(io->read(io->context,0x33b0)&0x80000000U)return -EBUSY;
  for(i=0;i<7;i++)io->write(io->context,0x33cc-i*4,words[i]);
  return io->indirect(io->context,0x33b0,0xc0000000U|index);
 }

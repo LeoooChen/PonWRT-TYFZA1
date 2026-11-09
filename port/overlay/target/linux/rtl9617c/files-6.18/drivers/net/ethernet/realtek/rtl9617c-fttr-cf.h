@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 #ifndef RTL9617C_FTTR_CF_H
 #define RTL9617C_FTTR_CF_H
+#include <linux/errno.h>
 #include "rtl9617c-qm-deepq.h"
 
 /* Original ca-ne CF TCAM has 512 X/Y pairs and three-word actions. The
@@ -18,7 +19,11 @@ static inline int rtl_fttr_cf_read(const struct rtl_dq_io *io, bool action,
 	unsigned int reg = action ? 0x1e14 : 0x1e04;
 	unsigned int data = action ? 0x1e20 : 0x1e10;
 	unsigned int i;
-	int ret = io->indirect(io->context, reg, 0x80000000U | index);
+	int ret;
+
+	if (io->read(io->context, reg) & 0x80000000U)
+		return -EBUSY;
+	ret = io->indirect(io->context, reg, 0x80000000U | index);
 
 	if (ret)
 		return ret;
@@ -35,6 +40,8 @@ static inline int rtl_fttr_cf_write(const struct rtl_dq_io *io, bool action,
 	unsigned int observed[3], i;
 	int ret;
 
+	if (io->read(io->context, reg) & 0x80000000U)
+		return -EBUSY;
 	for (i = 0; i < 3; i++)
 		io->write(io->context, data - i * 4, words[i]);
 	ret = io->indirect(io->context, reg, 0xc0000000U | index);

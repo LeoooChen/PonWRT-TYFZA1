@@ -10476,6 +10476,30 @@ No physical device was accessed and PE firmware is unchanged. This verifies
 the table control transaction, not retirement of packets already carrying an
 MTU selector or safe selector reuse after full hardware drain.
 
+### Mask and classifier retries preserve unfinished hardware windows
+
+The ordinary mask and classifier helpers now check their access-busy bit before
+touching staging data or submitting another index. The P6 CF key/action helpers
+apply the same check independently to their two windows. The existing multicast
+profile helpers already checked these shared mask/classifier windows; ordinary
+FE preparation and rollback must obey that ownership too. A two-bank mask read
+now commits its output only after both banks succeed, retaining the caller's
+prior snapshot if the second bank fails.
+
+Old `415a64f` reproduces replacing a timed-out operation with a subsequent write.
+Native tests cover16 mask-bank/FIB/P6 key/action timeout and CF restoration
+scenarios, repeated operations while busy, multicast/ordinary isolation and no
+partial mask output. P6 activation failures retain CF ownership through repeated
+release attempts until the outstanding key/action command completes. Existing
+source6 TCAM/action bytes still match the actual original FC/NI producers.
+Seven related suites, the full FE table test and616 multicast-profile command
+fault/applied-timeout cases pass. Image/modules and three input identities pass.
+Evidence is `artifacts/fttr/classifier-busy-*-20261110.*`.
+
+PE firmware is unchanged and no physical device was accessed. These busy checks
+protect control transactions; complete MCE/AFT/AXI/MiniOLT packet retirement and
+safe hardware-ID reuse remain outstanding.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

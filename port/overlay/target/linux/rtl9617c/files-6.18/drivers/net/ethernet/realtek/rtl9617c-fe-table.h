@@ -15,6 +15,7 @@ static inline int rtl_fe_mask_write(const struct rtl_dq_io *io, unsigned int ind
  int ret;
 
  for (bank = 0; bank < 2; bank++) {
+  if(io->read(io->context,0x3910)&0x80000000U)return -EBUSY;
   for (word = 0; word < 4; word++)
    io->write(io->context, 0x3920 - word * 4, words[bank * 4 + word]);
   ret = io->indirect(io->context, 0x3910, 0xc0000000U | (bank << 6) | index);
@@ -26,16 +27,18 @@ static inline int rtl_fe_mask_write(const struct rtl_dq_io *io, unsigned int ind
 static inline int rtl_fe_mask_read(const struct rtl_dq_io *io, unsigned int index,
  unsigned int words[RTL_FE_MASK_WORDS])
 {
- unsigned int bank, word;
+ unsigned int bank, word, value[RTL_FE_MASK_WORDS];
  int ret;
 
  for (bank = 0; bank < 2; bank++) {
+  if(io->read(io->context,0x3910)&0x80000000U)return -EBUSY;
   ret = io->indirect(io->context, 0x3910, 0x80000000U | (bank << 6) | index);
   if (ret)
    return ret;
   for (word = 0; word < 4; word++)
-   words[bank * 4 + word] = io->read(io->context, 0x3920 - word * 4);
+   value[bank * 4 + word] = io->read(io->context, 0x3920 - word * 4);
  }
+ for(word=0;word<RTL_FE_MASK_WORDS;word++)words[word]=value[word];
  return 0;
 }
 

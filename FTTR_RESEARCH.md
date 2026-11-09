@@ -357,6 +357,8 @@
 
 176. 补齐16项MTU设置/恢复确认：写前持有原14位字段和flow引用，读回一致后才ready可共享；最后恢复读回失败保留MTU/cookie并重试，不提前递减。原厂240读写/3越界、a56451c实际get→delete旧失败复现、32全槽初始/恢复写失败/共享/容量边界、十回归与Image/模块/输入一致通过。邻近字段和保留位按当前值保留；更新过时组播夹具未计作产品故障。PE未改、未实机，持有旧选择器的在途报文退场及复用仍待证明。详见[MTU事务归属](port/FTTR.md#mtu-recipes-retain-ownership-until-verified-restoration)。
 
+177. 补齐普通mask/分类器与P6 CF忙窗口检查，避免覆盖组播或前次超时事务；两bank掩码全读成功才发布输出。415a64f旧helper复现串写；16 bank/FIB/CF激活和反复释放故障场景、原厂source6 TCAM/action对照、七回归/完整FE表/616组播profile故障、Image/模块/三输入一致通过。忙时CF归属保持，完成后恢复原快照；PE未改、未实机，不作为报文全链路退场与ID复用依据。详见[分类器忙窗口](port/FTTR.md#mask-and-classifier-retries-preserve-unfinished-hardware-windows)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
