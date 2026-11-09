@@ -10,11 +10,11 @@
 
 static const unsigned int rtl_ax_port0_registers[] = {
 	0xc400, 0xc404, 0xc408, 0xc40c, 0xc410, 0xc414, 0xc424,
-	0xc540, 0xc544, 0xc590, 0xc594, 0xc6a0, 0xca08,
+	0xc540, 0xc544, 0xc590, 0xc594, 0xc6a0, 0xca08, 0xc568,
 };
 
 struct rtl_ax_port0 {
-	unsigned int before[13], timer_before, timer_after, timer_reads;
+	unsigned int before[14], timer_before, timer_after, timer_reads;
 	unsigned int interval, dtim;
 	int result;
 	bool ready;
@@ -35,6 +35,45 @@ static inline void rtl_ax_port0_color(const struct rtl_ax_io *io, unsigned int c
 {
 	/* Original set_role_bss_clr@22ec08: SCC band0/port0 uses bits5:0. */
 	rtl_ax_port0_field(io, 0xc6a0, 0x3f, color);
+}
+
+/* MAC port0 has one root TX switch and independent VAP MBID switches.
+ * Pure MMIO: caller can use command_lock; the disable HIQ command follows
+ * outside that lock. The target allows seven VAPs even though the register
+ * contains fifteen enable bits. */
+static inline int rtl_ax_port0_beacon(const struct rtl_ax_io *io,
+	unsigned int mbid, bool enable)
+{
+	if (mbid > 7) return -EINVAL;
+	if (!mbid) {
+		rtl_ax_port0_field(io, 0xc400, BIT(12), enable ? BIT(12) : 0);
+		return 0;
+	}
+	if (mbid > ((io->read32(io->ctx, 0xc568) >> 16) & 15))
+		return -EINVAL;
+	rtl_ax_port0_field(io, 0xc568, BIT(mbid), enable ? BIT(mbid) : 0);
+	return 0;
+}
+
+/* A VAP shares the root's beacon interval/TSF schedule. Preparing it must
+ * not reinitialize port0 or another MBID's DTIM and HIQ window. */
+static inline int rtl_ax_port0_vap_prepare(const struct rtl_ax_io *io,
+	const struct rtl_ax_port0 *port, unsigned int mbid,
+	unsigned int interval, unsigned int dtim)
+{
+	unsigned int mode;
+	int ret;
+
+	if (!mbid || mbid > 7 || !dtim || dtim > 255) return -EINVAL;
+	if (!port->ready) return -ENETDOWN;
+	if (interval != port->interval) return -EINVAL;
+	ret = rtl_ax_port0_beacon(io, mbid, false);
+	if (ret) return ret;
+	io->write8(io->ctx, 0xc590 + mbid, 50);
+	mode = io->read8(io->ctx, 0xca08);
+	if ((mode | 3) != mode) io->write8(io->ctx, 0xca08, mode | 3);
+	io->write8(io->ctx, 0xc540 + mbid, dtim);
+	return 0;
 }
 
 /* Original mac_get_tsf@240928: port0 low/high at C438/C43C. */
@@ -94,13 +133,15 @@ static inline int rtl_ax_port0_start(const struct rtl_ax_io *io,
 	unsigned char mode;
 	int ret;
 
+	port->ready = false;
+	if (!interval || interval > 65535 || !dtim || dtim > 255) return -EINVAL;
 	port->interval = interval;
 	port->dtim = dtim;
 	if (subspace * 32 < early + hold) {
 		early = subspace * 96 / 10;
 		hold = subspace * 160 / 10;
 	}
-	for (i = 0; i < 13; i++)
+	for (i = 0; i < ARRAY_SIZE(rtl_ax_port0_registers); i++)
 		port->before[i] = io->read32(io->ctx, rtl_ax_port0_registers[i]);
 	/* TX/RX report disable -> AP network type -> beacon protection ->
 	 * RX update/sync disable -> beacon TX enable. Masks from original tables. */
@@ -157,6 +198,9 @@ static inline int rtl_ax_port0_start(const struct rtl_ax_io *io,
 	rtl_ax_port0_field(io, 0xc40c, 0xfff, early);
 	rtl_ax_port0_field(io, 0xc404, 0xff, 4);
 	rtl_ax_update16(io, 0xc40e, 0xfff, 5);
+	/* Actual C/XB hw_info exposes16 slots: clear all15 VAP enable bits,
+	 * while the original PHL allocation limits active VAP indices to1..7. */
+	rtl_ax_port0_field(io, 0xc568, 0x000ffffe, 7U << 16);
 	port->ready = true;
 	return 0;
 }

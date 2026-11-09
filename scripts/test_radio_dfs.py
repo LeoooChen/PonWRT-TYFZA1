@@ -184,7 +184,7 @@ struct rtl_ax_ap {
  struct {unsigned primary,bandwidth,center;}channel;
  struct ieee80211_hw *hw;
  unsigned dfs_domain,chip;bool radar_required,ap_started,mesh_started,beacon_enabled;
- int command_lock,ap_result,mesh_sync_work;long long mesh_tsf_remainder;
+ int command_lock,ap_result,mesh_sync_work,offload_work;u8 bss_color;long long mesh_tsf_remainder;
  struct {unsigned valid;}security_roles[1];
 };
 #define NL80211_BAND_5GHZ 1
@@ -195,7 +195,11 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 static int ieee80211_channel_to_frequency(unsigned channel,unsigned band){(void)band;return 5000+channel*5;}
 static struct ieee80211_channel *ieee80211_get_channel(void *wiphy,int frequency)
 {(void)wiphy;unsigned channel=(frequency-5000)/5;return &regulatory_channels[(channel-36)/4];}
-struct ieee80211_vif {u8 addr[6];int type;};
+struct rtl_ax_vif {struct {unsigned mbid;} identity;};
+struct ieee80211_vif {u8 addr[6];int type;struct rtl_ax_vif drv_priv[1];};
+#define NL80211_IFTYPE_AP 3
+#define wiphy_work_queue(w,p) ((void)(w),(void)(p))
+static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;struct {bool enabled;unsigned color;}he_bss_color;};
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
 static int rtl_ax_self_role_prepare(struct rtl_ax_ap *r,u8 *addr,unsigned bi,unsigned dtim){(void)r;(void)addr;(void)bi;(void)dtim;return 0;}
@@ -204,6 +208,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned a,unsigned b,u
 static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_bss_conf *conf){
  (void)vif;(void)conf;if(inject_radar){hw->radio->dfs.detected=true;rtl_ax_tx_dfs_block(hw->radio->tx,true);}return 0;
 }
+static int rtl_ax_port0_beacon(const struct rtl_ax_io *p,unsigned mbid,bool enable){assert(!mbid);rtl_ax_update32(p,0xc400,BIT(12),enable?BIT(12):0);return 0;}
 static void rtl_ax_port0_color(const struct rtl_ax_io *p,unsigned v){(void)p;(void)v;}
 static void rtl_ax_receive_mode(const struct rtl_ax_io *p,unsigned v){(void)p;(void)v;}
 '''

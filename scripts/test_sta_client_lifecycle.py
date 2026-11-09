@@ -73,7 +73,7 @@ struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];int type;u8 addr[6];struct {
 struct rtl_ax_ap;
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 struct rtl_ax_io {void(*write8)(void *,unsigned,u8);};
-struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
+struct rtl_ax_ap {u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
  bool sta_role,sta_associated,scanning,station_ids[128],peer_authorized[128];
  bool ap_started,beacon_enabled;unsigned edca_valid;int ap_result,command_lock;
  struct {bool in_cac,detected;int error;}dfs;
@@ -113,6 +113,8 @@ static void ieee80211_connection_loss(struct ieee80211_vif *v){assert(v->type==2
 common += r'''
 static void rtl_ax_tx_dfs_block(int tx,bool block){(void)tx;assert(block);blocked++;}
 static int rtl_ax_tx_pause(int tx){(void)tx;assert(blocked);paused++;return -ETIMEDOUT;}
+static int rtl_ax_port0_beacon(struct rtl_ax_io *io,unsigned id,bool en){assert(!id);rtl_ax_port0_field(io,0xc400,BIT(12),en?BIT(12):0);return 0;}
+static int rtl_ax_port0_drop_mbid(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static void rtl_ax_tx_bcmc_close(int tx){(void)tx;}
 static void wiphy_work_queue(void *w,int *work){(void)w;(void)work;}
 
@@ -122,7 +124,6 @@ static void *ieee80211_vif_to_wdev(struct ieee80211_vif*v){return v;}
 static void cfg80211_stop_iface(void*w,void*v,int g){(void)w;(void)v;(void)g;stopped++;}
 static void rtl_ax_edca_apply(struct rtl_ax_ap *r,struct ieee80211_vif *v,unsigned ac){(void)r;(void)v;(void)ac;assert(0);}
 static int rtl_ax_ap_template(struct ieee80211_hw *h,struct ieee80211_vif *v,struct ieee80211_bss_conf *c){(void)h;(void)v;(void)c;assert(0);return 0;}
-static void rtl_ax_update32(struct rtl_ax_io *io,unsigned reg,unsigned mask,unsigned value){rtl_ax_port0_field(io,reg,mask,value);}
 '''
 common += function((driver/'pci.c').read_text(),'rtl_ax_cam_write') + function((driver/'pci.c').read_text(),'rtl_ax_bss_color_update')
 test = r'''

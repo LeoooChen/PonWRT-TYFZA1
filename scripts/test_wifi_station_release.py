@@ -76,7 +76,7 @@ struct rtl_ax_tx {bool pending[128][17];};
 struct ieee80211_key_conf;
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
-struct rtl_ax_ap {struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;u8 role_cam[60];unsigned traffic_peer;u8 bss_color;
+struct rtl_ax_ap {u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;u8 role_cam[60];unsigned traffic_peer;u8 bss_color;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128],security_ext[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
@@ -101,6 +101,8 @@ static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id
 static int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
 static int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
 static bool rtl_ax_tx_key_pending(struct rtl_ax_tx *t,unsigned id){(void)t;(void)id;return 0;}
+static unsigned mbid_retries;static bool mbid_fail;
+static int rtl_ax_port0_drop_mbid(struct rtl_ax_ap *r,unsigned id){mbid_retries++;if(mbid_fail)return -EIO;r->mbid_drop_pending&=~BIT(id);return 0;}
 static int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *t){(void)t;return 0;}
 static void rtl_ax_rx_ba_window(int rx,unsigned id,unsigned tid,unsigned window){(void)rx;(void)id;(void)tid;(void)window;}
 static void rtl_ax_rx_key(int rx,unsigned id,void *key){(void)rx;(void)id;(void)key;}
@@ -170,6 +172,11 @@ int main(void){
  struct wiphy w={};struct ieee80211_vif vif={.addr={2,1,2,3,4,5}};
  struct rtl_ax_tx tx={};struct rtl_ax_ap r={.tx=&tx,.ap_vif=&vif,.chip=0x52,.monitor_started=true};
  struct ieee80211_hw hw={&r,&w,128};
+ r.mbid_drop_pending=BIT(3)|BIT(7);mbid_fail=true;unsigned old_queue=queued;
+ rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
+ assert(r.mbid_drop_pending==(BIT(3)|BIT(7))&&mbid_retries==2&&queued==old_queue+1);
+ mbid_fail=false;rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
+ assert(!r.mbid_drop_pending&&mbid_retries==4);
  struct ieee80211_sta *sta=calloc(1,sizeof(*sta));assert(sta);
  r.identities[0].type=2;r.identities[7]=(struct rtl_ax_role_identity){.macid=7,.type=3,.mbid=5};
  sta->drv_priv[0].macid=7;sta->addr[0]=2;sta->addr[5]=77;sta->aid=27;set_bit(7,r.station_ids);

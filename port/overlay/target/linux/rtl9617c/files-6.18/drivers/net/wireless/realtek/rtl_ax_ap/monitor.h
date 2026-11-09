@@ -303,6 +303,7 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned long flags;
+	unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
 	int ret;
 
 	if (radio->radar_required &&
@@ -324,7 +325,7 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		ret = rtl_ax_ap_template(hw, vif, conf);
 	radio->ap_result = ret;
 	if (ret) {
-		rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
+		rtl_ax_port0_beacon(&radio->io, mbid, false);
 		return ret;
 	}
 	rtl_ax_port0_color(&radio->io, conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
@@ -333,13 +334,15 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	spin_lock_irqsave(&radio->command_lock, flags);
 	if (radio->radar_required && radio->dfs.detected) ret = -EBUSY;
 	else {
+		ret = rtl_ax_port0_beacon(&radio->io, mbid, true);
+		if (ret) goto unlock;
 		radio->dfs.in_cac = false;
 		rtl_ax_tx_dfs_block(radio->tx, false);
-		rtl_ax_update32(&radio->io, 0xc400, BIT(12), BIT(12));
 		WRITE_ONCE(radio->mesh_started, vif->type == NL80211_IFTYPE_MESH_POINT);
 		WRITE_ONCE(radio->ap_started, true);
 		radio->beacon_enabled = true;
 	}
+unlock:
 	spin_unlock_irqrestore(&radio->command_lock, flags);
 	radio->ap_result = ret;
 	if (!ret && vif->type == NL80211_IFTYPE_MESH_POINT) {
@@ -519,13 +522,14 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned long flags;
+	unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
 
  if(vif->type==NL80211_IFTYPE_AP) {
   int ret=rtl_ax_tx_bcmc_stop(radio->tx);
   if(ret)dev_err(&radio->pdev->dev,"BCMC retirement failed: %d\n",ret);
  }
 	spin_lock_irqsave(&radio->command_lock, flags);
-	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
+	rtl_ax_port0_beacon(&radio->io, mbid, false);
 	radio->beacon_enabled = false;
 	WRITE_ONCE(radio->mesh_started, false);
 	WRITE_ONCE(radio->ap_started, false);
@@ -534,6 +538,14 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		rtl_ax_tx_dfs_block(radio->tx, true);
 	}
 	spin_unlock_irqrestore(&radio->command_lock, flags);
+	if (mbid) {
+		int ret = rtl_ax_port0_drop_mbid(radio, mbid);
+		if (ret) {
+			radio->ap_result = ret;
+			dev_err(&radio->pdev->dev, "MBID%u stop failed: %d\n", mbid, ret);
+			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
+		}
+	}
 	wiphy_work_cancel(hw->wiphy, &radio->offload_work);
 	wiphy_work_cancel(hw->wiphy, &radio->beacon_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->mesh_sync_work);
@@ -656,9 +668,20 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 
 		spin_lock_irqsave(&radio->command_lock, flags);
 		enable = conf->enable_beacon && !radio->dfs.in_cac && !radio->dfs.detected && !radio->dfs.error;
-		rtl_ax_update32(&radio->io, 0xc400, BIT(12), enable ? BIT(12) : 0);
-		radio->beacon_enabled = enable;
+		unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
+		radio->ap_result = enable && (radio->mbid_drop_pending & BIT(mbid)) ? -EBUSY :
+			rtl_ax_port0_beacon(&radio->io, mbid, enable);
+		radio->beacon_enabled = !radio->ap_result && enable;
 		spin_unlock_irqrestore(&radio->command_lock, flags);
+		if (mbid && !enable) {
+			int ret = rtl_ax_port0_drop_mbid(radio, mbid);
+			if (ret) radio->ap_result = ret;
+		}
+		if (radio->ap_result) {
+			dev_err(&radio->pdev->dev, "MBID%u beacon switch failed: %d\n", mbid, radio->ap_result);
+			cfg80211_stop_iface(hw->wiphy, ieee80211_vif_to_wdev(vif), GFP_KERNEL);
+			return;
+		}
 		if (vif->type == NL80211_IFTYPE_MESH_POINT) {
 			if (enable)
 				wiphy_delayed_work_queue(hw->wiphy, &radio->mesh_sync_work,
@@ -925,6 +948,11 @@ static void rtl_ax_cleanup_work(struct wiphy *wiphy, struct wiphy_work *work)
 	bool retry = rtl_ax_tx_ni_cleanup(radio->tx) != 0;
 
 	retry |= rtl_ax_security_cleanup(radio);
+	/* Publication failures are retryable; a successful no-ACK drop command
+	 * still does not establish downstream packet retirement. */
+	for (i = 1; i < 8; i++)
+		if ((radio->mbid_drop_pending & BIT(i)) && rtl_ax_port0_drop_mbid(radio, i))
+			retry = true;
 
 	if (radio->offload_retry) {
 		radio->offload_retry = false;

@@ -264,6 +264,8 @@
 
 123. 接入接口/站点硬件身份到固件表和信标：保存port/MBID/self-MACID/role-type，实际JOIN、CAM、CCTL/BA/速率更新和站点释放从保留记录取值，正常信标上传使用接口身份。原厂确认VAP3共享port0/WMM0、MBID1…7，执行36角色、72双芯片CCTL、24完整HAL→信标链并逐字节对照；160部分掩码、24实际上传/错误、7VAP自角色和非零MBID5的BA/释放生命周期通过，STA/颜色/双CAM密钥/授权/FE事务回归及Image/模块、四输入一致通过。PE未变、未实机；多VIF分配/MBID使能/信标调度、GTK/序列/BCMC及CPU/NI→PE描述符身份仍需接入，接口上限尚未解除。详见[角色身份与信标](port/FTTR.md#role-identity-through-firmware-tables-and-beacon-upload)。
 
+124. 补齐port0 MBID调度寄存器及独立VAP准备：执行原厂完整启动确认遗漏0xc568，现设置数量7并清15个硬件附加槽使能位，失败重初始化不保留旧ready；VAP仅改自身使能/HIQ窗口/DTIM，要求与root同间隔，不重置共享端口。实际角色准备、信标启停按身份选择操作，使能失败不提前放开发送；HIQ发布失败保留逐MBID待清理位、worker重试并拒绝提前重开。162原厂配置捕获、64相关完整MMIO/选择器/MBID轨迹对照、VAP隔离/参数/计时器/7槽失败重试及ASan/UBSan、AP-mesh/STA-BA/FE事务/DFS回归，Image/模块和三输入一致通过。PE未变、未实机；无ACK的HIQ成功仅代表发布，不能据此解除硬件ID隔离。多接口软件状态、GTK/序列/BCMC与PE身份仍待补齐。详见[MBID调度](port/FTTR.md#mbid-register-scheduling-and-independent-vap-preparation)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

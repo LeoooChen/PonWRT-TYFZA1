@@ -8199,6 +8199,52 @@ encoded multi-role tests do not demonstrate physical multi-SSID operation.
 Complete upstream/downstream packet retirement and other hardware-ID quarantine
 remain unchanged. No physical device was accessed.
 
+### MBID register scheduling and independent VAP preparation
+
+Port0 startup now programs the previously omitted MBID control register0xc568.
+The actual C/XB `mac_port_init` ends with `port0_mbid_set`: it sets the additional
+slot count to7 in bits19:16 and clears all15 hardware VAP-enable bits1:15,
+retaining bit0 and unrelated fields. The hardware supports16 total slots while
+the target PHL allocator permits VAP MBID1..7. Earlier fixed register snapshots
+did not include0xc568; the diagnostic list now includes it. A failed reinitialize
+also clears software ready state instead of retaining an earlier success.
+
+Root beacon TX continues to use0xc400 bit12. VAP beacon switches use only their
+own0xc568 bit, with bounds and the programmed slot count checked. VAP preparation
+uses the existing root interval/TSF schedule, requires a matching interval and
+writes only its own HIQ window50 and DTIM byte, plus the shared TIM update bits.
+It does not reinitialize the whole port or other MBID timers. The actual
+self-role preparation and beacon start/change/stop paths select those operations
+from the stored interface identity. Starting only releases the scheduler after
+the MBID switch succeeds. This is the per-MBID register part; the remaining
+single-interface software state must still be split before enabling multiple
+interfaces concurrently.
+
+On disable, C/XB uses the original selector8 HIQ-drop command for that MBID;
+enable only changes the register (the factory REL_HIQ_MBSSID path has no H2C on
+these chips). The command has no receive/done ACK. Native retains a pending bit
+when command publication fails, schedules the existing cleanup worker to retry,
+and refuses re-enable while that bit remains. Successful publication clears
+the pending bit; it does not prove downstream packet retirement or authorize
+hardware-ID reuse. Root/GTK/BCMC drain remains governed by its existing separate
+barriers. No VAP resources are currently allocated by the interface API.
+
+`trace_stock_radio_mbid.py` captures162 target configurations, including both
+chips, MBID switches, HIQ/DTIM and full startup from zero and nonzero registers.
+`test_radio_mbid.py` compares64 complete relevant MMIO/selector/MBID operation
+traces. The one intentional startup difference is retaining root beacon TX
+disabled until a template exists. Unused factory drop-structure bytes are not
+claimed as defined wire state. Native tests cover VAP-only register effects,
+invalid/mismatched intervals, allocation bounds, frozen timer, every startup
+HIQ publication failure, seven independent drop retries and sanitizer checks.
+Actual lifecycle tests verify VAP disable retains the root beacon switch,
+failed re-enable/stop reports errors, and pending-drop cleanup retries. AP/mesh,
+STA/BA, FE transactions and target DFS/CAC regressions pass. Image/modules build
+and three changed-source identities pass; artifacts are
+`artifacts/fttr/mbid-*-20261109.*`. PE firmware is unchanged; no physical device
+was accessed. Per-VIF GTK/sequence/BCMC, full interface allocation and PE identity
+still remain, along with end-to-end packet retirement and physical acceptance.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

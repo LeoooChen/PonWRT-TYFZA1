@@ -240,6 +240,7 @@ struct rtl_ax_ap {
 	struct rtl_ax_cam_owners cam_owners;
 	struct rtl_ax_role_identity identities[128];
 	struct rtl_ax_port0 port0;
+	u8 mbid_drop_pending;
 	bool beacon_enabled;
 	u32 beacon_bytes, beacon_header[4], beacon_last_stats[2];
 	u64 beacon_reports, beacon_ok, beacon_fail[10];
@@ -817,13 +818,19 @@ static int rtl_ax_port0_drop_mbid(void *ctx, unsigned int mbid)
 {
 	struct rtl_ax_ap *radio = ctx;
 	u8 packet[24] = {};
+	int ret;
+
+	if (mbid > 7) return -EINVAL;
+	if (mbid) radio->mbid_drop_pending |= BIT(mbid);
 
 	/* Original h2c_pkt_drop@1ec128: HIQ_MBSSID selector8, band0/port0,
 	 * MBID in word1. No receive/done ACK requested for this command. */
 	rtl_ax_store32(packet, 8);
 	rtl_ax_store32(packet + 4, mbid);
-	return rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 9, 27,
-			     packet, sizeof(packet), false);
+	ret = rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 9, 27,
+		packet, sizeof(packet), false);
+	if (!ret) radio->mbid_drop_pending &= ~BIT(mbid);
+	return ret;
 }
 
 int rtl_ax_mac_drop_bcmc(struct pci_dev *pdev)
@@ -885,8 +892,14 @@ update_cam:
 		ret = rtl_ax_station_tables(radio, 0);
 	}
 	if (!ret) {
-		ret = rtl_ax_port0_start(&radio->io, &radio->port0, radio,
-					rtl_ax_port0_drop_mbid, interval, dtim);
+		if (identity->mbid) {
+			ret = rtl_ax_port0_vap_prepare(&radio->io, &radio->port0,
+				identity->mbid, interval, dtim);
+			if (!ret) ret = rtl_ax_port0_drop_mbid(radio, identity->mbid);
+		} else {
+			ret = rtl_ax_port0_start(&radio->io, &radio->port0, radio,
+				rtl_ax_port0_drop_mbid, interval, dtim);
+		}
 		radio->port0.result = ret;
 		if (!ret)
 			radio->role_stage = 5;
