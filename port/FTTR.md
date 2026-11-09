@@ -10090,6 +10090,38 @@ Image/modules and changed source identity pass; artifacts use
 PE firmware is unchanged and no physical device was accessed. These are checked
 control updates, not proof of complete packet retirement or safe ID reuse.
 
+### Relay EEPROM diagnostics do not establish a selected SFP implementation
+
+`trace_stock_fttr_module_optics.py` now executes the retained ASIC and FPGA1
+relay module-information APIs and their four calibrated getters. Both always
+use physical channel0 and address0x51: TX reads80/82/102, temperature84/86/96,
+bias76/78/100 and voltage88/90/98. The first two values are calibration slope
+and offset; the third is the sample. These are separate from the four
+factory-file-selected `rtkoltbosa` recipes already implemented.
+
+The actual public aggregate API reads all four values into a temporary record
+and publishes only after success. Its RX power field is **constant zero**;
+it does not call the separate RX polynomial getter. The six threshold/alarm
+getters and `drv_gpon_polling_pon_module` return success without reading a sensor
+or writing their output. These stubs must not become native zero-valued limits,
+an absent-alarm claim, or a module-detection predicate. The converter's apparent
+endianness helper is also a no-op in these retained builds. The oracle supplies
+host integers at the original `read_word` API boundary and does not infer
+EEPROM wire byte order from that helper.
+
+Both binaries pass24 successful calibrated getter comparisons,144 injected
+read-failure paths, unchanged-output checks for the no-op functions, and the
+aggregate constant-zero RX check. The original temperature conversion truncates
+through signed8-bit whole degrees; its result is recorded, not adopted as a
+generic sensor rule. `log10`, read-word integers and logging are explicit model
+boundaries. Evidence is `artifacts/fttr/module-optics-original-20261109.json`.
+
+This is evidence narrowing an outstanding branch, not new SFP support. No
+factory selection/identity predicate connecting these fixed EEPROM addresses
+to the supported BOSA startup was established. Automatic probing, threshold
+actions and SFP calibration remain unimplemented rather than being inferred
+from exported getter names. No hardware was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

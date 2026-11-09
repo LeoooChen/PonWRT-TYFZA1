@@ -335,6 +335,8 @@
 
 165. 补齐NI启动/恢复最终ES使能读回：原dd6d738实际函数复现写入被拒仍返回成功；现在准备核对CPU位开启、恢复核对保存位，失败EIO并保留现有回滚/引用归属，无关CPU/LAN/PON位不动。原厂aal_l3qm_enable_tx_cpu实执行16种掩码更新，98准备/60恢复、554 ES及BCMC/撤销/FE事务回归、Image/模块/输入一致通过。PE未改、未实机；该项不证明全链路排空和ID安全复用。详见[ES发布恢复核验](port/FTTR.md#ni-setup-and-restoration-verify-their-es-enable-result)。
 
+166. 明确原厂EEPROM光诊断与SFP缺口边界：两relay实际API/四标量getter共24成功、144读失败对照，固定channel0/address0x51；聚合RX字段硬编码0，六阈值/告警及polling接口均成功但不写输出。端序辅助在保留构建为no-op，测试只在read_word主机整数边界供值，不推断线序；温度有signed8位整度截断。未找到这些地址与四种BOSA工厂选择的连接依据，因此不据导出符号添加探测/零阈值/假告警能力。该项为原厂证据补充，SFP分派仍未实现；未实机。详见[EEPROM能力边界](port/FTTR.md#relay-eeprom-diagnostics-do-not-establish-a-selected-sfp-implementation)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
