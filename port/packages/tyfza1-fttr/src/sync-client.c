@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <ctype.h>
 #include <errno.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -133,6 +134,42 @@ out:
 	json_object_put(filtered);return ret;
 }
 
+static int wan_reply(struct json_object *value, bool *ack_seen)
+{
+	struct json_object *field;
+
+	if (json_object_object_get_ex(value, "RPCMethod", &field)) {
+		if (!json_object_is_type(field, json_type_string) ||
+		    (size_t)json_object_get_string_len(field) != strlen(json_object_get_string(field)))
+			return -EBADMSG;
+		if (!strcmp(json_object_get_string(field), "Register"))
+			return -ESTALE;
+		if (strcmp(json_object_get_string(field), "WanIPChange"))
+			return -EAGAIN;
+	}
+	if (!json_object_object_get_ex(value, "Result", &field))
+		return -EAGAIN;
+	if (!json_object_is_type(field, json_type_int))
+		return -EBADMSG;
+	if (json_object_get_int64(field) != 1)
+		return -EREMOTEIO;
+	*ack_seen = true;
+	return 0;
+}
+
+/* This notification reports an address, including an unspecified address on
+ * WAN withdrawal. It does not configure or validate a downstream route. */
+int fttr_sync_wan_address(const char *text)
+{
+	uint8_t address[16];
+
+	if (!text || strlen(text) >= INET6_ADDRSTRLEN)
+		return -EINVAL;
+	if (inet_pton(AF_INET, text, address) == 1)
+		return AF_INET;
+	return inet_pton(AF_INET6, text, address) == 1 ? AF_INET6 : -EINVAL;
+}
+
 int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
 			unsigned int settings, bool writing, bool *ack_seen,
 			struct json_object **summary, struct json_object **observed)
@@ -154,6 +191,10 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    json_tokener_get_parse_end(parser) != message->length ||
 	    !json_object_is_type(value, json_type_object))
 		goto out;
+	if (settings == 6) {
+		ret = wan_reply(value, ack_seen);
+		goto out;
+	}
 	if (settings==4 || settings==5) {
 		ret=radio_reply(value,peer,settings==5,ack_seen,summary,observed);goto out;
 	}
@@ -355,11 +396,23 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 5 || ((settings == 2 || settings == 5) && !configuration)) return -EINVAL;
+	if (settings > 6 || ((settings == 2 || settings == 5 || settings == 6) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
-	if (settings == 4) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"GetWifiRadio\"}");
+	if (settings == 6) {
+		if (!json_object_is_type(configuration, json_type_string) ||
+		    (size_t)json_object_get_string_len(configuration) != strlen(json_object_get_string(configuration)))
+			return -EINVAL;
+		const char *address = json_object_get_string(configuration);
+		int family = fttr_sync_wan_address(address);
+		if (family < 0)
+			return family;
+		length = snprintf(payload, sizeof(payload),
+			"{\"RPCMethod\":\"WanIPChange\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\",\"%s\":\"%s\"}",
+			source[0], source[1], source[2], source[3], source[4], source[5],
+			family == AF_INET ? "WanIP" : "WanIPv6", address);
+	} else if (settings == 4) length=snprintf(payload,sizeof(payload),"{\"RPCMethod\":\"GetWifiRadio\"}");
 	else if (settings == 5) {
 		struct json_object *request=json_object_new_object();
 		if (!request) return -ENOMEM;

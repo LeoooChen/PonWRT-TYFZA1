@@ -8013,7 +8013,10 @@ retain version1/2 compatibility. Radio events expose radio_type and separate
 write/readback outcomes; configuration_verified remains false.
 
 `trace_stock_fttr_radio.py` executes both original builders, the full two-band
-reply consumer and libmib width/power converters. `test_fttr_radio.py` passes100
+reply consumer and libmib width/power converters. Another32 executions of the
+actual manager width setter/getter blocks establish that MIB1319 distinguishes
+40M from Auto20M40M even though both use width code1. Exact comparison is
+therefore retained. `test_fttr_radio.py` passes100
 input-enum cases,19 actual CLI/veth cases, three invalid-policy cases and seven
 dual-band durable runs, including SIGKILL, fsync failure, drift and read-only
 recovery. The combined WiFi→Radio→EasyMesh scenario and existing37 controller
@@ -8021,6 +8024,41 @@ and38 persistent Wi-Fi tests pass. Host and aarch64-musl builds pass; reports
 are `artifacts/fttr/radio-*-20261109.*`. Kernel/PE code is unchanged and no
 physical device was accessed. Full hardware retirement/ID reuse, multi-VIF,
 TSPEC and other factory-management gaps remain open.
+
+### Original WAN address notification
+
+The syncserv CLI now sends the original `WanIPChange` notification to a selected
+peer, for example:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa wan-ip 192.0.2.1
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa wan-ip 2001:db8::1
+```
+
+The JSON contains RPCMethod, the master's uppercase12-digit MAC, and exactly one
+of WanIP/WanIPv6. Input must be a numeric address accepted by inet_pton, with no
+prefix, zone, hostname or embedded suffix. Unspecified addresses0.0.0.0/:: are
+encodable as in the original producer; their downstream effects are unverified.
+The selected Ethernet unicast target, local interface lease, bounded fragment
+receiver and registration cancellation are reused. The notification is sent
+once with a3-second ACK deadline. Result1 is an ACK; rejection, malformed result
+or timeout remains an error. An explicit unrelated method cannot complete it.
+
+Output includes address, ack_seen and error, and always leaves
+configuration_verified false. No route/table readback exists in the established
+protocol evidence. A late identical bare ACK is not distinguishable by this
+wire. This is an explicit notification API; automatic netifd WAN-change events,
+resident delivery after re-registration and complete subordinate gateway setup
+remain to be integrated with the original lifecycle semantics.
+
+`trace_stock_fttr_wan.py` executes six IPv4/IPv6 producer/envelope cases and three
+actual method12 pending reply paths. `test_fttr_wan.py` passes26 CLI/veth cases,
+including automatic discovery, withdrawal-address encoding, fragments, incorrect
+source/method, malformed replies, re-registration, no-result and timeout. The
+Radio suite,32 original width roundtrips and host/aarch64-musl builds pass after
+this addition. Artifacts are `artifacts/fttr/wan-*-20261109.*`. No kernel/PE change
+or physical device access occurred. The branch includes main80b82e6; its iperf
+feed regression passes.
 
 ### Outstanding implementation and acceptance
 
@@ -8046,8 +8084,9 @@ TSPEC and other factory-management gaps remain open.
    implemented, including a native entity/attribute model from original wire
    layouts. Original global LOID acquisition/result verification is integrated;
    per-ONU comparison/selection, durable SN binding/learning and automatic
-   assignment are integrated. PLOAM credential acquisition, factory per-ONU
-   policy import and broader capability-based service decisions remain work. Explicit T-CONT binding/readback/local DBA
+   assignment are integrated. PLOAM credential acquisition and factory per-ONU
+   policy import are implemented as described above; saved user-modified profiles,
+   FPGA1 ordinary default grants and broader capability-based decisions remain work. Explicit T-CONT binding/readback/local DBA
    and native GEM CTP/IW lifecycle/readback/cleanup are implemented. Native GAL,
    bridge/initial Mapper and basic Ethernet/VEIP attachment are implemented.
    Mapper binding and ANI/GEM-side bridge ports/VLAN filtering are implemented.
@@ -8072,7 +8111,9 @@ TSPEC and other factory-management gaps remain open.
    The resident ONU-G reboot request is implemented as described above;
    the Software Image download/activation/commit protocol is also implemented.
    Resumable image transfer, image compatibility/boot verification,
-   gateway/roaming coordination and physical reboot verification remain work. The original ff69/ff6a Wi-Fi update transaction is implemented with
+   complete gateway/roaming coordination and physical reboot verification remain work.
+   Explicit WanIPChange notifications, Radio configuration and EasyMesh
+   transactions with independent reported-state readback are implemented. The original ff69/ff6a Wi-Fi update transaction is implemented with
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
    settings mapping and
    actual subordinate capability/behavior verification remain work.

@@ -256,6 +256,8 @@
 
 119. 接入原厂Radio查询/配置及持久恢复：执行GetWifiRadio、SetONURadioInfo构造、完整双频回复解析和libmib功率/带宽转换。显式radio-info/radio-apply使用目标单播，六项字符串输入、写前可读字段检查、单次发送及独立回读；自动信道按AutoChannelEnable核对，原厂字段顺序依赖未照搬。常驻Radios双频策略按WiFi→Radios→EasyMesh执行，v3记录bit17/18意图先落盘，重启只读已尝试项、不重放，同Revision漂移拒绝。100枚举/19CLI/3非法策略/7持久生命周期、组合顺序及37常驻/38持久回归和双架构编译通过。内核/PE不变、未实机；回读仅验证从端报告，实际信道/功率/安装、完整硬件退场、多VIF、TSPEC及其他管理缺口仍未完成。详见[Radio配置与恢复](port/FTTR.md#original-radio-rpc-configuration-and-durable-recovery)。
 
+120. 接入原厂WanIPChange显式通知：执行IPv4/IPv6构造、以太网封装及method12待定ACK分派，原生按目标单播发送一次，数值地址校验、3秒期限、错来源/错方法隔离和重新注册中止，输出仅报告ACK、不宣称路由生效。6原厂报文/3回复及26CLI/veth场景通过；Radio回归、双架构构建通过。另执行32组原厂Radio带宽写入/回读块，确认MIB1319区分40M与Auto20M40M，无需放宽比较。已对齐main80b82e6并通过其iperf feed检查；无内核/PE修改、未实机。自动WAN事件/重新注册后通知生命周期、完整网关/漫游、硬件退场和ID复用仍待完成。详见[WAN地址通知](port/FTTR.md#original-wan-address-notification)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
