@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Check ARM/PE RXBD transfer, retained NI payloads and DFS epochs."""
 from pathlib import Path
-import re, subprocess, tempfile
+import argparse, re, subprocess, tempfile
 root=Path(__file__).resolve().parents[1]
 driver=root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'
 source=(driver/'rx.c').read_text()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--revision');args=p.parse_args()
+if args.revision:source=subprocess.check_output(['git','show',args.revision+':'+str((driver/'rx.c').relative_to(root))],cwd=root,text=True)
 def function(name):
  a=re.search(r'^.*\b'+name+r'\([^;]*?\)\s*\{',source,re.M).start();b=source.index('{',a)+1;depth=1
  while depth:depth+=(source[b]=='{')-(source[b]=='}');b+=1
@@ -34,7 +36,8 @@ struct rtl_ax_io {void *ctx;u32 (*read32)(void *,u32);void (*write32)(void *,u32
 struct pe_probe {void *memory;dma_addr_t dma;bool attached;};
 struct rtl_ax_rx {struct pe_probe pe;u32 pe_command;struct rtl_ax_rx_queue queues[2];void *pe_device,*rpq_memory;struct rtl_ax_io *io;dma_addr_t pe_forward_dma;bool rpq_transfer,rpq_owned,running,pool_initialized;u32 irq_mask,dfs_epoch[4],pe_rdu_seen[2],uplink_started;int irq_lock,irq,work;};
 static int pe_probe_start(struct pe_probe *p,const u32 *program,unsigned bytes){assert(program&&bytes==4);p->attached=true;return 0;}
-static int pe_probe_stop(struct pe_probe *p){p->attached=false;return 0;}
+static bool stop_fail;
+static int pe_probe_stop(struct pe_probe *p){if(stop_fail)return -ETIMEDOUT;p->attached=false;return 0;}
 static unsigned syncs,cancels,device_syncs,cpu_syncs,delivered;
 static u32 mask,hw[2],tags[RTL_AX_RX_BUFFERS];
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
@@ -110,6 +113,30 @@ int main(void){
  assert(!rtl_ax_rx_pe_rpq_stop(&rx)&&delivered==1);
  assert(get_unaligned_le32(mb+RTL_AX_RX_WORK_PROCESS*4)==2);
  assert(get_unaligned_le32(mb+RTL_AX_RX_WORK_READ*4)==2);
+ /* PE lookahead can finish a cross-TID replay while an earlier head
+  * waits for its missing sequence. Exact ARM_DONE is final; bit30 in
+  * ordinary scan hints must still reach the host. Preserve retry ownership. */
+ for(unsigned head=0;head<256;head+=127)for(unsigned failure=0;failure<2;failure++){
+  unsigned before=delivered;
+  assert(!rtl_ax_rx_pe_rpq_start(&rx,tx_memory,0x04200000,&program,4));
+  put_unaligned_le32(head,mb+RTL_AX_RX_WORK_READ*4);
+  put_unaligned_le32(head,mb+RTL_AX_RX_WORK_PROCESS*4);
+  put_unaligned_le32((head+4)&255,mb+RTL_AX_RX_WORK_WRITE*4);
+  unsigned count=get_unaligned_le32(mb+RTL_AX_RX_IDLE_COUNT*4);
+  for(unsigned i=0;i<4;i++){
+   unsigned slot=(head+i)&255;
+   unsigned id=get_unaligned_le32(memory+RTL_AX_RX_IDLE_IDS+(count-4+i)*4);
+   put_unaligned_le32(id,memory+RTL_AX_RX_WORK_IDS+slot*4);tags[id]=0x12345678+i;
+   put_unaligned_le32(i==1?BIT(30):i==2?BIT(31)|100:i==3?(200U<<23|2U<<16|0x124):0,
+    memory+RTL_AX_RX_WORK_STATUS+slot*4);
+  }
+  put_unaligned_le32(count-4,mb+RTL_AX_RX_IDLE_COUNT*4);
+  stop_fail=failure;
+  assert(rtl_ax_rx_pe_rpq_stop(&rx)==(failure?-ETIMEDOUT:0));
+  assert(delivered==before+2);
+  assert(get_unaligned_le32(mb+RTL_AX_RX_IDLE_COUNT*4)==count);
+  if(failure){stop_fail=false;assert(!rtl_ax_rx_pe_rpq_stop(&rx));assert(delivered==before+2);}
+ }
 }
 '''
 with tempfile.TemporaryDirectory(prefix='rx-pe-handoff-',dir=root/'artifacts') as tmp:
@@ -118,7 +145,7 @@ with tempfile.TemporaryDirectory(prefix='rx-pe-handoff-',dir=root/'artifacts') a
  c.write_text(common+''.join(function(n) for n in names)+case)
  subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',str(driver),str(c),'-o',str(p/'case')],check=True)
  subprocess.run([str(p/'case')],check=True)
-print('RX DMA cursors, address directory, separate PE0/PE1 contexts, NI tail retention, restart, DFS and pending-NI handoff fence passed.')
+print('RX DMA cursors, address directory, separate PE0/PE1 contexts, NI tail retention, restart, DFS, pending-NI fence and completed-replay/hint/retry handoff passed.')
 monitor=(driver/'monitor.h').read_text()
 assert 'ieee80211_hw_set(hw, RX_INLINE)' in monitor
 start=monitor.index('case IEEE80211_AMPDU_RX_START:');end=monitor.index('\n\treturn -EOPNOTSUPP;\n}',start)

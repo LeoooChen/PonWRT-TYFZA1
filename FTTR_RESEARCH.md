@@ -327,6 +327,8 @@
 
 161. 接入原厂CheckBSSIDConflict/CheckSSIDNameConflict诊断：实际执行两请求及完整ApInfo接收/逐设备文件/空JSON回复，确认报告身份字段为小写mac，记录可描述其他ONU；保留六字段与数字原值，按字段名解析修正原厂顶层尾字段导致丢表，完整对象才发布，64条上限明确拒绝不截断。每项37主机/36打包musl网络场景、27分配故障及逐字段缺失/类型ASan/UBSan，终端/邻居/常驻回归与整包/67输入/四程序一致通过。大写MAC的早期夹具已作废并按原字段重跑。该项完成查询传输与完整报告，不宣称实际扫描/冲突/漫游验证；内核/PE未改、未实机，完整生产者退场、ID复用与其他原厂策略仍未完成。详见[原厂冲突报告](port/FTTR.md#original-bssid-and-ssid-conflict-report-queries)。
 
+162. 修复PE→ARM停止交接重复投递已丢弃重传：PE乱序查找可在连续游标前完成跨TID重复包，原stop只跳过NI owner，现在也跳过精确ARM_DONE，含bit30的普通提示仍交ARM。f0dcea4原生stop及真实链接PE→原生stop均复现第三次多余投递；六组工作环回绕/NI未完成/停止失败重试、514库存与原两描述符延迟归还，ASan/UBSan提示区分、七项回归及Image/模块/输入一致通过。PE未改、未实机；该项修复自创框架归属交接，不作为完整退场或ID复用证明。详见[完成记录交接](port/FTTR.md#preserve-completed-pe-replay-decisions-during-arm-ownership-transfer)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

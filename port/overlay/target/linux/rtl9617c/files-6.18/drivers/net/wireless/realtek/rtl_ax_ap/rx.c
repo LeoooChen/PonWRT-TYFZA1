@@ -605,7 +605,10 @@ int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx)
 	{
 		u32 process = get_unaligned_le32(mailbox + RTL_AX_RX_WORK_PROCESS * 4);
 		while (process != get_unaligned_le32(mailbox + RTL_AX_RX_WORK_WRITE * 4)) {
-			if (!(get_unaligned_le32(rx->pe.memory + RTL_AX_RX_WORK_STATUS + process * 4) & BIT(31)))
+			u32 owner = get_unaligned_le32(rx->pe.memory + RTL_AX_RX_WORK_STATUS + process * 4);
+			/* Lookahead may already have discarded a cross-TID retry.
+			 * Bit30 also occurs in scan hints; only exact ARM_DONE is final. */
+			if (!(owner & BIT(31)) && owner != BIT(30))
 				rtl_ax_rx_pe_deliver(rx, process);
 			process = (process + 1) & 255;
 			put_unaligned_le32(process, mailbox + RTL_AX_RX_WORK_PROCESS * 4);

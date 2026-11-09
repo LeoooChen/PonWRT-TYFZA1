@@ -9988,6 +9988,33 @@ is `artifacts/fttr/*conflicts*-20261109.*`. Kernel/PE are unchanged by these
 diagnostics, and no physical device was accessed. Full gateway/roaming policy,
 subordinate capability validation and packet retirement remain incomplete.
 
+### Preserve completed PE replay decisions during ARM ownership transfer
+
+PE lookahead may discard a duplicate cross-TID retransmission while its
+contiguous work cursor waits for an earlier missing sequence. That completed
+entry carries exactly `ARM_DONE` (`BIT(30)`). The ARM stop path previously
+skipped only NI-owned entries and delivered this already-completed payload
+again. It now also skips exact `ARM_DONE`; ordinary lookup hints containing
+bit30 still require delivery. The existing recycler returns each completed
+buffer once, and the NI end-sequence/two-descriptor holdback is unchanged.
+
+Both the extracted production stop routine and an actual linked PE-to-ARM
+handoff reproduce the extra delivery with `f0dcea4`. The latter executes real
+lookahead on mixed BA-gap, cross-TID duplicate and NI-submitted frames, then
+passes its memory/ownership state to the native stop routine. Six cases cover
+work-ring wrap, incomplete NI consumption, failed PE stop and retry. The fixed
+path delivers only the two pending frames, retains the final NI payload until
+two more completions, and accounts for all514 buffers. Native ASan/UBSan tests
+also distinguish exact completion from ordinary bit30 hints. Seven related
+suites, Image/modules and the changed source identity pass; evidence is
+`artifacts/fttr/rx-handoff-*-20261109.*` and
+`artifacts/fttr/rx-linked-handoff-before-20261109.log`.
+
+This repairs native ownership transfer; no new factory replay or RF behavior
+is inferred from the modeled ARM delivery callback. PE firmware is unchanged,
+no physical device was accessed, and complete upstream/downstream retirement
+and safe ID reuse remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
