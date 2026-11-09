@@ -17,10 +17,12 @@ a=p.parse_args()
 original=0
 if a.stock:
     from arm64_module_oracle import ModuleOracle
-    from unicorn import UC_HOOK_MEM_READ
+    from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE
     reads=[]
-    def boundary(name,values):raise AssertionError((name,values))
-    o=ModuleOracle(a.stock,['aal_l3_tm_es_voq_status_get'],boundary)
+    def boundary(name,values):
+        if name=='printk':return 0
+        raise AssertionError((name,values))
+    o=ModuleOracle(a.stock,['aal_l3_tm_es_voq_status_get','aal_l3qm_enable_tx_cpu'],boundary)
     base=0x6000000;o.uc.mem_map(base,65536);o.word(o.symbols['g_ne_reg_iobase'][0],base)
     o.uc.hook_add(UC_HOOK_MEM_READ,lambda u,k,addr,n,v,d:reads.append(addr-base),begin=base,end=base+65535)
     for cpu in (2,3):
@@ -31,6 +33,16 @@ if a.stock:
                 reads.clear();assert o.call('aal_l3_tm_es_voq_status_get',0,cpu,cos,o.scratch)==0
                 assert reads==[0x6830] and o.unpack(o.scratch,'I')[0]==int(not(mask&(1<<cos)))
                 original+=1
+    writes=[]
+    o.uc.hook_add(UC_HOOK_MEM_WRITE,lambda u,k,addr,n,v,d:writes.append((addr-base,v)),begin=base,end=base+65535)
+    for cpu in (2,3):
+        for enable in (0,1):
+            for before in (0,0xffffffff,0x5aa55aa5,0xa55aa55a):
+                o.uc.mem_write(base+0x6108,before.to_bytes(4,'little'));writes.clear()
+                o.call('aal_l3qm_enable_tx_cpu',cpu,enable)
+                expected=before|(1<<cpu) if enable else before&~(1<<cpu)
+                assert writes==[(0x6108,expected)]
+    print('Original ES CPU enable:16 both-radio masked updates preserve every unrelated bit')
 
 # Reuse the existing release fixture's indirect IO/error ownership model.
 fixture=root/'scripts/test_ni_restore.py';text=fixture.read_text();ns={'__file__':str(fixture)}

@@ -61,12 +61,13 @@ static unsigned char uplink_memory[8192];
 #define RTL_AX_NI_TX_MASK 1023
 static __attribute__((unused)) void *rtl_ax_rx_pe_memory(void *rx){(void)rx;return memory;}
 static unsigned accesses,fail_at,polls,mmio_writes,opens,released,paused;
-static bool load_fail,disable_fail;static unsigned loading,vp_base_writes,rx_handoffs;
+static bool load_fail,disable_fail;static unsigned loading,vp_base_writes,rx_handoffs,es_restore_fault,es_cpu;
 static u32 get_unaligned_le32(const void *p){u32 x;memcpy(&x,p,4);return x;}
 static void put_unaligned_le32(u32 x,void *p){memcpy(p,&x,4);}
 static u32 readl(const void *p){return get_unaligned_le32(p);}
 static void writel(u32 v,void *p){
  mmio_writes++;
+ if(p==mmio+0x6108/4 && (es_restore_fault==1 || (es_restore_fault==2 && (v&BIT(es_cpu)))))return;
  if(p==dma+0x100/4 && !v && disable_fail)return;
  if(p==dma+0x108/4 || p==dma+0x10c/4)vp_base_writes++;
  if(p==mmio+0x1654/4 || p==mmio+0x66a4/4){
@@ -113,7 +114,7 @@ code+=fn('ni_uplink_stop').replace('tx->ni.uplink_ready = false;', 'uplink_stops
 code+=fn('ni_es_empty')+fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
- epp_error=0;epp_calls=uplink_frees=0;
+ epp_error=0;epp_calls=uplink_frees=es_restore_fault=0;es_cpu=cpu;
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));
  accesses=mmio_writes=polls=opens=released=paused=loading=vp_base_writes=rx_handoffs=0;load_fail=disable_fail=false;
  struct rtl_ax_tx t={.pe={memory},.ni={.active=true,.regs=mmio,.dma=dma,.vp=(u8*)dma+0x100,.cpu=cpu,.eq=cpu==3?6:7}};
@@ -126,6 +127,24 @@ static struct rtl_ax_tx setup(unsigned cpu){
  return t;
 }
 int main(void){unsigned cases=0;
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned desired=0;desired<2;desired++){
+  struct rtl_ax_tx t=setup(cpu);fail_at=0;
+  t.ni.saved[13]=desired?BIT(cpu):0;
+  mmio[0x6108/4]=(0x1f&~BIT(cpu))|(desired?0:BIT(cpu));es_restore_fault=1;
+  assert(ni_restore_registers(&t)==-EIO&&t.ni.active&&!released);
+  assert((mmio[0x6108/4]&~BIT(cpu))==(0x1f&~BIT(cpu)));
+  es_restore_fault=0;assert(!ni_restore_registers(&t));
+  assert(mmio[0x6108/4]==((0x1f&~BIT(cpu))|(desired?BIT(cpu):0)));cases++;
+ }
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned forced=0;forced<2;forced++){
+  struct rtl_ax_tx t=setup(cpu);fail_at=0;es_restore_fault=2;
+  if(forced)put_unaligned_le32(1,memory+0x2078);
+  for(unsigned retry=0;retry<2;retry++){
+   assert((forced?ni_test_remove(&t):ni_test_release(&t))==-EIO);
+   assert(t.ni.active&&t.ni.regs==mmio&&t.ni.dma==dma&&!released&&!opens);
+  }
+  es_restore_fault=0;assert(!(forced?ni_test_remove(&t):ni_test_release(&t))&&released==2);cases++;
+ }
  for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned failure=0;failure<3;failure++){
   struct rtl_ax_tx t=setup(cpu);fail_at=0;
   t.ni.uplink_memory=uplink_memory;t.ni.uplink_dma=0x7000000;t.ni.uplink_ready=true;

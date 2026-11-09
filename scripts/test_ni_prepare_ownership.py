@@ -41,7 +41,7 @@ struct rtl_ax_tx {void *rx;struct {void *memory;u32 dma;unsigned slot;}pe;
  struct {bool active;void *regs,*dma,*vp;unsigned cpu,eq,profile,vp_index,registers[14],saved[14],arb[8],attrs[2][2],epp_bases[8],epp_eq[8];}ni;};
 static u32 regs[65536/4],dma[4096/4];static u8 memory[0x80000];static u32 pe_tx_program[1];
 static unsigned maps,writes,accesses,fail_access,event_calls,rpq_calls,late,eq_errors;
-static int fail_map,fail_event,fail_rpq;
+static int fail_map,fail_event,fail_rpq;static bool fail_enable;
 static struct rtl_ax_tx *active;
 static void *ioremap(uint64_t address,unsigned size){
  maps++;if((int)maps==fail_map)return NULL;
@@ -49,7 +49,7 @@ static void *ioremap(uint64_t address,unsigned size){
  return address==0x4f4300000ULL?(void*)regs:(void*)dma;
 }
 static u32 readl(const void *p){u32 v;memcpy(&v,p,4);return v;}
-static void writel(u32 v,void *p){writes++;memcpy(p,&v,4);}
+static void writel(u32 v,void *p){writes++;if(fail_enable&&p==regs+0x6108/4)return;memcpy(p,&v,4);}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static void dma_wmb(void){}
 static int ni_access(struct rtl_ax_tx *tx,unsigned reg,u32 request){
@@ -72,7 +72,7 @@ static int rtl_ax_rx_pe_rpq_start(void *rx,void *m,u32 dma_address,const u32 *pr
 '''+''.join(function(n) for n in ('ni_es_empty','ni_epps_empty','ni_test_prepare'))+r'''
 static struct rtl_ax_tx setup(unsigned slot){
  memset(regs,0,sizeof(regs));memset(dma,0,sizeof(dma));memset(memory,0xa5,sizeof(memory));
- maps=writes=accesses=fail_access=event_calls=rpq_calls=late=eq_errors=0;fail_map=fail_event=fail_rpq=0;
+ maps=writes=accesses=fail_access=event_calls=rpq_calls=late=eq_errors=0;fail_map=fail_event=fail_rpq=0;fail_enable=false;
  struct rtl_ax_tx tx={.pe={.memory=memory,.dma=0x5000000,.slot=slot},.ni={.cpu=3-slot,.eq=6+slot,.profile=7-slot,.vp_index=9+slot}};
  tx.ni.registers[0]=0x61e8+tx.ni.eq*20;
  for(unsigned i=1;i<5;i++)tx.ni.registers[i]=tx.ni.registers[0]+i*4;
@@ -89,6 +89,14 @@ static struct rtl_ax_tx setup(unsigned slot){
  return tx;
 }
 int main(void){unsigned cases=0;
+ for(unsigned slot=0;slot<2;slot++){
+  struct rtl_ax_tx tx=setup(slot);active=&tx;fail_enable=true;
+  regs[0x6108/4]=0x1f&~BIT(tx.ni.cpu);
+  assert(ni_test_prepare(&tx,1)==-EIO);
+  assert(tx.ni.active&&tx.ni.regs==regs&&tx.ni.dma==dma&&event_calls==1&&rpq_calls==1);
+  assert(regs[0x6108/4]==tx.ni.saved[13]&&!(regs[0x6108/4]&BIT(tx.ni.cpu)));
+  unsigned old=maps;assert(ni_test_prepare(&tx,1)==-EBUSY&&maps==old);cases++;
+ }
  for(unsigned slot=0;slot<2;slot++)for(unsigned cos=0;cos<8;cos++)for(unsigned kind=0;kind<3;kind++){
   struct rtl_ax_tx tx=setup(slot);active=&tx;
   if(kind==0)regs[(0x7000+tx.ni.cpu*32)/4+cos]+=8;

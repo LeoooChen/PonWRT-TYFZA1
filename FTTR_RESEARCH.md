@@ -333,6 +333,8 @@
 
 164. 修复强制NI清理绕过残留上行停止：旧1beaee0在ni_uplink_stop失败后仍可恢复/释放寄存器，遗留描述符分配和邮箱；强制路径现在先重试原生uplink stop，失败保留全部重试资源，成功后由同一停止流程撤指针/恢复VP/释放一次。生命周期测试改为执行真实uplink stop，六双radio/DMA未追平/关闭被拒/基址忙/重试→强制下行清理场景、52恢复场景及六回归含554 ES和链接PE→ARM，ASan/UBSan、Image/模块/两输入一致通过。PE未改、未实机；完整MCE/AFT/AXI/MiniOLT退场与ID复用仍未证明。详见[强制清理上行依赖](port/FTTR.md#forced-ni-cleanup-must-finish-a-retained-uplink-stop)。
 
+165. 补齐NI启动/恢复最终ES使能读回：原dd6d738实际函数复现写入被拒仍返回成功；现在准备核对CPU位开启、恢复核对保存位，失败EIO并保留现有回滚/引用归属，无关CPU/LAN/PON位不动。原厂aal_l3qm_enable_tx_cpu实执行16种掩码更新，98准备/60恢复、554 ES及BCMC/撤销/FE事务回归、Image/模块/输入一致通过。PE未改、未实机；该项不证明全链路排空和ID安全复用。详见[ES发布恢复核验](port/FTTR.md#ni-setup-and-restoration-verify-their-es-enable-result)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

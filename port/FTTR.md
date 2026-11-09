@@ -10066,6 +10066,30 @@ No physical device was accessed and PE firmware is unchanged. This establishes
 the cleanup dependency and retains the existing two-descriptor prefetch rule;
 it does not establish full MCE/AFT/AXI/MiniOLT retirement or safe ID reuse.
 
+### NI setup and restoration verify their ES enable result
+
+The final CPU ES enable in `ni_test_prepare` and the saved CPU enable restoration
+in `ni_restore_registers` previously returned success even if the write did not
+take effect. Setup now verifies the selected CPU bit is enabled; restoration
+verifies it matches the saved state. Both return `EIO` on mismatch. Existing
+partial-prepare and failed-cleanup ownership retains mappings, netdev references
+and snapshots for retry; no successful FE/BCMC admission or release is reported
+from these failed operations. Only the selected CPU bit is compared/restored,
+preserving unrelated CPU/LAN/PON state.
+
+The target `aal_l3qm_enable_tx_cpu` executes16 CPU2/3 enable/disable cases with
+four initial register patterns; its actual instructions confirm the masked
+`0x6108` update. The native fault tests reproduce both false-success cases with
+`dd6d738`, then pass98 preparation and60 restoration cases, including both saved
+bit values, normal/forced cleanup retries and retained snapshots. Existing554 ES
+cases, BCMC partial setup, NI withdrawal and FE transaction regressions pass.
+Image/modules and changed source identity pass; artifacts use
+`artifacts/fttr/es-enable-*-20261109.*` and
+`artifacts/fttr/es-restore-before-20261109.log`.
+
+PE firmware is unchanged and no physical device was accessed. These are checked
+control updates, not proof of complete packet retirement or safe ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

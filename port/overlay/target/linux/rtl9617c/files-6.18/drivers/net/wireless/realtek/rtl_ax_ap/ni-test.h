@@ -376,6 +376,7 @@ static int ni_restore_registers(struct rtl_ax_tx *tx)
 	/* ES_CTRL also owns CPU0/LAN/PON. Restore only this radio's CPU enable bit. */
 	writel((readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu)) |
 		(tx->ni.saved[13] & BIT(tx->ni.cpu)), tx->ni.regs + 0x6108);
+	if ((readl(tx->ni.regs + 0x6108) ^ tx->ni.saved[13]) & BIT(tx->ni.cpu)) return -EIO;
 	return 0;
 }
 
@@ -533,6 +534,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	if (ret) return ret;
 	dma_wmb();
 	writel(readl(tx->ni.regs + 0x6108) | BIT(tx->ni.cpu), tx->ni.regs + 0x6108);
+	if (!(readl(tx->ni.regs + 0x6108) & BIT(tx->ni.cpu))) return -EIO;
 	return 0;
 }
 
