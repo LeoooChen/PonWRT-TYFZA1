@@ -64,6 +64,7 @@ static unsigned int rtl_ax_ap_read32(const u8 *p){unsigned int v;memcpy(&v,p,4);
 '''
 common += '#include "' + str(driver / 'role.h') + '"\n'
 common += '#include "' + str(driver / 'security.h') + '"\n'
+common += '#include "' + str(driver / 'cam-owner.h') + '"\n'
 common += r'''
 struct wiphy {int unused;};
 struct wiphy_work {int unused;};
@@ -74,7 +75,7 @@ struct rtl_ax_tx {bool pending[128][17];};
 struct ieee80211_key_conf;
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
-struct rtl_ax_ap {unsigned traffic_peer;u8 bss_color;
+struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;u8 role_cam[60];unsigned traffic_peer;u8 bss_color;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128],security_ext[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
@@ -148,7 +149,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned int queue,unsigned int ca
 '''
 common += r'''
 static int rtl_ax_command_flags(struct rtl_ax_ap *r,unsigned q,unsigned c,unsigned cls,unsigned f,const u8 *p,unsigned n,bool recv,bool done){assert(!recv);return rtl_ax_command(r,q,c,cls,f,p,n,done);}
-static int rtl_ax_cam_write(struct rtl_ax_ap *r,u8 cam[60]){cam[53]=r->bss_color&63;return rtl_ax_command(r,1,1,6,0,cam,60,true);}
+
 static int prepared;
 static unsigned sequence_binds,sequence_unbinds;static int sequence_error,prepare_error;
 static int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;sequence_binds++;return sequence_error;}
@@ -158,6 +159,9 @@ static void rtl_ax_client_release(struct rtl_ax_ap *r){r->sta_role=false;}
 static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *v){return v;}
 static void rtl_ax_tx_ap_address(struct rtl_ax_tx *tx,const u8 *addr){(void)tx;(void)addr;}
 '''
+pci_source=(driver/'pci.c').read_text()
+a=pci_source.index('static int rtl_ax_cam_write(');b=pci_source.index('\n}\n',a)+3
+common+=pci_source[a:b]
 test = r'''
 int main(void){
  struct wiphy w={};struct ieee80211_vif vif={.addr={2,1,2,3,4,5}};
@@ -166,6 +170,10 @@ int main(void){
  struct ieee80211_sta *sta=calloc(1,sizeof(*sta));assert(sta);
  sta->drv_priv[0].macid=7;sta->addr[0]=2;sta->addr[5]=77;sta->aid=27;set_bit(7,r.station_ids);
  memcpy(r.tx_ba[7].address,sta->addr,6);
+ /* Real non-MACID address slots and shared BSSID references survive RPQ/ACK failure. */
+ r.cam_owners.role[0].reserved=true;r.cam_owners.role[7].reserved=true;
+ r.cam_owners.role[7].address=5;r.cam_owners.bssid[0].references=2;
+ memcpy(r.cam_owners.bssid[0].address,vif.addr,6);
  struct ieee80211_ampdu_params p={.sta=sta,.tid=3,.action=IEEE80211_AMPDU_RX_START,.ssn=101};
  assert(!rtl_ax_ampdu_action(&hw,&vif,&p));assert(r.rx_ba[0].valid);
  p.action=IEEE80211_AMPDU_RX_STOP;fail_class=12;fail_function=0;fail_count=1;
@@ -196,11 +204,14 @@ int main(void){
  rpq_complete=true;fail_class=6;fail_function=0;fail_count=1;
  rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
  assert(r.retired_stations[7].pending && test_bit(7,r.station_ids));
+ assert(r.cam_owners.role[7].reserved&&r.cam_owners.role[7].address==5&&r.cam_owners.bssid[0].references==2);
  assert(!r.rx_ba[0].valid && !r.security_roles[7].valid && !test_bit(42,r.security_ids));
  rtl_ax_cleanup_work(&w,&r.cleanup_work.work);
  assert(!r.retired_stations[7].pending && !test_bit(7,r.station_ids) && r.station_removed==1);
+ assert(!r.cam_owners.role[7].reserved&&r.cam_owners.bssid[0].references==1);
  struct ieee80211_sta client={.drv_priv={{1}},.addr={2,0,0,0,0,8}};
  vif.type=NL80211_IFTYPE_STATION;vif.cfg.aid=42;r.sta_vif=&vif;r.ap_vif=NULL;r.sta_role=r.sta_associated=true;
+ r.cam_owners.role[0].reserved=false;r.cam_owners.role[1].reserved=true;r.cam_owners.role[1].address=0;
  set_bit(1,r.station_ids);tx.pending[1][0]=true;rpq_complete=false;
  assert(!rtl_ax_station_remove(&hw,&vif,&client)&&r.retired_stations[1].pending&&r.sta_role);
  rpq_complete=true;fail_class=6;fail_function=0;fail_count=1;
@@ -212,6 +223,7 @@ int main(void){
   if(type!=2&&type!=3&&type!=7)continue;
   r.ap_vif=r.sta_vif=NULL;r.sta_role=true;r.retired_stations[1].pending=true;
   r.retired_stations[1].client=true;set_bit(1,r.station_ids);vif.type=type;
+  r.cam_owners.role[1].reserved=true;r.cam_owners.role[1].address=0;r.cam_owners.bssid[0].references=1;
   fail_class=6;fail_function=0;fail_count=1;prepared=0;
   assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
   assert(r.sta_role&&r.retired_stations[1].pending&&!r.ap_vif&&!r.sta_vif&&!prepared);

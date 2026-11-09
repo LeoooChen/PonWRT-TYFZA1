@@ -65,7 +65,8 @@ struct ieee80211_bss_conf {unsigned beacon_int,dtim_period; bool enable_beacon;
 struct ieee80211_vif {int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
-struct rtl_ax_ap {
+#include "cam-owner.h"
+struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;
  struct {u8 nhm_noise_ratio;} environment;s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
@@ -203,6 +204,12 @@ int main(void){
   reset_commands();assert(!rtl_ax_self_role_prepare(&r,ap.addr,100,2));
   assert(r.role_type==2&&r.role_stage==5&&commands==4);
   assert(command_word[1]==0x4100&&command_word[2]==(0x4b040100|bw));
+  u8 saved_cam[60],replacement[6]={2,1,2,3,4,57};memcpy(saved_cam,r.role_cam,60);
+  reset_commands();fail_command=1;
+  assert(rtl_ax_self_role_prepare(&r,replacement,100,2)==-EIO);
+  assert(!memcmp(saved_cam,r.role_cam,60)&&r.cam_owners.role[0].reserved&&r.cam_owners.bssid[0].references==1);
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,ap.addr,100,2));
+
   assert(!rtl_ax_monitor_add_interface(&hw,&sta)&&r.sta_role&&r.sta_vif==&sta);
   assert(rtl_ax_monitor_add_interface(&hw,&mesh)==-EBUSY);
   rtl_ax_monitor_remove_interface(&hw,&sta);assert(!r.sta_vif&&!r.sta_role);

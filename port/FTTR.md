@@ -8101,6 +8101,60 @@ still needs independent role/CAM allocation, beacon/MBID, GTK, sequence and
 BCMC ownership, with matching FE/PE metadata. The single-interface limit was
 not relaxed. Complete hardware retirement/ID reuse and TSPEC remain open.
 
+### Independent address and BSSID CAM ownership
+
+The radio no longer assumes address-CAM index equals MACID or that every role
+owns BSSID-CAM0. `cam-owner.h` now reserves those resources independently in the
+actual CAM writer, using the target C/XB hardware capacities:128 address entries
+and20 BSSID entries. Each MACID retains its allocated address and BSSID indices;
+roles with the same full BSSID share one reference-counted BSSID entry. The
+current native radio uses MAC band0; concurrent multi-band/port selection is not
+implied by this allocator.
+
+Reservation precedes the firmware command and survives a lost ACK. Retries
+reuse the reservation without adding references. Address and BSSID exhaustion
+return ENOSPC before issuing CAM IO. Updating an identity shared by other peers
+returns EBUSY; an exclusively owned STA BSSID can change for association. Peer
+deletion targets its retained indices, keeps the BSSID valid for remaining
+users and releases software ownership only after the erase ACK. A repeated
+cleanup with no reservation performs no hardware write. An uncertain last-user
+erase followed by a new same-BSSID reservation is retried with valid1, preserving
+the new owner. This is CAM command ownership, not proof of complete packet
+retirement elsewhere in the forwarding pipeline.
+
+`trace_stock_radio_cam_owners.py` executes the target HAL/MAC allocator and
+removal path for three BSSIDs, arbitrary nonsequential MACIDs, shared peers and
+reuse on both C and XB:26 transitions. The target `_remove_role` calls
+`_change_role`, which runs BSSID allocation again on removal. When the last
+matching role has been made invalid, that path can select a different free
+index and retain valid1. Six last-user deletion commands in the trace differ
+from the required retained-index cleanup. Native explicitly corrects this
+observed factory error instead of applying that allocator to removal.
+
+AP→STA transition also keeps a pending CAM erase independent of successful
+firmware role removal. Clearing the role stage no longer skips CAM cleanup on
+retry. AP self-role construction uses a local candidate; a failed CAM write
+cannot replace its last acknowledged command. A first-create timeout without a
+confirmed command still produces a correctly sized32-byte address/8-byte BSSID
+erase using the retained indices and BSSID. The HE color update uses the latest
+acknowledged owner command, preserving its newly allocated indices.
+
+`test_radio_cam_owners.py` compares all26 original transitions, checks the six
+corrected deletions, both capacity limits, timeout retries, identity changes,
+new shared references during cleanup and first-create failure under ASan/UBSan.
+Actual STA/BA cleanup verifies non-MACID address slots stay reserved across RPQ
+and firmware failure. AP→STA tests require the pending erase before recreation;
+AP/mesh tests check failed self-role replacement retains its snapshot. Existing
+BSS Color, extended-key and FE transaction regressions pass. Image/modules build
+and three changed-input identities pass; artifacts are
+`artifacts/fttr/cam-owner*-20261109.*`. PE firmware is unchanged, with no physical
+association or traffic validation.
+
+This is an implemented prerequisite for multi-VIF isolation. The driver still
+exposes one data interface: per-VIF role/MBID/beacon allocation, GTK, shared
+sequence and BCMC/FE/PE identity are not yet complete. NI group/action/cookie/GEM
+retirement restrictions remain; this change does not remove their quarantine.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

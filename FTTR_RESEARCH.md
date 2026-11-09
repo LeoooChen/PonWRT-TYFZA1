@@ -260,6 +260,8 @@
 
 121. 补齐HE BSS Color的共享BSSID CAM生命周期：核对原厂HAL→role_info→CAM及独立端口寄存器更新，复现原生CAM总写0而端口非0的缺漏；AP/mesh启动、STA关联及所有站点创建/删除现在保留当前颜色。动态切换等待CAM ACK后更新快照/寄存器，当前所属角色成功写入会保存最新AID/HE，失败不覆盖；更新失败立即关闭硬件调度，即使PE暂停超时也请求接口退场。256原厂编码/寄存器、128更新故障重试、32768站点写入、384实际CAM配方及128动态生命周期场景通过，STA/BA/双CAM密钥/AP-mesh/FE事务回归与Image/模块、三输入一致检查通过。PE未变、未实机。这是多VIF依赖审查中发现的现有硬件身份修复；多VIF的角色/MBID/密钥/序列/BCMC隔离仍未接入，完整退场/ID复用和TSPEC仍待补齐。详见[BSSID颜色生命周期](port/FTTR.md#he-bss-color-in-shared-bssid-cam-lifecycle)。
 
+122. 接入独立地址/BSSID CAM归属：实际CAM写入不再假设索引等于MACID或固定BSSID0，按目标C/XB容量128/20分配，同BSSID引用共享，发送前预留、ACK失败保留、删除原索引且最后引用ACK后释放。执行原厂三BSSID/非顺序MACID/共享及重用26次转换，发现并纠正6次最后用户删除重新分配BSSID索引/保留valid的原厂错误。补齐AP→STA角色删除成功但CAM失败的独立重试，AP候选命令不覆盖已确认快照，首次写入失败无快照时仍按正确表长清理。容量、重试、共享身份拒绝、关联更新、清理期间新引用及ASan/UBSan、STA/BA/颜色/AP-mesh/双CAM密钥/FE事务回归和Image/模块、三输入一致通过。PE未变、未实机；这是多VIF基础归属接入，MBID/信标/GTK/序列/BCMC与FE/PE多接口隔离仍未完成，其他硬件ID隔离仍保留。详见[CAM归属](port/FTTR.md#independent-address-and-bssid-cam-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -68,10 +68,11 @@ struct ieee80211_bss_conf {unsigned beacon_int,dtim_period;u8 bssid[6];
  struct {bool enabled;unsigned color;}he_bss_color;bool enable_beacon;};
 struct ieee80211_vif {int type;u8 addr[6];struct {unsigned aid;bool assoc,idle;} cfg;
  struct ieee80211_bss_conf bss_conf;};
+#include "''' + str(driver / 'cam-owner.h') + r'''"
 struct rtl_ax_ap;
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 struct rtl_ax_io {void(*write8)(void *,unsigned,u8);};
-struct rtl_ax_ap {struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
+struct rtl_ax_ap {struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
  bool sta_role,sta_associated,scanning,station_ids[128],peer_authorized[128];
  bool ap_started,beacon_enabled;unsigned edca_valid;int ap_result,command_lock;
  struct {bool in_cac,detected;int error;}dfs;
@@ -79,7 +80,7 @@ struct rtl_ax_ap {struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,
  u8 sta_bssid[6],role_cam[60],bss_color;unsigned role_stage,role_type;int mesh_sync_work;u32 sta_join;int role_result,offload_result,offload_work;};
 static unsigned calls,fail_at,queued,losses,regs[65536],writes,ap_deletes;
 static bool admission;
-static u32 last_join,last_cam,last_remove;static unsigned stopped,last_color,paused,blocked;
+static u32 last_join,last_cam,last_remove;static unsigned stopped,last_color,paused,blocked,cam_commands;
 static int boundary(void){return ++calls==fail_at?-ETIMEDOUT:0;}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
@@ -94,7 +95,7 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned c
  (void)r;(void)q;assert(cat==1&&ack);
  if(cls==8){assert(bytes==4);u32 v=rtl_ax_ap_read32(data);
   assert(fn==4?(v==0x4500||v==0xc500||v==0x2001):(fn==0&&(v==r->sta_join||v==0x04040101)));}
- else {assert(cls==6&&fn==0&&bytes==60);last_cam=rtl_ax_ap_read32(data+32);last_color=data[53];}
+ else {assert(cls==6&&fn==0&&bytes==60);last_cam=rtl_ax_ap_read32(data+32);last_color=data[53];cam_commands++;}
  if(cls==8&&fn==4&&(rtl_ax_ap_read32(data)&0x500)==0x500)last_remove=rtl_ax_ap_read32(data);
  if(cls==8&&fn==0)last_join=rtl_ax_ap_read32(data);
  if(cls==8&&fn==4&&rtl_ax_ap_read32(data)==0x4500)ap_deletes++;
@@ -129,7 +130,7 @@ int main(void){
  struct rtl_ax_ap held={.station_ids={[7]=true}};
  assert(rtl_ax_client_prepare(&held,&vif)==-EBUSY&&!calls);
  for(unsigned fault=0;fault<=8;fault++){
-  struct rtl_ax_ap r={.role_stage=5,.role_type=2,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;
+  struct rtl_ax_ap r={.role_stage=5,.role_type=2,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;r.cam_owners.role[0].reserved=true;r.cam_owners.bssid[0].references=1;
   calls=queued=losses=writes=ap_deletes=0;fail_at=fault;memset(regs,0xa5,sizeof(regs));
   int result=rtl_ax_client_prepare(&r,&vif);
   assert(result==(fault?-ETIMEDOUT:0));
@@ -138,8 +139,10 @@ int main(void){
   else if(fault){
    assert(!r.sta_role&&!r.station_ids[1]);
    if(fault==2){
-    assert(!r.role_stage&&ap_deletes==1);fail_at=0;
+    assert(!r.role_stage&&ap_deletes==1&&r.cam_owners.role[0].reserved);fail_at=0;
+    unsigned before=cam_commands;
     assert(!rtl_ax_client_prepare(&r,&vif)&&ap_deletes==1);
+    assert(cam_commands==before+3&&!r.cam_owners.role[0].reserved&&r.cam_owners.role[1].reserved);
    }
   }
   else {
@@ -178,7 +181,7 @@ int main(void){
   }
  }
  for(unsigned role_type=2;role_type<=6;role_type+=4){
-  struct rtl_ax_ap r={.role_stage=5,.role_type=role_type,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;fail_at=0;
+  struct rtl_ax_ap r={.role_stage=5,.role_type=role_type,.io={write8}};struct ieee80211_hw hw={.radio=&r};r.hw=&hw;fail_at=0;r.cam_owners.role[0].reserved=true;r.cam_owners.bssid[0].references=1;
   assert(!rtl_ax_client_prepare(&r,&vif));assert(last_remove==(0x500|(role_type<<13)));
  }
  for(unsigned kind=2;kind<=3;kind++)for(unsigned color=0;color<64;color++){

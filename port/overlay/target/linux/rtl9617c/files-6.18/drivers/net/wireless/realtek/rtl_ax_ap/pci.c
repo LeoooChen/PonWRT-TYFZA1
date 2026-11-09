@@ -19,6 +19,7 @@
 #include "download.h"
 #include "transport.h"
 #include "role.h"
+#include "cam-owner.h"
 #include "security.h"
 #include "rate.h"
 #include "traffic.h"
@@ -235,6 +236,7 @@ struct rtl_ax_ap {
 	u8 role_stage, role_type;
 	int role_result;
 	u8 role_cam[60], bss_color;
+	struct rtl_ax_cam_owners cam_owners;
 	struct rtl_ax_port0 port0;
 	bool beacon_enabled;
 	u32 beacon_bytes, beacon_header[4], beacon_last_stats[2];
@@ -635,12 +637,15 @@ static int rtl_ax_cam_write(struct rtl_ax_ap *radio, u8 cam[60])
 {
 	int ret;
 
+	ret = rtl_ax_cam_prepare(&radio->cam_owners, cam);
+	if (ret) return ret == -ENOENT ? 0 : ret;
 	cam[53] = radio->bss_color & 0x3f;
 	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 6, 0, cam, 60, true);
 	/* Color-only updates must retain the most recent association/AID/HE
 	 * attributes of the owner (AP self0, single STA1). */
 	if (!ret && (rtl_ax_ap_read32(cam + 32) & 127) == (radio->sta_role ? 1U : 0U))
 		memcpy(radio->role_cam, cam, 60);
+	if (!ret) rtl_ax_cam_complete(&radio->cam_owners, cam);
 	return ret;
 }
 
@@ -824,7 +829,7 @@ int rtl_ax_mac_drop_bcmc(struct pci_dev *pdev)
 static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	unsigned int interval, unsigned int dtim)
 {
-	u8 unpause[32], create[4], join[4];
+	u8 unpause[32], create[4], join[4], cam[60];
 	bool owns_transport = !radio->monitor_started;
 	bool mesh = radio->ap_vif && radio->ap_vif->type == NL80211_IFTYPE_MESH_POINT;
 	u8 role_type = mesh ? 6 : 2;
@@ -835,7 +840,7 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const u8 *address,
 	rtl_ax_role_unpause(unpause, 0);
 	rtl_ax_role_create(create, 0, mesh);
 	rtl_ax_role_join(join, 0, radio->chip == RTL_AX_8852C ? 3 : 1, mesh);
-	rtl_ax_role_cam(radio->role_cam, 0, address);
+	rtl_ax_role_cam(cam, 0, address);
 	pci_set_master(radio->pdev);
 	rtl_ax_h2c_start(&radio->io);
 	rtl_ax_rx_open(radio->rx);
@@ -862,7 +867,7 @@ update_join:
 	radio->role_stage = 3;
 	radio->role_type = role_type;
 update_cam:
-	ret = rtl_ax_cam_write(radio, radio->role_cam);
+	ret = rtl_ax_cam_write(radio, cam);
 	if (!ret) {
 		radio->role_stage = 4;
 		ret = rtl_ax_station_tables(radio, 0);

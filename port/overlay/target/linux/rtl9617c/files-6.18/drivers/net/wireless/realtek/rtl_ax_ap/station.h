@@ -59,6 +59,9 @@ static int rtl_ax_client_prepare(struct rtl_ax_ap *radio, struct ieee80211_vif *
 		if (ret) return ret;
 		/* Firmware no longer owns AP MACID0, even if CAM cleanup fails. */
 		radio->role_stage = 0;
+	}
+	/* A failed CAM erase outlives the successful firmware role removal. */
+	if (radio->cam_owners.role[0].reserved) {
 		memcpy(cam, radio->role_cam, sizeof(cam));
 		cam[8] &= ~1;
 		cam[52] &= ~1;
