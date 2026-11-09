@@ -10379,6 +10379,37 @@ transaction ownership; destination FDB and interface tables require their own
 ownership review. Complete in-flight packet retirement and safe ID reuse remain
 unfinished.
 
+### Destination FDB ownership survives uncertain append and restore
+
+Destination acquisition now accepts only a real lookup hit or miss, saves the
+original entry, and sets flow ownership before APPEND. A timeout or limit result
+can follow an applied update, so rollback must still restore the saved entry or
+delete the newly created key. The entry becomes shareable only after successful
+append and index lookup. A deleting or incomplete same-address owner blocks new
+sharing, including after a last-owner restoration failure.
+
+FDB command access checks `0x1ca0` bit31 before changing mode, data or result
+registers. Cleanup validates the hardware status: deleting a new entry accepts
+HIT5 or MISS15, while restoring an inherited entry requires HIT5. Other statuses
+retain ownership and enter retry. The original header identifies4/11 as cases
+where an append may update an entry despite a limit failure; those unsuccessful
+acquisitions also retain cleanup ownership. No error is converted into a new
+baseline snapshot.
+
+Old `843fc37` reproduces missing destination ownership after an APPEND timeout.
+Native acquisition plus actual flow deletion passes26 existing/new/applied/
+unapplied/timeout/status scenarios, including failed restore, no premature
+sharing and exact eventual recovery. The target `__aal_fdb_access.constprop.0`
+executes15 READ/APPEND/DELETE result pass-through combinations and three
+busy-before-staging cases. Nine regression suites, ASan/UBSan, Image/modules and
+three final FE input identities pass; artifacts are
+`artifacts/fttr/fdb-ownership-*-20261110.*`.
+
+PE firmware is unchanged and no physical device was accessed. This establishes
+the FDB transaction's software ownership, not retirement of packets already
+carrying its index. Interface-table review and complete hardware-ID retirement
+remain separate outstanding work.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

@@ -141,6 +141,7 @@ static inline int rtl_fe_fdb_command(const struct rtl_dq_io *io,unsigned int com
 {
  unsigned int i,control=io->read(io->context,0x1c00);
  int ret;
+ if(io->read(io->context,0x1ca0)&0x80000000U)return -EBUSY;
  io->write(io->context,0x1c00,control|0x80000000U);
  for(i=0;i<4;i++)io->write(io->context,0x1cb0-i*4,words[i]);
  io->write(io->context,0x1c2c,0);

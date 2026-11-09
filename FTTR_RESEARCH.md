@@ -351,6 +351,8 @@
 
 173. 修复源MAC首次CAM写超时没有归属：现在写前保存并绑定flow/source引用，写成功才ready可共享；最后恢复先撤ready，失败不允许新同MAC流共享。源/协议CAM均在改数据前检查3200忙位。4b35de5实际get→delete复现原缺口；15原厂槽位×成功/超时、已应用/未应用写失败、读失败、协议忙隔离、共享/最后恢复重试、九回归与Image/模块/两输入一致通过。PE未改、未实机；目的FDB/接口表仍需独立审查，未据此宣称完整退场或ID复用。详见[源MAC事务归属](port/FTTR.md#source-mac-acquisition-owns-its-snapshot-before-a-fallible-cam-write)。
 
+174. 补齐目的FDB不确定APPEND/恢复归属：仅HIT/MISS进入获取，写前绑定原快照，新建/继承条目均可回滚；完整APPEND+索引查询后才ready，删除中或未完成项拒绝共享。1ca0忙时不改数据，删除允许HIT5/MISS15，恢复必须HIT5，其余结果保留重试；4/11可能已更新的限额结果也保留归属。843fc37原get→delete已复现缺口；26原生场景、15原厂命令/结果与3忙分支、九回归及Image/模块/三FE输入一致通过。PE未改、未实机；接口表和已携带索引报文退场仍未完成。详见[目的FDB事务归属](port/FTTR.md#destination-fdb-ownership-survives-uncertain-append-and-restore)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

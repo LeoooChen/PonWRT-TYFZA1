@@ -140,6 +140,7 @@ struct rtl_fe_flow {
  u16 crc16;
  unsigned char ethernet_bytes;
  bool destination_created;
+ bool destination_ready;
  bool mtu_owned;
  bool published, source_owned, destination_owned, interface_owned, counted, installed, deleting;
  u8 destination[ETH_ALEN];
@@ -642,30 +643,36 @@ static int fe_destination_get(struct rtl_fe *fe,struct rtl_fe_flow *flow,const u
  ether_addr_copy(flow->destination,address);
  list_for_each_entry(other,&fe->flows,list)
   if(other!=flow && other->destination_owned && ether_addr_equal(other->destination,address)) {
+   if(!other->destination_ready || other->deleting)return -EBUSY;
    flow->destination_index=other->destination_index;
    memcpy(flow->destination_saved,other->destination_saved,sizeof(flow->destination_saved));
    flow->destination_created=other->destination_created;
    flow->destination_owned=true;
+   flow->destination_ready=true;
    return 0;
   }
  rtl_fe_fdb_key(words,address);
  ret=rtl_fe_fdb_command(&io,4,words,&result);
  if(ret)return ret;
+ if((result&15)!=5 && (result&15)!=15)return -EIO;
  flow->destination_created=(result&15)!=5;
  if(!flow->destination_created)memcpy(flow->destination_saved,words,sizeof(words));
  /* APPEND updates an existing key in place. Pin its MAC/permissions until
   * the last Linux flow releases it, then restore its original contents. */
  if(flow->destination_created)rtl_fe_fdb_key(words,address);
  else words[0]|=BIT(9)|BIT(19)|BIT(20)|BIT(21);
+ /* APPEND may change the table even when completion times out or a MAC
+  * limit is reported. Reserve the original contents before issuing it. */
+ flow->destination_owned=true;
  ret=rtl_fe_fdb_command(&io,0x45,words,&result);
  if(ret)return ret;
  if((result&15)!=5)return -ENOSPC;
- flow->destination_owned=true;
  rtl_fe_fdb_key(words,address);
  ret=rtl_fe_fdb_command(&io,4,words,&result);
  if(ret)return ret;
  if((result&15)!=5)return -EIO;
  flow->destination_index=(result>>4)&0x1fff;
+ flow->destination_ready=true;
  return 0;
 }
 static int fe_destination_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
@@ -673,15 +680,19 @@ static int fe_destination_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  struct rtl_dq_io io=fe_io(fe);
  struct rtl_fe_flow *other;
  unsigned int words[4],result;
+ int ret;
 
+ flow->destination_ready=false;
  list_for_each_entry(other,&fe->flows,list)
   if(other!=flow && other->destination_owned && ether_addr_equal(other->destination,flow->destination))return 0;
  if(flow->destination_created) {
   rtl_fe_fdb_key(words,flow->destination);
-  return rtl_fe_fdb_command(&io,0x85,words,&result);
+  ret=rtl_fe_fdb_command(&io,0x85,words,&result);
+  return ret?ret:(result&15)==5 || (result&15)==15?0:-EIO;
  }
  memcpy(words,flow->destination_saved,sizeof(words));
- return rtl_fe_fdb_command(&io,0x45,words,&result);
+ ret=rtl_fe_fdb_command(&io,0x45,words,&result);
+ return ret?ret:(result&15)==5?0:-EIO;
 }
 
 struct rtl_fe_rule {
