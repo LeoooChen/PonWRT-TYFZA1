@@ -345,6 +345,8 @@
 
 170. 修复端口flush首个失败跳过后续规则和LAN提前重开：现在遍历所有input/output/replica匹配流，失败各自进入已有撤销重试并保留首错；LAN open在释放MAC/RX/TX前确认旧流清理，失败归还engine引用，stop返回撤销错误但不依赖Linux采纳该返回。795850f实际函数已复现遗漏规则/提前UP；42 FE多流瞬态/持续失败及退休代际、五口/共享引擎10场景、八回归与Image/模块/两输入一致通过。PE未改、未实机，已越过FE的在途报文与ID复用仍待证明。详见[端口完整撤销后重开](port/FTTR.md#port-closure-withdraws-every-flow-before-lan-reopens)。
 
+171. 接入独立syncserv的Reboot/Recovery显式单设备与all auto命令：实执行原builder的MAC/TargetSlave、16槽在线定址和pending14/15，十分派/六ACK对照；每目标只发一次，租约隔离、超时不重放、重注册取消，批量保留逐台结果。仅ack_seen，reboot/recovery_verified始终false，不把ACK当真实重启或配置恢复；Recovery从端效果仍待验证。两命令各25主机/25打包musl网络、既有25选信道/37常驻、261分配故障ASan/UBSan及整包/67输入/四程序一致通过；内核/PE未改，未向实机发送命令。详见[原厂syncserv控制命令](port/FTTR.md#original-syncserv-reboot-and-recovery-commands)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

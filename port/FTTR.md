@@ -10270,6 +10270,52 @@ Evidence is `artifacts/fttr/port-flush-*-20261110.*` and
 No physical device was accessed. PE firmware is unchanged, and this does not
 prove packets already beyond FE have retired or permit hardware-ID reuse.
 
+### Original syncserv Reboot and Recovery commands
+
+The independent syncserv client now supports the target's explicit `Reboot`
+and `Recovery` commands, alongside the existing OMCI ONU-G reboot path:
+
+```sh
+fttr-sync fttr-mc 02:00:00:00:00:02 auto 0x88aa reboot
+fttr-sync fttr-mc 02:00:00:00:00:02 auto 0x88aa recovery
+fttr-sync fttr-mc all auto 0x88aa reboot
+fttr-sync fttr-mc all auto 0x88aa recovery
+```
+
+Executing the original builders at `0x4121d0/0x4122ec` confirms `RPCMethod`,
+the controller's uppercase12-digit `MAC`, and the selected target's uppercase
+`TargetSlave`. The actual dispatcher selects online peers across16 slots, with
+either a specific MAC or every online peer, and records pending14/15. The
+original reply path clears either pending state even for Result0; native reports
+that negative acknowledgement as an error. Exact requests, ten dispatch cases
+and six pending replies are verified by `trace_stock_fttr_sync_control.py`.
+
+The native commands share the established single-trigger and batch machinery
+with ChannelAutoSelect. They hold the interface lease, resolve the selected
+target, drain queued replies and send once per target. Timeouts, malformed
+replies and re-registration cannot cause automatic replay. `all auto` snapshots
+the responding online peers, preserves each target MAC/slot and collects all
+results, returning failure if any target fails. These operations are not part
+of automatic resident policy or startup.
+
+Results expose `ack_seen` and `reboot_verified:false` or
+`recovery_verified:false`. No completion message or original subordinate effect
+was demonstrated by the inspected controller, so an ACK is not represented as
+a completed reboot, configuration reset or recovery. The target-specific
+meaning and actual effect of Recovery still require subordinate validation.
+Heartbeat discovery and source matching do not authenticate that device.
+
+Both new commands pass25 host and25 packaged-musl network scenarios each,
+including16 online targets, explicit/discovered single targets, partial batch
+failure, re-registration, missing/malformed fragments and lease exclusion.
+The existing25 ChannelAutoSelect and37 resident scenarios pass. ASan/UBSan
+execute261 allocation failures across all three trigger operations and their
+real discovery/summary helpers. Both FTTR packages rebuild, all67 source inputs
+and four stripped/staged programs match. Evidence is
+`artifacts/fttr/sync-control-*-20261110.*` and
+`artifacts/fttr/sync-{reboot,recovery,channel-auto}-*-20261110.*`.
+Kernel/PE are unchanged by this feature; no real device received these commands.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

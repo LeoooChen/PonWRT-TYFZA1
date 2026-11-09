@@ -204,22 +204,23 @@ static int drain(int fd)
 	return -EBUSY;
 }
 
-static int channel_select(int fd, const uint8_t source[6], const uint8_t peer[6],
- uint16_t ethertype, uint8_t slot, struct json_object **summary)
+static int sync_trigger(int fd, const uint8_t source[6], const uint8_t peer[6],
+ uint16_t ethertype, uint8_t slot, unsigned int operation, struct json_object **summary)
 {
  bool ack_seen = false;
  int ret = drain(fd);
  char address[18];
  if (ret) return ret;
  /* One trigger, no replay after an unknown remote outcome. */
- ret = exchange(fd, source, peer, ethertype, slot, 20, NULL, &ack_seen, summary, NULL);
+ ret = exchange(fd, source, peer, ethertype, slot, operation, NULL, &ack_seen, summary, NULL);
  snprintf(address, sizeof(address), "%02x:%02x:%02x:%02x:%02x:%02x",
   peer[0],peer[1],peer[2],peer[3],peer[4],peer[5]);
  *summary = json_object_new_object();
  if (!*summary) return -ENOMEM;
- const char *keys[] = { "event", "peer", "slot", "ack_seen", "channel_verified", "error" };
+ const char *keys[] = { "event", "peer", "slot", "ack_seen",
+  operation == 20 ? "channel_verified" : operation == 21 ? "reboot_verified" : "recovery_verified", "error" };
  for (unsigned int i = 0; i < sizeof(keys)/sizeof(*keys); i++) {
-  struct json_object *value = i == 0 ? json_object_new_string("sync_channel_auto") :
+  struct json_object *value = i == 0 ? json_object_new_string(operation == 20 ? "sync_channel_auto" : operation == 21 ? "sync_reboot" : "sync_recovery") :
    i == 1 ? json_object_new_string(address) : i == 2 ? json_object_new_int(slot) :
    i == 3 ? json_object_new_boolean(ack_seen) : i == 4 ? json_object_new_boolean(0) : json_object_new_int(ret);
   if (!value || json_object_object_add(*summary, keys[i], value)) {
@@ -229,8 +230,8 @@ static int channel_select(int fd, const uint8_t source[6], const uint8_t peer[6]
  return ret;
 }
 
-static int channel_select_all(int fd, const uint8_t source[6], uint16_t ethertype,
- struct json_object **summary)
+static int sync_trigger_all(int fd, const uint8_t source[6], uint16_t ethertype,
+ unsigned int operation, struct json_object **summary)
 {
  struct json_object *found = NULL, *peers, *results = NULL, *report = NULL;
  int ret = discovery(fd, source, ethertype, NULL, &found), error = 0;
@@ -244,7 +245,7 @@ static int channel_select_all(int fd, const uint8_t source[6], uint16_t ethertyp
   uint8_t peer[6];
   if (!json_object_object_get_ex(entry, "mac", &mac) || !json_object_object_get_ex(entry, "slot", &slot) ||
       fttr_sync_mac_parse(json_object_get_string(mac), peer)) { ret = -EBADMSG; goto out; }
-  ret = channel_select(fd, source, peer, ethertype, json_object_get_int(slot), &report);
+  ret = sync_trigger(fd, source, peer, ethertype, json_object_get_int(slot), operation, &report);
   if (!report) goto out;
   if (ret && !error) error = ret;
   if (json_object_array_add(results, report)) { ret = -ENOMEM; goto out; }
@@ -344,7 +345,9 @@ int main(int argc, char **argv)
 	bool bssid_conflicts = argc == 6 && !strcmp(argv[5], "bssid-conflicts");
 	bool ssid_conflicts = argc == 6 && !strcmp(argv[5], "ssid-conflicts");
 	bool channel_auto = argc == 6 && !strcmp(argv[5], "channel-auto");
-	bool channel_all = channel_auto && !strcmp(argv[2], "all");
+	bool sync_reboot = argc == 6 && !strcmp(argv[5], "reboot");
+	bool sync_recovery = argc == 6 && !strcmp(argv[5], "recovery");
+	bool trigger_all = (channel_auto || sync_reboot || sync_recovery) && !strcmp(argv[2], "all");
 	bool qos = argc == 7 && !strcmp(argv[5], "qos-sync");
 	bool password_apply=argc==7 && !strcmp(argv[5],"web-password-apply");
 	bool password_info=argc==6 && !strcmp(argv[5],"web-password");
@@ -358,15 +361,15 @@ int main(int argc, char **argv)
 	bool wan = argc == 7 && !strcmp(argv[5], "wan-ip");
 	bool radio_info = argc == 6 && !strcmp(argv[5], "radio-info");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
-	unsigned int settings = channel_auto?20:ssid_conflicts?19:bssid_conflicts?18:neighbors?17:stations?16:qos?15:password_apply?14:password_info?13:ports_apply?12:ports_info?11:iptv_apply?10:iptv_info?9:time_apply?8:time_info?7:wan?6:radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
+	unsigned int settings = sync_recovery?22:sync_reboot?21:channel_auto?20:ssid_conflicts?19:bssid_conflicts?18:neighbors?17:stations?16:qos?15:password_apply?14:password_info?13:ports_apply?12:ports_info?11:iptv_apply?10:iptv_info?9:time_apply?8:time_info?7:wan?6:radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
-	    (!discover && !resident && !channel_all && fttr_sync_mac_parse(argv[2], peer)) ||
-	    (channel_all && strcmp(argv[3], "auto"))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [channel-auto | bssid-conflicts | ssid-conflicts | wifi-neighbors | wifi-stations | qos-sync <private-json-file> | web-password | web-password-apply <private-json-file> | iptv-ports | iptv-ports-apply <private-json-file> | iptv-settings | iptv-apply <private-json-file> | time-settings | time-apply <private-json-file> | wan-ip <IPv4-or-IPv6> | onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
-			"       %s <interface> all auto <ethertype> channel-auto\n"
+	    (!discover && !resident && !trigger_all && fttr_sync_mac_parse(argv[2], peer)) ||
+	    (trigger_all && strcmp(argv[3], "auto"))) {
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [reboot | recovery | channel-auto | bssid-conflicts | ssid-conflicts | wifi-neighbors | wifi-stations | qos-sync <private-json-file> | web-password | web-password-apply <private-json-file> | iptv-ports | iptv-ports-apply <private-json-file> | iptv-settings | iptv-apply <private-json-file> | time-settings | time-apply <private-json-file> | wan-ip <IPv4-or-IPv6> | onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
+			"       %s <interface> all auto <ethertype> <channel-auto|reboot|recovery>\n"
 			"       %s <interface> discover <ethertype>\n"
 			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0], argv[0]);
 		return 2;
@@ -467,8 +470,8 @@ int main(int argc, char **argv)
 		ret = fttr_sync_controller(fd, source, ethertype, desired, argc == 7 ? argv[6] : NULL);
 		goto out;
 	}
-	if (channel_all) {
-		ret = channel_select_all(fd, source, ethertype, &summary);
+	if (trigger_all) {
+		ret = sync_trigger_all(fd, source, ethertype, settings, &summary);
 		goto out;
 	}
 	if (discover || automatic) {
@@ -481,9 +484,9 @@ int main(int argc, char **argv)
 		ret = registration(fd, source, peer, ethertype, slot, desired, &summary);
 		goto out;
 	}
-	if (channel_auto) {
+	if (channel_auto || sync_reboot || sync_recovery) {
   json_object_put(summary); summary = NULL;
-  ret = channel_select(fd, source, peer, ethertype, slot, &summary);
+  ret = sync_trigger(fd, source, peer, ethertype, slot, settings, &summary);
   goto out;
  }
 	if (easymesh) {
@@ -597,7 +600,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : channel_auto ? "channel-auto" : bssid_conflicts ? "bssid-conflicts" : ssid_conflicts ? "ssid-conflicts" : neighbors ? "wifi-neighbors" : stations ? "wifi-stations" : qos ? "qos-sync" : password_apply ? "web-password-apply" : password_info ? "web-password" : ports_apply ? "iptv-ports-apply" : ports_info ? "iptv-ports" : iptv_apply ? "iptv-apply" : iptv_info ? "iptv-settings" : time_apply ? "time-apply" : time_info ? "time-settings" : wan ? "wan-ip" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : channel_auto ? "channel-auto" : sync_reboot ? "reboot" : sync_recovery ? "recovery" : bssid_conflicts ? "bssid-conflicts" : ssid_conflicts ? "ssid-conflicts" : neighbors ? "wifi-neighbors" : stations ? "wifi-stations" : qos ? "qos-sync" : password_apply ? "web-password-apply" : password_info ? "web-password" : ports_apply ? "iptv-ports-apply" : ports_info ? "iptv-ports" : iptv_apply ? "iptv-apply" : iptv_info ? "iptv-settings" : time_apply ? "time-apply" : time_info ? "time-settings" : wan ? "wan-ip" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);
