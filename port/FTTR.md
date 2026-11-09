@@ -8431,6 +8431,16 @@ state still need per-interface storage. The interface API still creates one
 data VIF. No physical device was accessed and no packet-retirement/ID-reuse
 claim is made.
 
+The final multi-VIF binding build also includes main `b28f290` (aligned RX
+reference reads). Merge resolution retains the per-peer receiver-address
+selection before the optimized comparison. RX backpressure/admission,49 TX/32
+RX identity, per-VIF sequence,245 BCMC and publication regressions pass.
+The generated PE image is32440 bytes, sha256
+`fa1fd99f936e4023b262ddc15800e30202df5cebca7c6865f7120e80c7cf3ac1`, with
+conservative stack7296/8192. Repeat build is identical; non-uplink13992 bytes.
+The combined Image/modules build passes with eight source/generated inputs
+identical to the worktree. No physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

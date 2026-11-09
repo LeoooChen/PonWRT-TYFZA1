@@ -625,6 +625,28 @@ for identity in range(21):
  assert bytes(r.u.mem_read(address,len(expected_payloads[identity])))==expected_payloads[identity]
 r.put(VP+0x1c,1042&1023);r.capture();r.inventory()
 
+# Admission must compare all six bytes while ignoring two padding bytes
+# in the aligned peer/AP record. Exercise descriptor MACID and peer search.
+for direct_macid in (False, True):
+ for shift in (0, 2):
+  for field in ('ap', 'peer', 'ap_padding', 'peer_padding'):
+   for byte in range(2 if 'padding' in field else 6):
+    r=reorder_peer();frame=data_frame(0x123,2)
+    at,raw=r.arrive(frame,True);raw=bytearray(raw[:36]+bytes(shift)+frame)
+    struct.pack_into('<I',raw,0,(struct.unpack_from('<I',raw)[0]&~0x3fff)|len(raw))
+    struct.pack_into('<I',raw,4,struct.unpack_from('<I',raw,4)[0]|(shift//2)<<14)
+    if not direct_macid: struct.pack_into('<I',raw,24,0)
+    r.u.mem_write(at,bytes(raw))
+    address=(B+0x2040 if field.startswith('ap') else B+0xe410)+(6 if 'padding' in field else 0)+byte
+    original=bytes(r.u.mem_read(address,1));r.u.mem_write(address,bytes([original[0]^0x80]))
+    r.capture();r.process()
+    if 'padding' in field:
+     assert r.get(MB+90*4)==1 and not r.get(MB+94*4),(direct_macid,shift,field,byte)
+    else:
+     assert not r.get(MB+90*4) and r.get(MB+94*4)==1,(direct_macid,shift,field,byte)
+     assert bytes(r.u.mem_read(at,len(raw)))==bytes(raw)
+     assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+
 # RX shift may put the decapsulated Ethernet address on either halfword
 # alignment. Move exactly its twelve address bytes, preserving LLC type,
 # payload, neighbouring subframes and outer headers after full admission.
