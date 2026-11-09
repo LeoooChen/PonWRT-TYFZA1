@@ -10242,6 +10242,34 @@ PE firmware is unchanged and no physical device was accessed. Successful
 enable/disable readback remains a control-state check; complete MCE/AFT/AXI/
 MiniOLT retirement and safe hardware-ID reuse are still unproven.
 
+### Port closure withdraws every flow before LAN reopens
+
+`rtl_fe_flush_port` previously stopped at its first failed deletion. Later
+matching flows were neither withdrawn nor placed on the retry list, including
+explicit TC rules that the bridge learner does not age. It now attempts every
+flow whose input, output or multicast recipient names the device, preserving
+the first error. Failed entries retain the existing cookie/table ownership and
+scheduled retry; unrelated flows remain untouched.
+
+LAN open now completes a port flush before releasing MAC reset and RX/TX gates.
+Failure balances the acquired engine reference and leaves the PHY/queue/MAC
+closed. LAN stop still closes the port, forgets CPU DMA owners and releases its
+engine reference, but returns the withdrawal error. Because Linux can ignore an
+ndo_stop error, correctness depends on the next open's check, not on that return
+value. This also covers a LAN port carrying FTTR accelerated service traffic.
+
+Old `795850f` reproduces both the skipped second/replica flow and reopening with
+failed cleanup. Production FE deletion tests pass42 active/retired/input/output/
+replica cases, now including transient and persistent failures with multiple
+matching flows. Ten actual LAN open/stop cases cover all five ports, another
+live engine user, repeated failures and eventual reopening. Eight related
+suites, ASan/UBSan, Image/modules and two compiled-source identities pass.
+Evidence is `artifacts/fttr/port-flush-*-20261110.*` and
+`artifacts/fttr/lan-reopen-before-20261110.log`.
+
+No physical device was accessed. PE firmware is unchanged, and this does not
+prove packets already beyond FE have retired or permit hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

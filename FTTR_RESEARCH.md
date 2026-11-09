@@ -343,6 +343,8 @@
 
 169. 补齐共享引擎启动失败清理与最终使能检查：DMA核对VP/global enable，QM核对CB扫描/taildrop/ES业务字段/端口/RMU后才ready；engine在DMA失败后stop、QM失败后先关闭QM再按需停DMA，保留原错误和已有清理失败归属，不启动NAPI/timer或增加引用。11cf0b9实际函数已复现假成功/遗漏清理；12 QM、8 engine及DMA末端故障/重试、九回归含4096混合提交、原厂DMA与166调用QM/CB/P6对照，Image/模块/三输入一致通过。PE未改、未实机；不以控制位读回证明全链路退场或ID复用。详见[共享引擎启动清理](port/FTTR.md#shared-engine-startup-closes-partially-enabled-dma-and-qm)。
 
+170. 修复端口flush首个失败跳过后续规则和LAN提前重开：现在遍历所有input/output/replica匹配流，失败各自进入已有撤销重试并保留首错；LAN open在释放MAC/RX/TX前确认旧流清理，失败归还engine引用，stop返回撤销错误但不依赖Linux采纳该返回。795850f实际函数已复现遗漏规则/提前UP；42 FE多流瞬态/持续失败及退休代际、五口/共享引擎10场景、八回归与Image/模块/两输入一致通过。PE未改、未实机，已越过FE的在途报文与ID复用仍待证明。详见[端口完整撤销后重开](port/FTTR.md#port-closure-withdraws-every-flow-before-lan-reopens)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

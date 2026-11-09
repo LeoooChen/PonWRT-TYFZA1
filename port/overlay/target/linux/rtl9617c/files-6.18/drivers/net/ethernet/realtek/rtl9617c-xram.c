@@ -646,6 +646,13 @@ static int rtl_open(struct net_device *dev)
 
 	if (ret)
 		return ret;
+	/* ndo_stop errors cannot hold the interface down. Finish any failed
+	 * withdrawal before opening the MAC onto its previous hardware flows. */
+	ret = rtl_fe_flush_port(priv->fe, dev);
+	if (ret) {
+		rtl_engine_put(priv);
+		return ret;
+	}
 	/* Stock aal_set_active_port releases this port's interface and RX/TX resets. */
 	rtl_update(priv, 0xa008, BIT(lan->port) | BIT(lan->port + 6) | BIT(lan->port + 12), 0);
 	rtl_update(priv, PORT_STATIC + lan->port * PORT_STRIDE,
@@ -662,19 +669,20 @@ static int rtl_stop(struct net_device *dev)
 	struct rtl_lan *lan = netdev_priv(dev);
 	struct rtl_xram *priv = lan->shared;
 	unsigned long flags;
+	int ret;
 
 	netif_stop_queue(dev);
 	phy_stop(dev->phydev);
 	rtl_update(priv, PORT_RX + lan->port * PORT_STRIDE, BIT(0), 0);
 	rtl_update(priv, PORT_TX + lan->port * PORT_STRIDE, BIT(0), 0);
-	rtl_fe_flush_port(priv->fe, dev);
+	ret = rtl_fe_flush_port(priv->fe, dev);
 	if (priv->dma_tx) {
 		spin_lock_irqsave(&priv->tx_lock, flags);
 		rtl_dma_tx_forget(&priv->dma, dev);
 		spin_unlock_irqrestore(&priv->tx_lock, flags);
 	}
 	rtl_engine_put(priv);
-	return 0;
+	return ret;
 }
 
 int rtl9617c_ni_pon_attach(struct device *dev, struct rtl9617c_ni_endpoint *endpoint)

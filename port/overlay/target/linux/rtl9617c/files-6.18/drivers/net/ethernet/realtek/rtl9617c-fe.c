@@ -1896,9 +1896,12 @@ int rtl_fe_flush_port(struct rtl_fe *fe,struct net_device *netdev)
   for(i=0;!owned && i<flow->replica_count;i++)
    owned=flow->replica_ports[i]->netdev==netdev;
   if(!owned)continue;
-  ret=fe_delete(fe,flow);
-  if(ret){fe->error=ret;break;}
+  /* Every matching flow must enter withdrawal, even if an earlier Hash
+   * is still busy. Otherwise untouched explicit TC flows have no retry. */
+  int error=fe_delete(fe,flow);
+  if(error && !ret)ret=error;
  }
+ if(ret)fe->error=ret;
  mutex_unlock(&fe->lock);
  return ret;
 }
