@@ -9353,6 +9353,73 @@ Complete neighbor scan semantics, structured neighbor field conversion,
 resident collection and roaming coordination remain incomplete. This addition
 does not resolve the hardware retirement and ID-reuse requirements below.
 
+### Full offline image refresh after the accumulated rewrite
+
+The complete OpenWrt `world` build has been refreshed from branch `5b24120`,
+which contains local main `76ad78c`, plus the AP capability description fix
+in this increment. The kernel directory was cleaned and prepared again from
+the pinned Linux6.18.55 source, current overlay and the complete patch series.
+All91 saved patch targets match the previously validated prepared tree byte
+for byte, and all196 overlay files match the newly prepared inputs. This
+rules out an uncommitted manual kernel edit being required for this build.
+Image, modules, userspace, rootfs, target images and package indexes complete.
+The main checkout was mounted read-only inside the build mount namespace.
+
+Build preparation encountered older LuCI patch output in the isolated feed.
+The affected files were saved, compared with pristine feed HEAD plus the
+current complete patch series, and updated only after confirming the old
+AP-only restrictions explained the differences. Current source also still
+described a single AP despite the implemented eight-AP combination. The
+description now states eight APs on one channel or a single STA/mesh role;
+the existing STA/mesh replacement guard remains. Full LuCI patch replay twice,
+JavaScript/ucode behavior checks, LAN address UI tests and the actual Linux
+interface-combination verifier pass. The new description is present in the
+final rootfs.
+
+Rebuilt PE is32448 bytes with SHA256
+`f6d8b207b42d0f9f9cce54bc16616a524742c8752f0647d12b11e9a42c4a71f6`;
+it matches the committed header and the actual `rtl_ax_ap.ko` inside initramfs.
+Linked-entry validation, fixed32768-byte IMEM and conservative7360/8192 stack
+checks pass. The four native FTTR programs in the image exactly match the
+current package builds after the same OpenWrt `sstrip -z` step. The four
+FTTR/BOSA/FPGA/radio modules retain identical allocated code/data sections
+to the compiled modules; OpenWrt deliberately removes their build-id notes.
+Comparing a stripped ELF by missing section headers initially gave an invalid
+mismatch; exact strip output and module code/data checks resolved it.
+
+The final23461896-byte initramfs Image has SHA256
+`a8a7d1fc8c6d734e597536ef5e12a07545582d2093c5fb02a7d59bbdbd564371`.
+Its1905 archive entries agree with every1469 regular files and all symlink
+destinations in the external rootfs tar. Current FTTR startup scripts,
+default-disabled syncserv configuration, retained FPGA firmware and calibration
+links are present; vendor NI/FC/relay/ASIC host binaries are absent. No private
+SSH host key was embedded. The image's actual stripped `fttr-sync` passes32
+station-report network-namespace cases. Its actual UCI converter passes51
+conversion cases plus the resident read/write/readback path.
+
+Separate local FTTR RAM FITs were rebuilt and their kernel, FDT and script
+payload hashes/RSA signatures independently verified:
+
+| Variant | Bytes | SHA256 |
+| --- | ---: | --- |
+| ASIC |15297952|`ec92a4e03d788ae08e5c590c909d7d1c1d7583cc0875b3ed73a20f4b98f3f18b`|
+| FPGA |15298236|`24652a0efd22a839b50df76297a0b25579c2dd45ce626c801e2c229e2cd7ec3b`|
+
+Both selected DTs retain the P6/reorder resources. The FPGA MiniOLT points to
+the correct FPGA manager and its NI phandle; the fixed unconfirmed optical
+binding remains disabled. The ordinary sysupgrade image still uses the
+ordinary board DT and is not promoted to an FTTR release by this verification.
+Neither RAM FIT was booted or published. This is full offline build/artifact
+acceptance, not physical traffic, cryptography, optical or interoperability
+acceptance, and it does not establish a new packet-retirement barrier.
+
+Artifacts and receipts are under `artifacts/fttr/world-refresh-20261109/`,
+including `build-verification.json`, `overlay-identity.json`,
+`fresh-preparation-differences.json`, `dt-verification.json`, the two `ram-*`
+directories and actual-image program tests. The full log is
+`artifacts/fttr/world-refresh-20261109.log`. These generated/private-input
+artifacts remain local; public Git contains the code and verification scope.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

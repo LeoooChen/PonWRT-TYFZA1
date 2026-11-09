@@ -62,6 +62,8 @@ assert.deepEqual(results.map(r=>r.bssid), ['b','c','a','unknown-zero',
     for mode in ('ap-wds', 'sta-wds'):
         assert "if (!singleRole) mode.value('" + mode + "'" in wireless
     assert "replace.default = '1';\n\t\t\t\treplace.readonly = true;" in wireless
+    assert 'up to eight AP interfaces on one channel' in wireless
+    assert 'Each radio supports one AP, client or mesh interface.' not in wireless
     header = (luci / 'modules/luci-base/ucode/template/header.ut').read_text()
     assert '-tyfza1-r4' in header
     backend = (luci / 'modules/luci-base/root/usr/share/rpcd/ucode/luci').read_text()

@@ -299,6 +299,8 @@
 
 147. 接入原厂GetWifiNeighbor查询/分段接收/Result0回复：实际执行NEW替换、REMAINING追加、重复/空段/未知标记分支，确认主端没有总段数/终止/快照序号。新增wifi-neighbors按固定3秒窗口收集原文，始终scan_complete:false；要求本次NEW、核对来源/MAC，64段/64KiB上限，缺片/错误续段/重注册/回发或分配失败不输出残留；自动发现旧summary先清空。32 glibc/31打包musl场景、42分配故障ASan/UBSan、终端/QoS/EasyMesh回归及整包/67输入/四程序一致性通过。内核/PE未改、未实机；只完成传输观察能力，完整扫描语义、结构化邻居转换、常驻采集/漫游及硬件退场/ID复用仍待补齐。详见[邻居分段接收](port/FTTR.md#original-neighbor-report-collection-without-a-false-completion-claim)。
 
+148. 完成累积重写后的整镜像离线刷新：清理并重新准备Linux6.18.55，91补丁目标与原验证树、196 overlay输入逐字节一致；world内核/模块/用户程序/rootfs/索引全部通过。构建树旧LuCI补丁已保存比对后更新，同时修正文案以反映同信道八AP能力；补丁重复应用/实际Linux组合/界面回归通过。PE32448字节、栈7360/8192、嵌入模块与提交头一致；四程序经原sstrip后与镜像逐字节一致，四关键模块代码/数据一致，1905条initramfs与rootfs的1469普通文件及全部链接一致。直接从镜像提取的终端查询32场景、UCI51转换及常驻读写通过。生成ASIC/FPGA本地RAM FIT并独立验证载荷SHA256/RSA与DT引用；main仍为76ad78c，未合回、未发布/启动/实机。此项关闭整构建验证缺口，不改变全链路退场/ID复用及剩余原厂功能未完成的结论。详见[整镜像刷新](port/FTTR.md#full-offline-image-refresh-after-the-accumulated-rewrite)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

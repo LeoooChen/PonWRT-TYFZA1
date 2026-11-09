@@ -60,15 +60,15 @@
 +msgid "Pause hotspot and scan"
 +msgstr "暂停热点并扫描"
 +
-+msgid "Each radio supports one AP, client or mesh interface. Use the other radio for the downstream hotspot. WDS is not supported."
-+msgstr "每个射频支持一个 AP、客户端或 Mesh 接口。中继热点请使用另一个射频。不支持 WDS。"
++msgid "Each radio supports up to eight AP interfaces on one channel, or one client or mesh interface. Use the other radio for a downstream hotspot in client or mesh mode. WDS is not supported."
++msgstr "每个射频支持同信道最多八个 AP 接口，或一个客户端或 Mesh 接口。客户端或 Mesh 模式的下游热点请使用另一个射频。不支持 WDS。"
 --- a/modules/luci-base/root/usr/share/rpcd/ucode/luci
 +++ b/modules/luci-base/root/usr/share/rpcd/ucode/luci
 @@ -284,6 +284,16 @@
  				mptcp:      access('/proc/sys/net/mptcp/enabled'),
  			};
  
-+			// This native driver implements one AP, STA or mesh interface per radio, plus monitor.
++			// APs may share one channel; STA/mesh require replacing the AP set.
 +			result.wifi_single_role = {};
 +			for (let phy in glob('/sys/class/ieee80211/*')) {
 +				if (basename(readlink(phy + '/device/driver') || '') == 'rtl_ax_ap') {
@@ -110,7 +110,7 @@
 -				o.value('adhoc', _('Ad-Hoc'));
 +				o.value('sta', _('Client'));
 +				if (singleRole)
-+					o.description = _('Each radio supports one AP, client or mesh interface. Use the other radio for the downstream hotspot. WDS is not supported.');
++					o.description = _('Each radio supports up to eight AP interfaces on one channel, or one client or mesh interface. Use the other radio for a downstream hotspot in client or mesh mode. WDS is not supported.');
 +				else
 +					o.value('adhoc', _('Ad-Hoc'));
  
