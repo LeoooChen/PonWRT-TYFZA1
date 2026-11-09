@@ -51,10 +51,11 @@ struct wireless_dev {int iftype;};
 struct net_device {int id;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned int wifi_id,destination;bool retired;};
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned int destination;uint64_t policy_generation;};
-struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned int hash_index,crc16,replica_count;bool installed,deleting;};
+struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *input,**replica_ports,*output;u8 destination[6];unsigned int hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
 static unsigned invalidations;
 static void fe_mcast_invalidate(struct rtl_fe *f){assert(f->lock);invalidations++;}
+static int fe_delete(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(v->deleting);list_del(&v->list);return 0;}
 struct rtl_dq_io {struct rtl_fe *fe;};
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
@@ -124,7 +125,7 @@ int main(void){
 with tempfile.TemporaryDirectory(prefix='fe-peer-route-', dir=root / 'artifacts') as directory:
     work = Path(directory)
     (work / 'test.c').write_text(common + ''.join(function(n) for n in
-        ('fe_port', 'fe_wifi_client', 'fe_wifi_peer', 'fe_wifi_forget_port', 'rtl_fe_wifi_peer_route')) + test)
+        ('fe_flow_port', 'fe_port', 'fe_wifi_client', 'fe_wifi_peer', 'fe_wifi_forget_port', 'rtl_fe_wifi_peer_route')) + test)
     subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',
                     '-I', str(driver), str(work / 'test.c'), '-o', str(work / 'test')], check=True)
     subprocess.run([str(work / 'test')], check=True)

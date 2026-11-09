@@ -330,7 +330,7 @@ drop = function(pci, 'rtl_ax_mac_drop_peer') if 'int rtl_ax_mac_drop_peer(' in p
 with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
     source, binary = Path(directory) / 'test.c', Path(directory) / 'test'
     source.write_text(common + function((driver / 'role.h').read_text(), 'rtl_ax_station_drop') + drop +
-                      ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw')) + function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
+                      ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','ni_peer_routes_withdraw')) + function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
                       function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') +
                       function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') +
                       function(ni, 'ni_vif_release') + function(ni, 'rtl_ax_tx_vif_release') + function(ni, 'rtl_ax_tx_ni_cleanup') + test)

@@ -80,8 +80,9 @@ struct wireless_dev;
 struct net_device {unsigned references;struct wireless_dev *ieee80211_ptr;};
 struct rtl_fe_port {struct list_head list;struct net_device *netdev;unsigned wifi_id,destination;bool retired;};
 struct rtl_fe_wifi_peer {struct list_head list;struct rtl_fe_port *port;u8 address[6];unsigned destination;uint64_t policy_generation;};
-struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *output;u8 destination[6];unsigned hash_index,crc16,replica_count;bool installed,deleting;};
+struct rtl_fe_flow {struct list_head list;struct rtl_fe_port *input,**replica_ports,*output;u8 destination[6];unsigned hash_index,crc16,replica_count;bool installed,deleting;};
 struct rtl_fe {struct list_head ports,flows,wifi_peers;int lock;void *memory;};
+static int fe_delete(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;assert(v->deleting);list_del(&v->list);return 0;}
 struct rtl_dq_io {struct rtl_fe *fe;};
 struct wiphy {int unused;};struct work_struct {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
@@ -304,14 +305,14 @@ fe = read('ethernet/realtek/rtl9617c-fe.c')
 ni = read('wireless/realtek/rtl_ax_ap/ni-test.h')
 monitor = read('wireless/realtek/rtl_ax_ap/monitor.h')
 tx = read('wireless/realtek/rtl_ax_ap/tx.c')
-code = common + ''.join(function(fe, n) for n in ('fe_port', 'fe_wifi_client', 'fe_wifi_peer', 'rtl_fe_wifi_peer_route'))
+code = common + ''.join(function(fe, n) for n in ('fe_flow_port', 'fe_port', 'fe_wifi_client', 'fe_wifi_peer', 'rtl_fe_wifi_peer_route'))
 code += r'''
 static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigned route){
  assert(get_unaligned_le32(active_tx->pe.memory+0x11a04)==!!route);
  if(route)assert(active_tx->ni.route_peers[1]);
  return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
-code += ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw'))
+code += ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','ni_peer_routes_withdraw'))
 code += 'int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *,unsigned int);\n'
 code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'ni_vif_release') + function(ni, 'rtl_ax_tx_vif_release') + function(ni, 'rtl_ax_tx_ni_cleanup') + function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_ba')
 code += function(tx, 'rtl_ax_tx_peer_authorized') + function(tx, 'rtl_ax_tx_key_changed') + function(tx, 'rtl_ax_tx_key_refresh')

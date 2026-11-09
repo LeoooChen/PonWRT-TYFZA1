@@ -1791,13 +1791,25 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
 {
  struct rtl_fe_port *port;
  struct rtl_fe_wifi_peer *peer;
- struct rtl_fe_flow *flow;
+ struct rtl_fe_flow *flow,*next;
  struct rtl_dq_io io=fe_io(fe);
  int ret=0;
 
  mutex_lock(&fe->lock);
+ if(!destination) {
+  /* UNREGISTER excludes retired ports from normal lookup, but their failed
+   * Hash/cache deletions still own this device. Complete them before telling
+   * the radio that its NI destination can be released. Multiple generations
+   * of a port may remain while a DOWN/UP creates a new active one. */
+  list_for_each_entry_safe(flow,next,&fe->flows,list) {
+   bool retired=false;
+   list_for_each_entry(port,&fe->ports,list)
+    if(port->retired && port->netdev==netdev && fe_flow_port(flow,port)){retired=true;break;}
+   if(retired){ret=fe_delete(fe,flow);if(ret)goto unlock;}
+  }
+ }
  port=fe_port(fe,netdev);
- if(!port || !port->wifi_id){ret=-ENODEV;goto unlock;}
+ if(!port || !port->wifi_id){ret=destination?-ENODEV:0;goto unlock;}
  peer=fe_wifi_peer(fe,port,address);
  /* A peer/key route may be replaced even when no unicast Hash exists.
   * Revoke queued multicast cookies before changing that identity. */
@@ -1811,11 +1823,18 @@ int rtl_fe_wifi_peer_route(struct rtl_fe *fe,struct net_device *netdev,const u8 
   list_add_tail(&peer->list,&fe->wifi_peers);
  }
  if(destination)peer->destination=destination;
- list_for_each_entry(flow,&fe->flows,list) {
+ list_for_each_entry_safe(flow,next,&fe->flows,list) {
   u32 *action;
+  if(!destination && flow->deleting && fe_flow_port(flow,port)) {
+   ret=fe_delete(fe,flow);if(ret)goto unlock;continue;
+  }
   /* A multicast MCGID names the complete NI group, never a peer queue. */
-  if(!flow->installed || flow->deleting || flow->replica_count || flow->output!=port ||
+  if(flow->replica_count || flow->output!=port ||
      (!fe_wifi_client(port) && !ether_addr_equal(flow->destination,address)))continue;
+  /* An earlier port flush may have marked this entry deleting while its
+   * Hash/cache is still live. Deletion must finish, never re-publish it. */
+  if(flow->deleting){ret=fe_delete(fe,flow);if(ret)goto unlock;continue;}
+  if(!flow->installed)continue;
   /* Withdraw both lookup locations before changing an in-flight flow's output. */
   ret=rtl_fe_main_age(&io,flow->hash_index,0);
   if(ret)goto unlock;

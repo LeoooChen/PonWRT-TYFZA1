@@ -61,6 +61,20 @@ static int ni_peer_withdraw(struct rtl_ax_tx *tx, unsigned int macid)
  return rtl9617c_wifi_peer_route(tx->ni.peer_dev[macid],tx->ni.peer_address[macid],0);
 }
 
+/* Close all PE admission first, including peers after a failing FE entry.
+ * Retain every owner until the entire producer withdrawal is acknowledged. */
+static int ni_peer_routes_withdraw(struct rtl_ax_tx *tx)
+{
+ int ret;
+ if(!tx->pe.memory)return 0;
+ for(unsigned int i=1;i<128;i++)put_unaligned_le32(0,tx->pe.memory+0x11a00+i*4);
+ dma_wmb();
+ for(unsigned int i=1;i<128;i++)if(tx->ni.peer_dev[i]) {
+  ret=ni_peer_withdraw(tx,i);if(ret)return ret;
+ }
+ return 0;
+}
+
 static void ni_test_buffered(struct rtl_ax_tx *tx, unsigned int macid, u16 tids)
 {
 	struct ieee80211_sta *sta;
@@ -477,7 +491,19 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	int ret;
 	u32 status;
 	unsigned int i;
-	if (tx->ni.route_dev) rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
+	/* PCI shutdown cannot revoke an upstream FE producer. Do not free or
+  * restore NI resources after an unacknowledged Hash/cache withdrawal. */
+ if (tx->ni.route_dev) {
+  ret=rtl_ax_tx_ni_route(tx,tx->ni.route_dev,0);
+  if(!ret)goto released;
+ }
+ /* A graceful stop can fail after preparing part of a withdrawal. The last
+  * check before the forced DMA path must prove producer withdrawal again. */
+ mutex_lock(&ni_test_lock);
+ ret=ni_peer_routes_withdraw(tx);
+ mutex_unlock(&ni_test_lock);
+ if(ret)return ret;
+released:
 	if (!tx->ni.active) {
   for(i=0;i<12;i++)if(tx->ni.retired_vif[i]){dev_put(tx->ni.retired_vif[i]);tx->ni.retired_vif[i]=NULL;}
   return 0;
@@ -604,13 +630,8 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			}
 			goto release;
 		}
-		for (i = 1; i < 128; i++) {
-			if (!tx->ni.peer_dev[i]) continue;
-			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
-			dma_wmb();
-			ret = ni_peer_withdraw(tx,i);
-			if (ret) goto unlock;
-		}
+  ret=ni_peer_routes_withdraw(tx);
+  if(ret)goto unlock;
 		/* FE no longer submits this peer. Return its queued, unsent BIDs even
 		 * when the disconnected STA remains asleep; submitted WPs await RPQ. */
 		ret = rtl_ax_tx_pause(tx);

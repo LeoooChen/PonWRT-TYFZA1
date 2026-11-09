@@ -8845,6 +8845,42 @@ trip pass. Evidence is `artifacts/fttr/unicast-policy-*-20261109.*`. No physical
 device was accessed; full upstream packet retirement, ID reuse and the previously
 recorded full-main pause-ACK simulation gap remain outstanding.
 
+### Retired Wi-Fi FE rules gate final NI release
+
+Wi-Fi route withdrawal now handles retired FE port generations. Normal port
+lookup deliberately excludes them, but failed Hash/cache deletion can retain
+rules which still target the radio's NI destination. Withdrawal retries actual
+`fe_delete` for every old generation of the same netdev, including input and
+multicast-recipient references, before reporting success. An active port's
+already-deleting rules are also finished rather than skipped or re-enabled.
+An absent port is idempotent only for withdrawal; route publication still
+returns ENODEV. Unrelated ports and their published rules are left intact.
+
+Whole-radio withdrawal closes every PE peer admission before attempting any
+fallible FE operation. The PCI-removal path no longer continues into NI resource
+restoration after an unacknowledged producer withdrawal. If graceful teardown
+fails, it checks FE withdrawal again immediately before the forced DMA path;
+a previous successful attempt cannot justify ignoring a later failure. This
+preserves the existing handling of retained EPP/WP/BID resources after upstream
+rules have been withdrawn, including partial EQ-return retries.
+
+`test_fe_retired_wifi.py` executes the actual FE deletion/table helpers across
+18 active/retired/input/output/replica cases with Hash/cache failure and a new
+port generation. It verifies retained retry ownership, no re-publication,
+unaffected foreign rules and idempotent absent-port withdrawal. NI tests inject
+errors at either peer and repeat both direct/failed-graceful teardown attempts:
+all PE gates close, while no NI DMA stop/restore/free or interface release runs
+before successful FE withdrawal. Existing peer-route, FE multicast, NI restore,
+partial BID teardown, inflight release and binding regressions pass (ten test
+entries); Image/modules and both changed source hashes match. Artifacts are
+`artifacts/fttr/retired-route-*-20261109.*`; PE is unchanged.
+
+This is an ownership-ordering fix, not a complete hardware producer fence.
+MCE/AFT or downstream packets already beyond FE still require independent
+retirement evidence; no hardware-ID reuse is authorized by this check. Supplier
+removal and failure recovery continue to have the previously documented physical
+acceptance limits. No physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

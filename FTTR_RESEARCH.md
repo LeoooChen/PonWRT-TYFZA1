@@ -284,6 +284,7 @@
 135. 开放原厂port0根AP+七VAP拓扑：两芯片声明同信道最多8 AP，STA/Mesh保留单接口模式；实际Linux组合校验及原厂完整角色分配函数确认独立MBID、共享WMM0。add时先预留self-MACID/MBID、避开peer，未启动/停止BSS继续持有，创建失败/固件清理/NI撤销失败按阶段保留，monitor移除不碰根状态。删除首接口时NI共享队列netdev引用转交存活接口，失败持有并重试；BCMC停止成功释放旧域设备，支持同域不同self重建。八接口真实回调、VAP/根重建、peer占位、失败回收、引用迁移与12项回归通过，Image/模块及7输入一致；PE未变、未实机。共享EDCA/颜色/airtime、TSPEC、混合模式及完整硬件退役仍不代表完成。详见[AP/VAP分配](port/FTTR.md#public-port0-apvap-allocation-and-interface-teardown)。
 136. 修复共享WMM0的EDCA请求归属：每VIF保存四AC参数/编码/顺序，slot变化只重算该VIF，停止/删除恢复最近存活请求，重启按原顺序恢复；动态WMM覆盖期间的新请求更新BE/BK恢复值，避免退出覆盖恢复已删VIF或旧配置。最后活跃VIF退出恢复基线并清理WMM/quota，下次重新采集基线；编码越界和顺序耗尽显式报错。两芯片全AC/多接口/slot/启停/动态恢复用例、8组原厂寄存器写入对照及AP-mesh/STA-BA/颜色/DFS回归通过，Image/模块及3输入一致。PE未变、未实机；独立airtime/TSPEC及完整硬件退役仍未完成。详见[EDCA请求归属](port/FTTR.md#per-vif-edca-requests-on-shared-wmm0)。
 137. 普通NI单播接入实际Linux QoS/ACM/保留TID/no-ACK策略：先编译每peer DSCP/标签映射，旧路由退役后发布到PE；所有现有策略写入点在修改前关闭单播，复用延迟撤销，刷新期间重新授权不能提前打开旧路由。TSPEC及不可表达策略撤销直转交Linux记账，不宣称硬件airtime。实际Linux→ARM→链接PE 384组、1179648分类矩阵/18写入点及组播/BCMC/FTTR退役/FE回归通过；PE32448字节/栈7360，无上行13992；Image/模块、7输入与新patch238零fuzz往返通过。未实机，完整退役/ID复用和既有整机pause-ACK模拟缺口仍保留。详见[单播策略](port/FTTR.md#ordinary-ni-unicast-uses-linux-qos-and-admission-policy)。
+138. 修复注销后FE撤销/NI释放顺序：撤销会继续清理同netdev已退休的端口代际及活动端口的deleting规则，不再漏掉Hash/cache失败残留，也不重发待删规则；不存在端口只对撤销幂等，发布仍报ENODEV。全局撤销先关闭所有PE peer准入，PCI清理在正常停止失败后再次确认FE撤销成功才进入强制DMA回收。18组实际FE删除/Hash-cache故障与首个/后续peer失败重试测试、10项相关回归通过，Image/模块及2输入一致。PE未变、未实机；完整MCE/AFT在途包退役和ID复用未由此证明。详见[退休规则与NI释放](port/FTTR.md#retired-wi-fi-fe-rules-gate-final-ni-release)。
 
 ## 建议接着做的工作
 

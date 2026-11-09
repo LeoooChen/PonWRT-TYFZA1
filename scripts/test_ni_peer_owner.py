@@ -16,11 +16,11 @@ common=common.replace('static int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *t
 # Existing low-level model checks age/hash cache ownership; retain it with own helper.
 fe=ns['read']('ethernet/realtek/rtl9617c-fe.c');ni=ns['read']('wireless/realtek/rtl_ax_ap/ni-test.h')
 common=common.replace('static int detach_error;', 'static void dev_put(struct net_device *);static int detach_error;',1)
-code=common+''.join(function(fe,n) for n in ('fe_port','fe_wifi_client','fe_wifi_peer','rtl_fe_wifi_peer_route'))
+code=common+''.join(function(fe,n) for n in ('fe_flow_port','fe_port','fe_wifi_client','fe_wifi_peer','rtl_fe_wifi_peer_route'))
 code+='''
 static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigned route){return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
-code+=''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','rtl_ax_tx_ni_route','rtl_ax_tx_ni_peer','ni_retire_peer','rtl_ax_tx_ni_retire_peer','rtl_ax_tx_ni_retire_ba','ni_vif_release','rtl_ax_tx_vif_release','rtl_ax_tx_ni_cleanup'))
+code+=''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','ni_peer_routes_withdraw','rtl_ax_tx_ni_route','rtl_ax_tx_ni_peer','ni_retire_peer','rtl_ax_tx_ni_retire_peer','rtl_ax_tx_ni_retire_ba','ni_vif_release','rtl_ax_tx_vif_release','rtl_ax_tx_ni_cleanup'))
 code+=r'''
 int main(void){
  for(unsigned failure=0;failure<=3;failure++) {

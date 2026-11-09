@@ -74,7 +74,7 @@ static void writel(u32 v,void *p){
 }
 #define readl_poll_timeout(p,v,c,d,t) ({(void)(d);(void)(t);polls++;v=readl(p);(c)?0:-ETIMEDOUT;})
 static bool ni_epps_empty(struct rtl_ax_tx *t){(void)t;return true;}
-static int ni_uplink_stop(struct rtl_ax_tx *t){(void)t;return 0;}
+static unsigned uplink_stops;static int ni_uplink_stop(struct rtl_ax_tx *t){(void)t;uplink_stops++;return 0;}
 static int rtl_ax_tx_pause(struct rtl_ax_tx *t){(void)t;paused++;return 0;}
 static int rtl_ax_rx_pe_rpq_stop(void *r){(void)r;return 0;}
 static void ni_ps_retire(struct rtl_ax_tx *t){(void)t;}
@@ -90,12 +90,15 @@ code+=r'''
 #define WRITE_ONCE(v,x) ((v)=(x))
 #define cpu_to_le32(v) (v)
 #define le32_to_cpu(v) (v)
-static int rtl_ax_tx_ni_route(struct rtl_ax_tx *t,void *dev,unsigned id){(void)t;(void)dev;(void)id;assert(0);return 0;}
+static int ni_test_lock,withdraw_error;static unsigned withdraws,withdraw_fail_peer;
+static void mutex_lock(int *p){assert(!*p);*p=1;}static void mutex_unlock(int *p){assert(*p);*p=0;}
+static int ni_peer_withdraw(struct rtl_ax_tx *t,unsigned id){assert(ni_test_lock&&t->ni.peer_dev[id]);assert(!get_unaligned_le32(t->pe.memory+0x11a00+id*4));withdraws++;return id==withdraw_fail_peer?withdraw_error:0;}
+static unsigned route_attempts;static int rtl_ax_tx_ni_route(struct rtl_ax_tx *t,void *dev,unsigned id){assert(dev==t->ni.route_dev&&!id);route_attempts++;return -EAGAIN;}
 static void dev_put(void *p){(void)p;assert(0);}
 static void *phys_to_virt(u32 a){(void)a;assert(0);return NULL;}
 static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dir){(void)dev;(void)a;(void)bytes;(void)dir;assert(0);}
 '''
-code+=fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
+code+=fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));
@@ -110,6 +113,20 @@ static struct rtl_ax_tx setup(unsigned cpu){
  return t;
 }
 int main(void){unsigned cases=0;
+ for(unsigned failure=0;failure<2;failure++)for(unsigned graceful=0;graceful<2;graceful++)for(unsigned fail_peer=1;fail_peer<=2;fail_peer++){
+  struct rtl_ax_tx blocked=setup(3);blocked.ni.peer_dev[1]=&blocked;blocked.ni.peer_dev[2]=&blocked;
+  put_unaligned_le32(17,memory+0x11a04);put_unaligned_le32(23,memory+0x11a08);
+  blocked.ni.route_dev=graceful?&blocked:NULL;route_attempts=0;
+  withdraw_fail_peer=fail_peer;withdraw_error=failure?-EIO:-ETIMEDOUT;withdraws=uplink_stops=0;
+  assert(ni_test_remove(&blocked)==withdraw_error&&withdraws==fail_peer);
+  assert(!get_unaligned_le32(memory+0x11a04)&&!get_unaligned_le32(memory+0x11a08));
+  assert(blocked.ni.active&&blocked.ni.peer_dev[1]&&blocked.ni.peer_dev[2]);
+  assert(!uplink_stops&&!released&&!opens&&!paused&&!accesses&&!mmio_writes);
+  assert(ni_test_remove(&blocked)==withdraw_error&&withdraws==2*fail_peer&&!mmio_writes);
+  assert(route_attempts==2*graceful);
+ }
+ withdraw_error=0;
+ struct rtl_ax_tx empty={};assert(!ni_test_remove(&empty));
  for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned fail=1;fail<=10;fail++){
   struct rtl_ax_tx t=setup(cpu);fail_at=fail;
   int result=ni_test_release(&t);
