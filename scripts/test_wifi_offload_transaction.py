@@ -93,7 +93,7 @@ struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
 static void rtl_ax_store32(u8 *,u32);static u32 rtl_ax_ap_read32(const u8 *);
 #include "'''+str(root/base/'wireless/realtek/rtl_ax_ap/role-identity.h')+r'''"
 struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];struct wireless_dev wdev;int type;u8 addr[6];};
-struct rtl_ax_tx {struct net_device *mcast_dev[12];struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
+struct rtl_ax_tx {struct net_device *mcast_dev[12];struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,ni_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,retire_drop_pending,retire_requested,peer_retiring[128],peer_retire_keep_rx[128],route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev,*retired_vif[12],*peer_dev[128];u8 peer_address[128][6],peer_wifi[128];struct work_struct ps_work;}ni;};
 static int ni_retire_peer(struct rtl_ax_tx *,unsigned int,bool);

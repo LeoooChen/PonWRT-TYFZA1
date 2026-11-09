@@ -54,7 +54,7 @@ static bool ieee80211_vif_is_mld(struct ieee80211_vif *v){return v->mld;}
 static unsigned rtl9617c_key_pn_token(unsigned *p){return *p;}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 #define ieee80211_vif_to_wdev(v) (&(v)->wdev)
-struct rtl_ax_tx {struct net_device *bcmc_dev[12];u64 bcmc_policy_attempt;bool pe_active,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;unsigned bcmc_generation,bcmc_live,bcmc_domains,bcmc_domain_retiring;
+struct rtl_ax_tx {struct net_device *bcmc_dev[12];u64 bcmc_policy_attempt;bool pe_active,bcmc_enabled,bcmc_owned,ni_prepare_failed,bcmc_retiring;unsigned bcmc_generation,bcmc_live,bcmc_domains,bcmc_domain_retiring;
  struct {void *memory;}pe;struct {bool active,retire_quiescing,retire_requested,peer_retiring[128];unsigned cpu;struct net_device *route_dev;}ni;void *pdev;};
 static bool cpu_pending;
 static int ni_test_lock,fail_bind,fail_pause,fail_prepare,fail_release,fail_publish,fail_drop,fail_wait;
@@ -154,10 +154,10 @@ int main(void){
  assert(!rtl_ax_tx_group_stop(&t,63,0,3)&&!(t.bcmc_domains&8)&&!t.bcmc_dev[3]);
  /* Partial NI preparation retains its netdev and retries cleanup first. */
  t.ni.active=false;dev_put(t.ni.route_dev);t.ni.route_dev=NULL;
- fail_prepare=-EIO;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EIO&&t.bcmc_prepare_failed&&dev.refs==1);
+ fail_prepare=-EIO;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EIO&&t.ni_prepare_failed&&dev.refs==1);
  fail_prepare=0;fail_release=-EAGAIN;unsigned count=prepares;
  assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN&&prepares==count&&dev.refs==1);
- fail_release=0;assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4)&&!t.bcmc_prepare_failed&&dev.refs==1&&prepares==count+1);
+ fail_release=0;assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4)&&!t.ni_prepare_failed&&dev.refs==1&&prepares==count+1);
  t.bcmc_owned=false;cpu_pending=true;unsigned prior=drops;
  fail_wait=-ETIMEDOUT;
  assert(rtl_ax_tx_bcmc_stop(&t)==-ETIMEDOUT&&drops==prior+1&&t.bcmc_retiring);

@@ -432,6 +432,7 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	unsigned int i;
 	int ret;
 
+	if (tx->ni.active || tx->ni.regs || tx->ni.dma) return -EBUSY;
 	tx->ni.regs = ioremap(0x4f4300000ULL, 0x10000);
 	tx->ni.dma = ioremap(0x4f7001000ULL, 0x1000);
 	if (!tx->ni.regs || !tx->ni.dma) return -ENOMEM;
@@ -440,9 +441,13 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 		tx->ni.eq, readl(tx->ni.regs + tx->ni.registers[0]), readl(tx->ni.regs + tx->ni.registers[0] + 4), tx->ni.cpu * 8, readl(tx->ni.regs + tx->ni.registers[11]), readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32)),
 		readl(tx->ni.regs + tx->ni.registers[12]), tx->ni.vp_index, readl(tx->ni.vp), readl(tx->ni.vp + 0x1c), readl(tx->ni.vp + 0x18));
 	if (!(readl(tx->ni.regs + tx->ni.registers[0]) & 1) || readl(tx->ni.regs + tx->ni.registers[0] + 4) != (BUFFER_COUNT << 16 | (RTL9617C_WIFI_BID_START + tx->pe.slot * BUFFER_COUNT)) ||
-	    readl(tx->ni.regs + tx->ni.registers[11]) != readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32)) ||
+	    (readl(tx->ni.regs + 0x6108) & BIT(tx->ni.cpu)) || !ni_epps_empty(tx) ||
 	    readl(tx->ni.vp) || readl(tx->ni.vp + 0x1c) != readl(tx->ni.vp + 0x18)) return -EBUSY;
 	for (i = 0; i < 14; i++) tx->ni.saved[i] = readl(tx->ni.regs + tx->ni.registers[i]);
+	for (i = 0; i < 8; i++) {
+		tx->ni.epp_bases[i] = readl(tx->ni.regs + tx->ni.registers[12] + i * 4);
+		tx->ni.epp_eq[i] = readl(tx->ni.regs + tx->ni.registers[10] + i * 4);
+	}
 	for (i = 0; i < 8; i++) {
 		ret = ni_access(tx, 0x1654, BIT(31) | (i * 64 + 16 + tx->ni.cpu));
 		if (ret) return ret;
@@ -471,10 +476,9 @@ static int ni_test_prepare(struct rtl_ax_tx *tx, unsigned int macid)
 	writel((readl(tx->ni.regs + tx->ni.registers[9]) & GENMASK(31, 29)) |
 	       (RING_BYTES / 16) << 8 | 0xf2, tx->ni.regs + tx->ni.registers[9]);
 	for (i = 0; i < 8; i++) {
-		tx->ni.epp_bases[i] = readl(tx->ni.regs + tx->ni.registers[12] + i * 4);
-		tx->ni.epp_eq[i] = readl(tx->ni.regs + tx->ni.registers[10] + i * 4);
 		writel(tx->ni.profile, tx->ni.regs + tx->ni.registers[10] + i * 4);
-		writel(readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32) + i * 4), tx->ni.regs + tx->ni.registers[11] + i * 4);
+		/* Preserve actual consumption. A producer arriving after the empty
+		 * check must remain queued, not be skipped by a new PE binding. */
 		put_unaligned_le32(readl(tx->ni.regs + tx->ni.registers[11] + i * 4), tx->pe.memory + EPP_CONSUMERS + i * 4);
 	}
 	put_unaligned_le32(0x7000 + tx->ni.cpu * 32, tx->pe.memory + PE_PROBE_MAILBOX + 456);
@@ -647,9 +651,9 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		ret = ni_mcast_unbind(tx);
 		if (ret) goto unlock;
 		if (!tx->ni.route_dev) {WRITE_ONCE(tx->ni.retire_requested,false);goto unlock;}
-  if(tx->bcmc_prepare_failed) {
+  if(tx->ni_prepare_failed) {
    ret=ni_test_release(tx);if(ret)goto unlock;
-   tx->bcmc_prepare_failed=false;dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
+   tx->ni_prepare_failed=false;dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
    WRITE_ONCE(tx->ni.retire_requested,false);
    goto unlock;
   }
@@ -727,14 +731,27 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	if (ret) goto unlock;
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) goto unlock;
+	/* Even a failed prepare may own queues and a pending rollback. */
+	dev_hold(netdev); tx->ni.route_dev = netdev;
 	ret = ni_test_prepare(tx, macid);
-	if (ret) { ni_test_release(tx); rtl_ax_tx_open(tx); goto unlock; }
+	if (ret) {
+		int cleanup;
+		tx->ni_prepare_failed = true;
+		WRITE_ONCE(tx->ni.retire_requested, true);
+		cleanup = ni_test_release(tx);
+		if (cleanup) ret = cleanup;
+		else {
+			tx->ni_prepare_failed = false;
+			WRITE_ONCE(tx->ni.retire_requested, false);
+			dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL;
+		}
+		goto unlock;
+	}
 	for (i = 28; i < 31; i++) put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + i * 4);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 248);
 	tx->ni_reports = tx->ni_failed = 0;
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 300);
 	put_unaligned_le32(0, tx->pe.memory + PE_PROBE_MAILBOX + 304);
-	dev_hold(netdev); tx->ni.route_dev = netdev;
 	WRITE_ONCE(tx->ni.route_macid, macid);
 	memset(tx->ni.route_tim, 0, sizeof(tx->ni.route_tim));
 	rtl_ax_tx_open(tx);
@@ -787,7 +804,7 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	   !ether_addr_equal(tx->ni.peer_address[macid],tx->pe.memory+0xe400+macid*8)))return -ESTALE;
 	/* Preserve the active retirement fence; existing peers keep their routes. */
 	if (READ_ONCE(tx->ni.retire_requested) || READ_ONCE(tx->ni.peer_retiring[macid]) ||
-	    READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed) ||
+	    READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->ni_prepare_failed) ||
 	    READ_ONCE(tx->key_refresh_pending)) return -EAGAIN;
 	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
 	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
@@ -1192,9 +1209,9 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
  }
  next.rate=rate|role<<24;next.reserved[0]=identity->macid;ether_addr_copy(next.address,vif->addr);
  mutex_lock(&ni_test_lock);
- if(tx->bcmc_prepare_failed) {
+ if(tx->ni_prepare_failed) {
   ret=ni_test_release(tx);if(ret)goto out;
-  tx->bcmc_prepare_failed=false;
+  tx->ni_prepare_failed=false;
   dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
  }
  if(tx->bcmc_retiring || (tx->bcmc_domain_retiring&BIT(domain)) || tx->ni.retire_requested || tx->ni.retire_quiescing){ret=-EAGAIN;goto out;}
@@ -1209,7 +1226,7 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
   ret=rtl_ax_tx_pause(tx);if(ret)goto out;
   dev_hold(dev);tx->ni.route_dev=dev;
   ret=ni_test_prepare(tx,0);
-  if(ret){tx->bcmc_prepare_failed=true;rtl_ax_tx_open(tx);goto out;}
+  if(ret){tx->ni_prepare_failed=true;rtl_ax_tx_open(tx);goto out;}
   put_unaligned_le32(0,tx->pe.memory+PE_PROBE_MAILBOX+248);
   rtl_ax_tx_open(tx);
  }

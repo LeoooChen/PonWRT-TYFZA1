@@ -319,6 +319,8 @@
 
 157. 补齐所有缓冲区归还入口的原厂inactive-BID有效信用：目标函数56有效位/计数、8 FIFO状态和12 PUSH编码实执行确认bit31+低14位非零与FIFO就绪是独立条件。强制owner/队列/EPP归还补信用检查，正常CPU初始化/refill和PE回收补有效位；无效或耗尽时保留头/引用，旧强制路径与旧PE均复现非法PUSH。194 EPP、729双EQ、28链接peer/251 FTTR/125组播/132 PS与16项当前回归通过；四旧夹具因既有布局/初始化问题未计通过。PE32456字节、栈7360、无上行14000、重复一致，Image/模块/三输入一致通过；未实机，完整退场及ID复用仍未证明。详见[BID归还信用](port/FTTR.md#valid-inactive-bid-credit-gates-every-buffer-return)。
 
+158. 补齐NI准备阶段八队列与回滚归属：准备前核对ES关闭/空及全部EPP，保留实际RD而不追平WR，八组base/profile快照先于可失败配置，拒绝覆盖已有映射。单播在prepare前持有netdev，复用统一ni_prepare_failed，回滚失败保留引用/cleanup请求且不无条件重开，完成后才可重试。fc6c4b6生产prepare/route均复现旧问题；96完整准备场景、实际回滚失败/cleanup/重新准入及十一回归、Image/模块/两输入一致通过。PE未改、未实机；完整生产者屏障、ID复用和物理启停仍未证明。详见[NI准备归属](port/FTTR.md#ni-preparation-retains-every-queue-and-failed-rollback-owner)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

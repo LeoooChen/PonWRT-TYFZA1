@@ -47,10 +47,10 @@ typedef uint32_t u32;
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_AP_TRANSPORT_H
 static void rtl_ax_store32(void *p,u32 v) {memcpy(p,&v,4);}
-struct net_device {int unused;};
+struct net_device {int unused;unsigned refs;};
 struct pci_dev {void *radio;};
 struct rtl_ax_tx {struct net_device *mcast_dev[12];struct net_device *bcmc_dev[12];
- unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
+ unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,ni_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
  void *rx;
@@ -68,6 +68,7 @@ static int fail_unbind;
 static int ni_mcast_unbind(struct rtl_ax_tx *tx){(void)tx;return fail_unbind?-EIO:0;}
 static struct rtl_ax_tx *current;
 static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls,pause_calls,poll_calls;
+static int fail_prepare;static unsigned prepare_calls;
 static int ni_test_lock,fail_drop,fail_withdraw,fail_release,fail_drop_at,fail_pause;
 static unsigned release_calls,bcmc_drops;
 static bool withhold_rpq,withhold_fence,rx_active[128];
@@ -135,10 +136,10 @@ static bool ni_epps_empty(struct rtl_ax_tx *tx) {return ni_es_empty(tx) && (!tx-
 static u32 readl(void *p) {return get_unaligned_le32(p);}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,unsigned mask) {(void)tx;(void)id;(void)mask;}
 static void cancel_work_sync(void *p) {(void)p;}
-static void dev_put(struct net_device *dev) {(void)dev;}
-static void dev_hold(struct net_device *dev) {(void)dev;}
+static void dev_put(struct net_device *dev) {if(dev->refs)dev->refs--;}
+static void dev_hold(struct net_device *dev) {dev->refs++;}
 static void schedule_work(void *p) {(void)p;}
-static int ni_test_prepare(struct rtl_ax_tx *tx,unsigned id) {(void)tx;(void)id;return 0;}
+static int ni_test_prepare(struct rtl_ax_tx *tx,unsigned id) {(void)id;prepare_calls++;tx->ni.active=true;return fail_prepare;}
 static int ni_test_release(struct rtl_ax_tx *tx) {
  assert(!pending[1] && !pending[2]);release_calls++;
  if(fail_release){fail_release--;return -ETIMEDOUT;}
@@ -154,6 +155,22 @@ int rtl_ax_mac_drop_peer(struct pci_dev *pdev,unsigned macid);
 
 test = r'''
 int main(void) {
+ for(unsigned rollback=0;rollback<2;rollback++){
+  u8 memory[0x80000]={};struct net_device dev={};struct pci_dev pdev={};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
+  memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(rx_active,0,sizeof(rx_active));
+  fail_drop=fail_withdraw=fail_pause=fail_unbind=fail_drop_at=0;withhold_rpq=withhold_fence=false;
+  fail_prepare=-EIO;fail_release=rollback;prepare_calls=release_calls=0;
+  tx.ni.cpu=3;tx.ni.regs=tx.ni.vp=registers;tx.peer_authorized[1]=true;memory[0xe408]=1;put_unaligned_le32(BIT(18),memory+0xd030);
+  assert(rtl_ax_tx_ni_route(&tx,&dev,1)==(rollback?-ETIMEDOUT:-EIO));
+  assert(prepare_calls==1&&release_calls==1&&!tx.ni.route_peers[1]&&!get_unaligned_le32(memory+0x11a04));
+  assert(tx.ni_prepare_failed==!!rollback && tx.ni.retire_requested==!!rollback && dev.refs==rollback);
+  if(rollback){assert(tx.ni.route_dev==&dev&&tx.ni.active);assert(rtl_ax_tx_ni_route(&tx,&dev,1)==-EAGAIN&&prepare_calls==1);
+   assert(!rtl_ax_tx_ni_cleanup(&tx)&&!tx.ni.route_dev&&!tx.ni_prepare_failed&&!tx.ni.retire_requested&&!dev.refs);}
+  else assert(!tx.ni.route_dev&&!tx.ni.active);
+  fail_prepare=0;assert(!rtl_ax_tx_ni_route(&tx,&dev,1)&&prepare_calls==2&&tx.ni.route_dev==&dev&&dev.refs==2&&tx.ni.route_peers[1]);
+  assert(!rtl_ax_tx_ni_retire_peer(&tx,1)&&!dev.refs);
+ }
  /* DROP failed after the first EPP fence was published. A second departing
   * peer cannot replace the first cutoff even as new traffic advances EPP. */
  for(unsigned fail_ac=1;fail_ac<=4;fail_ac++){
@@ -444,6 +461,7 @@ int main(void) {
 '''
 
 ni = subprocess.check_output(['git','show',args.revision+':port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h'],cwd=root,text=True) if args.revision else (driver/'ni-test.h').read_text()
+ni=ni.replace("bcmc_prepare_failed","ni_prepare_failed")
 tx_source = subprocess.check_output(['git','show',args.revision+':port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/tx.c'],cwd=root,text=True) if args.revision else (driver/'tx.c').read_text()
 pci = (driver / 'pci.c').read_text()
 drop = function(pci, 'rtl_ax_mac_drop_peer') if 'int rtl_ax_mac_drop_peer(' in pci else ''

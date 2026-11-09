@@ -9835,6 +9835,46 @@ and current sources. Artifacts are `artifacts/fttr/eq-credit-*-20261109.*`.
 No physical device was accessed. This corrects buffer-return admission; it
 does not establish full upstream/downstream retirement or hardware-ID reuse.
 
+### NI preparation retains every queue and failed rollback owner
+
+Before binding a radio, the native preparation function previously checked
+only COS0 EPP equality and then advanced all eight read pointers to their
+producers. That could skip an older packet on another COS or one published
+between the check and pointer programming. Preparation now requires the radio's
+ES CPU enable to be clear, all ES queues empty and all eight EPPs consumed.
+It refuses to replace already retained register mappings. EPP consumers are
+copied into PE without writing hardware RD, so a subsequent producer update
+remains visible. All eight original base/profile pairs are snapshotted before
+any queue setup is marked active, supporting complete rollback after a later
+failure.
+
+The unicast startup caller now retains the supplying netdev before preparation,
+as the BCMC path already did. Its preparation-failure marker is shared by both
+callers. If preparation fails, rollback runs; a rollback error keeps the netdev,
+register mappings and cleanup request and does not reopen PE through the old
+unconditional call. Background cleanup follows the retained preparation branch
+before another startup is permitted. Successful rollback releases the reference
+and allows a new attempt. An original preparation error remains visible when
+rollback succeeds; a failed rollback is reported when it owns the outstanding
+work.
+
+The previous `fc6c4b6` production preparation reproduces acceptance of a busy
+nonzero COS/ES path. Its unicast caller also fails the new preparation-plus-
+rollback ownership checks. `test_ni_prepare_ownership.py` executes the full
+preparation function in96 cases covering both radios, all COS, active ES,
+existing mappings, late publication, every snapshot failure and subsequent
+attribute/arbitration/event/RPQ failure boundaries. Actual route/cleanup tests
+verify failed rollback retains its interface and prevents a second prepare,
+then cleanup and successful reinitialization balance references. Eleven related
+suites pass, including FE transaction, device ownership, BCMC, authorization,
+ES/EPP retirement and linked PE peer/FTTR drain. ASan/UBSan cover the native
+fixtures. Final Image/modules and both changed source identities pass. Evidence
+is `artifacts/fttr/ni-prepare-*-20261109.*`.
+
+PE firmware is unchanged and no physical device was accessed. This preserves
+existing queued data and partial-start ownership; it does not prove all upstream
+producers stopped, safe ID reuse, or full physical startup/teardown acceptance.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

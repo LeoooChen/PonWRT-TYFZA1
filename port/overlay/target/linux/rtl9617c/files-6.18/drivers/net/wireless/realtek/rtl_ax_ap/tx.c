@@ -83,7 +83,7 @@ struct rtl_ax_tx {
  u32 bcmc_generation;
  unsigned int bcmc_live, bcmc_domains, bcmc_domain_retiring;
  struct net_device *bcmc_dev[12];
- bool bcmc_owned,bcmc_enabled,bcmc_prepare_failed,bcmc_retiring;
+ bool bcmc_owned,bcmc_enabled,ni_prepare_failed,bcmc_retiring;
 	bool pe_active;
 	u32 pe_command;
 	unsigned int pe_producer;
