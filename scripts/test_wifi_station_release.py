@@ -10,7 +10,7 @@ driver = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wirel
 source = (driver / 'monitor.h').read_text()
 
 def function(name):
-    prefix = 'static struct ieee80211_vif *' if name == 'rtl_ax_peer_vif' else 'static void ' if name == 'rtl_ax_cleanup_work' else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
+    prefix = 'static struct ieee80211_vif *' if name == 'rtl_ax_peer_vif' else 'static void ' if name in ('rtl_ax_cleanup_work','rtl_ax_vif_unreserve') else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
     start = re.search(r'^' + re.escape(prefix) + name + r'\([^;]*?\)\s*\{', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
@@ -47,6 +47,7 @@ struct ieee80211_sta_he_cap {bool has_he;struct {u8 mac_cap_info[6],phy_cap_info
 #define RTL_AX_CLIENT_MACID 1
 #define NL80211_IFTYPE_MESH_POINT 7
 #define clear_bit __clear_bit
+#define __set_bit set_bit
 struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);void(*write32)(void*,unsigned,u32);};
 #define RTL_AX_8852C 0x52
 #define RTL_AX_H2C_CMD 0
@@ -119,6 +120,7 @@ static void wiphy_work_queue(struct wiphy *w,struct wiphy_work *work){(void)w;(v
 
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *h){return h->radio;}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
+static bool ether_addr_equal(const u8 *a,const u8 *b){return !memcmp(a,b,6);}
 static void __clear_bit(unsigned int bit,unsigned long *ids){ids[bit/64]&=~(1UL<<(bit%64));}
 static void set_bit(unsigned int bit,unsigned long *ids){ids[bit/64]|=1UL<<(bit%64);}
 static bool test_bit(unsigned int bit,unsigned long *ids){return !!(ids[bit/64]&(1UL<<(bit%64)));}
@@ -239,7 +241,7 @@ int main(void){
   * open must finish retirement before either creating STA or selecting AP. */
  for(unsigned type=2;type<=7;type++){
   if(type!=2&&type!=3&&type!=7)continue;
-  r.ap_vif=r.sta_vif=NULL;r.sta_role=true;r.retired_stations[1].pending=true;
+  r.ap_vif=r.sta_vif=NULL;memset(r.vif_owner,0,sizeof(r.vif_owner));r.self_roles[0].vif_reserved=false;clear_bit(0,r.station_ids);r.sta_role=true;r.retired_stations[1].pending=true;
   r.retired_stations[1].client=true;set_bit(1,r.station_ids);vif.type=type;
   r.cam_owners.role[1].reserved=true;r.cam_owners.role[1].address=0;r.cam_owners.bssid[0].references=1;
   fail_class=6;fail_function=0;fail_count=1;prepared=0;
@@ -254,7 +256,7 @@ int main(void){
  }
  /* Bind failure must not create a role; a later role failure must detach
   * the borrowed sequence before mac80211 can destroy its interface. */
- r.ap_vif=r.sta_vif=NULL;r.vif_owner[0]=NULL;r.sta_role=false;vif.type=NL80211_IFTYPE_STATION;
+ r.ap_vif=r.sta_vif=NULL;memset(r.vif_owner,0,sizeof(r.vif_owner));r.self_roles[0].vif_reserved=false;clear_bit(0,r.station_ids);r.sta_role=false;vif.type=NL80211_IFTYPE_STATION;
  sequence_error=-ETIMEDOUT;unsigned binds=sequence_binds,unbinds=sequence_unbinds;int tries=prepared;
  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
  assert(sequence_binds==binds+1&&sequence_unbinds==unbinds&&prepared==tries&&!r.sta_vif);
@@ -268,7 +270,7 @@ int main(void){
 }
 '''
 names = ('rtl_ax_peer_vif', 'rtl_ax_security_clear', 'rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
-         'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
+         'rtl_ax_vif_reserve', 'rtl_ax_vif_unreserve', 'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
 with tempfile.TemporaryDirectory(prefix='wifi-sta-release-', dir=root / 'artifacts') as directory:
     p = Path(directory)
     (p / 'test.c').write_text(common + ''.join(function(n) for n in names) + test)

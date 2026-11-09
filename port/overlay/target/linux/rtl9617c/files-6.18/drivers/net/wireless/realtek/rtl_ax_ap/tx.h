@@ -16,6 +16,7 @@ int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx, unsigned int macid, unsigned int 
 void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx);
 void rtl_ax_tx_bcmc_close_vif(struct rtl_ax_tx *tx,struct ieee80211_vif *vif);
 int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,struct ieee80211_key_conf *key,unsigned int rate);
+int rtl_ax_tx_vif_release(struct rtl_ax_tx *tx,struct net_device *netdev);
 int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx, struct net_device *netdev);
 int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid);
 struct rtl_ax_rx;

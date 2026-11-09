@@ -146,7 +146,11 @@ int main(void){
  fail_drop=-EIO;assert(rtl_ax_tx_group_stop(&t,41,0,3)==-EIO&&!b2->generation&&b->generation==first);
  assert(t.bcmc_domain_retiring&8);assert(rtl_ax_tx_bcmc(&t,&second.vif,&keys[0].conf,4)==-EAGAIN);
  fail_drop=0;assert(!rtl_ax_tx_group_stop(&t,41,0,3)&&!(t.bcmc_domain_retiring&8));
- t.bcmc_domains&=~8U; /* End isolated fixture's second-interface lifetime. */
+ assert(!(t.bcmc_domains&8)&&!t.bcmc_dev[3]);
+ /* A recreated interface at the same domain may carry a different self role. */
+ second.vif.drv_priv[0].identity.macid=63;
+ assert(!rtl_ax_tx_bcmc(&t,&second.vif,&keys[0].conf,4)&&b2->reserved[0]==63);
+ assert(!rtl_ax_tx_group_stop(&t,63,0,3)&&!(t.bcmc_domains&8)&&!t.bcmc_dev[3]);
  /* Partial NI preparation retains its netdev and retries cleanup first. */
  t.ni.active=false;dev_put(t.ni.route_dev);t.ni.route_dev=NULL;
  fail_prepare=-EIO;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EIO&&t.bcmc_prepare_failed&&dev.refs==1);

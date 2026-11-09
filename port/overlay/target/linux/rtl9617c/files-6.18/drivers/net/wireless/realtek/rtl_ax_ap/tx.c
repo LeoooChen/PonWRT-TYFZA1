@@ -572,7 +572,10 @@ int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx, unsigned int macid,
   * table epoch was closed above; drain that finite prefix before key reuse. */
  if(!ret)ret=rtl_ax_tx_wait_station(tx,0,IEEE80211_NUM_TIDS);
  if(!ret && macid)ret=rtl_ax_tx_wait_station(tx,macid,IEEE80211_NUM_TIDS);
- if(!ret)tx->bcmc_domain_retiring&=~BIT(domain);
+ if(!ret) {
+  tx->bcmc_domain_retiring&=~BIT(domain);
+  tx->bcmc_domains&=~BIT(domain);tx->bcmc_dev[domain]=NULL;
+ }
  return ret;
 }
 

@@ -50,7 +50,7 @@ struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2],keyid[7];};
 struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
-struct rtl_ax_ap {u8 mbid_drop_pending,role_owner[128];struct rtl_ax_self_role {bool retiring,started,beacon,stopping;int bss_result;}self_roles[128];struct rtl_ax_role_identity identities[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];
+struct rtl_ax_ap {u8 mbid_drop_pending,role_owner[128];struct rtl_ax_self_role {bool retiring,started,beacon,stopping,ni_retiring;int bss_result;}self_roles[128];struct rtl_ax_role_identity identities[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];
  struct ieee80211_hw *hw;bool beacon_enabled;int ap_result;struct {int error;bool detected,in_cac;}dfs;
  struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];
  unsigned rx_ba_stopped;int rx_ba_result,tx,rx;

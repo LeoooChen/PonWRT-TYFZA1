@@ -92,9 +92,9 @@ struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
 static void rtl_ax_store32(u8 *,u32);static u32 rtl_ax_ap_read32(const u8 *);
 #include "'''+str(root/base/'wireless/realtek/rtl_ax_ap/role-identity.h')+r'''"
 struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];struct wireless_dev wdev;int type;u8 addr[6];};
-struct rtl_ax_tx {struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
+struct rtl_ax_tx {struct net_device *mcast_dev[12];struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
- struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev,*peer_dev[128];u8 peer_address[128][6],peer_wifi[128];struct work_struct ps_work;}ni;};
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev,*retired_vif[12],*peer_dev[128];u8 peer_address[128][6],peer_wifi[128];struct work_struct ps_work;}ni;};
 struct rtl_ax_ap {u8 role_owner[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;bool detected,in_cac;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
@@ -132,6 +132,7 @@ static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){assert(ac
 static struct rtl_fe *active_fe;static struct rtl_ax_tx *active_tx;static int ni_test_lock;
 static void fe_mcast_invalidate(struct rtl_fe *f){(void)f;}
 static int ni_mcast_bind(struct rtl_ax_tx *t,struct net_device *d){(void)t;(void)d;return 0;}
+static int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}
 static int ni_mcast_unbind(struct rtl_ax_tx *t){(void)t;return 0;}
 static void rtl_ax_rx_open_peer(void *rx,unsigned id,bool open){(void)rx;(void)id;(void)open;}
 static int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *t,struct ieee80211_vif *v,unsigned id){(void)t;(void)v;(void)id;return 0;}
@@ -310,7 +311,8 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigne
  return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
 code += ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw'))
-code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'rtl_ax_tx_ni_cleanup') + function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_ba')
+code += 'int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *,unsigned int);\n'
+code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'ni_vif_release') + function(ni, 'rtl_ax_tx_vif_release') + function(ni, 'rtl_ax_tx_ni_cleanup') + function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_ba')
 code += function(tx, 'rtl_ax_tx_peer_authorized') + function(tx, 'rtl_ax_tx_key_changed') + function(tx, 'rtl_ax_tx_key_refresh')
 if 'bool rtl_ax_tx_peer_security(' in tx:
     code += function(tx, 'rtl_ax_tx_peer_security')

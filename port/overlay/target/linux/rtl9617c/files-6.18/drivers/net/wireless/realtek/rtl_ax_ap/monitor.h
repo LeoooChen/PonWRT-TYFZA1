@@ -215,6 +215,56 @@ static struct ieee80211_sta *rtl_ax_find_peer(struct rtl_ax_ap *radio,unsigned i
  return NULL;
 }
 
+/* Reserve port0 root/VAP identities before mac80211 may add any peers.
+ * A stopped or not-yet-started BSS still owns its MACID and MBID. */
+static int rtl_ax_vif_reserve(struct rtl_ax_ap *radio, struct ieee80211_vif *vif)
+{
+ struct rtl_ax_vif *native=(void *)vif->drv_priv;
+ unsigned int used=0,macid=0,mbid=0;
+ bool other=false;
+ for(unsigned int i=0;i<128;i++) {
+  const struct rtl_ax_self_role *owner=&radio->self_roles[i];
+  if(radio->vif_owner[i]) {
+   if(radio->vif_owner[i]==vif)return -EBUSY;
+   if(ether_addr_equal(radio->vif_owner[i]->addr,vif->addr))return -EEXIST;
+   other=true;
+   if(vif->type!=NL80211_IFTYPE_AP || radio->vif_owner[i]->type!=NL80211_IFTYPE_AP)return -EBUSY;
+  }
+  if(owner->vif_reserved || owner->retiring || owner->stage) {
+   const struct rtl_ax_role_identity *id=&radio->identities[i];
+   if(id->type==2 || id->type==3 || id->type==6)used|=BIT(id->mbid);
+  }
+ }
+ if(vif->type==NL80211_IFTYPE_STATION) {
+  native->identity=(struct rtl_ax_role_identity){.macid=RTL_AX_CLIENT_MACID,.type=1};
+  return other?-EBUSY:0; /* STA preparation reserves its combined self/peer. */
+ }
+ /* Reuse the unbound root created by probe, but never a retired owner. */
+ if(!radio->self_roles[0].vif_reserved && !radio->self_roles[0].retiring &&
+    (!test_bit(0,radio->station_ids) || (radio->role_owner[0]==0 && radio->identities[0].mbid==0)))mbid=0;
+ else {
+  if(vif->type!=NL80211_IFTYPE_AP || !(used&1))return -EBUSY;
+  for(mbid=1;mbid<8 && (used&BIT(mbid));mbid++);
+  if(mbid==8)return -ENOSPC;
+  for(macid=1;macid<128 && test_bit(macid,radio->station_ids);macid++);
+  if(macid==128)return -ENOSPC;
+ }
+ native->identity=(struct rtl_ax_role_identity){.macid=macid,.mbid=mbid,
+  .type=vif->type==NL80211_IFTYPE_MESH_POINT?6:mbid?3:2};
+ radio->identities[macid]=native->identity;radio->role_owner[macid]=macid;
+ radio->self_roles[macid].vif_reserved=true;__set_bit(macid,radio->station_ids);
+ return 0;
+}
+
+static void rtl_ax_vif_unreserve(struct rtl_ax_ap *radio, struct ieee80211_vif *vif)
+{
+ unsigned int id=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
+ struct rtl_ax_self_role *owner=&radio->self_roles[id];
+ owner->vif_reserved=false;
+ if(!owner->stage && !owner->retiring && !radio->cam_owners.role[id].reserved && radio->role_owner[id]==id)
+  __clear_bit(id,radio->station_ids);
+}
+
 static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
@@ -225,7 +275,7 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 	if (vif->type != NL80211_IFTYPE_AP && vif->type != NL80211_IFTYPE_STATION &&
 	    vif->type != NL80211_IFTYPE_MESH_POINT)
 		return -EOPNOTSUPP;
-	if (radio->ap_vif || radio->sta_vif)
+	if (radio->sta_vif || (radio->ap_vif && (radio->ap_vif->type!=NL80211_IFTYPE_AP || vif->type!=NL80211_IFTYPE_AP)))
 		return -EBUSY;
 	if(radio->vif_generation==~0U)return -EOVERFLOW;
 	/* .stop cancels deferred cleanup after a failed .add_interface. RX is
@@ -235,19 +285,17 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 
 		if (ret) return ret;
 	}
-	for(unsigned int i=0;i<128;i++)if(radio->self_roles[i].retiring) {
+	ret=rtl_ax_tx_ni_cleanup(radio->tx);if(ret)return ret;
+ for(unsigned int i=0;i<128;i++)radio->self_roles[i].ni_retiring=false;
+ for(unsigned int i=0;i<128;i++)if(radio->self_roles[i].retiring) {
 		ret=rtl_ax_self_role_release(radio,i);
 		if(ret)return ret;
 	}
 	struct rtl_ax_vif *native = (void *)vif->drv_priv;
-	native->identity = (struct rtl_ax_role_identity){
-		.macid = vif->type == NL80211_IFTYPE_STATION ? RTL_AX_CLIENT_MACID : 0,
-		.type = vif->type == NL80211_IFTYPE_STATION ? 1 :
-			vif->type == NL80211_IFTYPE_MESH_POINT ? 6 : 2,
-	};
+ ret=rtl_ax_vif_reserve(radio,vif);if(ret)return ret;
 	native->generation=++radio->vif_generation;
 	ret = rtl_ax_tx_sequence_bind(radio->tx, vif);
-	if (ret) return ret;
+	if (ret) {rtl_ax_vif_unreserve(radio,vif);return ret;}
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		if (ieee80211_vif_to_wdev(vif)->use_4addr) {
 			rtl_ax_tx_sequence_unbind(radio->tx, vif);
@@ -262,9 +310,9 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 			rtl_ax_tx_sequence_unbind(radio->tx, vif);
 			return ret;
 		}
-	} else radio->ap_vif = vif;
+	} else if(!native->identity.mbid)radio->ap_vif = vif;
 	radio->vif_owner[native->identity.macid]=vif;
-	rtl_ax_tx_ap_address(radio->tx, vif->addr);
+	if(!native->identity.mbid)rtl_ax_tx_ap_address(radio->tx, vif->addr);
 	return 0;
 }
 
@@ -617,17 +665,22 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret;
+ if(vif->type==NL80211_IFTYPE_MONITOR)return;
 	unsigned int self=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
 	if(self<128 && radio->vif_owner[self]==vif)radio->vif_owner[self]=NULL;
+ if(vif->type!=NL80211_IFTYPE_STATION)rtl_ax_vif_unreserve(radio,vif);
 	ret = rtl_ax_tx_sequence_unbind(radio->tx, vif);
 	rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
 	if (ret) dev_err(&radio->pdev->dev, "sequence withdrawal failed: %d\n", ret);
-	ret = rtl_ax_tx_mcast_unbind_vif(radio->tx, ieee80211_vif_to_wdev(vif)->netdev);
-	if (ret) dev_err(&radio->pdev->dev, "multicast VIF detach failed: %d\n", ret);
+
 
 	if (radio->sta_vif == vif) {
 		rtl_ax_client_release(radio);
 		radio->sta_vif = NULL;
+  ret=rtl_ax_tx_vif_release(radio->tx,ieee80211_vif_to_wdev(vif)->netdev);
+  radio->self_roles[self].ni_retiring=ret!=0;
+  if(ret){radio->self_roles[self].retiring=true;__set_bit(self,radio->station_ids);}
+  if(ret){dev_err(&radio->pdev->dev,"NI interface release failed: %d\n",ret);wiphy_delayed_work_queue(hw->wiphy,&radio->cleanup_work,HZ);}
 	}
 
 	if (vif->type==NL80211_IFTYPE_AP || vif->type==NL80211_IFTYPE_MESH_POINT) {
@@ -635,6 +688,10 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 			rtl_ax_ap_stop(hw, vif, &vif->bss_conf);
 		if(radio->ap_vif==vif)radio->ap_vif = NULL;
 		unsigned int id=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
+  ret=rtl_ax_tx_vif_release(radio->tx,ieee80211_vif_to_wdev(vif)->netdev);
+  radio->self_roles[self].ni_retiring=ret!=0;
+  if(ret){radio->self_roles[self].retiring=true;__set_bit(self,radio->station_ids);}
+  if(ret){dev_err(&radio->pdev->dev,"NI interface release failed: %d\n",ret);wiphy_delayed_work_queue(hw->wiphy,&radio->cleanup_work,HZ);}
 		ret=rtl_ax_self_role_release(radio,id);
 		if(ret) {
 			radio->self_roles[id].result=ret;
@@ -1026,6 +1083,7 @@ static void rtl_ax_cleanup_work(struct wiphy *wiphy, struct wiphy_work *work)
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, cleanup_work.work);
 	unsigned int i, tid;
 	bool retry = rtl_ax_tx_ni_cleanup(radio->tx) != 0;
+ if(!retry)for(i=0;i<128;i++)radio->self_roles[i].ni_retiring=false;
 
 	retry |= rtl_ax_security_cleanup(radio);
  for(i=0;i<128;i++)if(radio->self_roles[i].stopping) {
@@ -2411,16 +2469,21 @@ static void rtl_ax_regulatory_notify(struct wiphy *wiphy, struct regulatory_requ
 
 static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 {
-	static const struct ieee80211_iface_limit ap_limit = {
-		.max = 1, .types = BIT(NL80211_IFTYPE_AP) | BIT(NL80211_IFTYPE_STATION) | BIT(NL80211_IFTYPE_MESH_POINT),
-	};
-	static const struct ieee80211_iface_combination dfs_combination = {
-		.limits = &ap_limit, .n_limits = 1, .max_interfaces = 1,
-		.num_different_channels = 1,
-		.radar_detect_widths = BIT(NL80211_CHAN_WIDTH_20_NOHT) | BIT(NL80211_CHAN_WIDTH_20) |
-			BIT(NL80211_CHAN_WIDTH_40) | BIT(NL80211_CHAN_WIDTH_80) | BIT(NL80211_CHAN_WIDTH_160),
-		.radar_detect_regions = BIT(NL80211_DFS_FCC) | BIT(NL80211_DFS_ETSI) | BIT(NL80211_DFS_JP),
-	};
+ static const struct ieee80211_iface_limit limits[] = {
+  {.max=8,.types=BIT(NL80211_IFTYPE_AP)},
+  {.max=1,.types=BIT(NL80211_IFTYPE_STATION)|BIT(NL80211_IFTYPE_MESH_POINT)},
+ };
+ static const struct ieee80211_iface_combination combinations[] = {
+  {.limits=&limits[0],.n_limits=1,.max_interfaces=8,.num_different_channels=1,.beacon_int_infra_match=true},
+ };
+ static const struct ieee80211_iface_combination dfs_combinations[] = {
+  {.limits=&limits[0],.n_limits=1,.max_interfaces=8,.num_different_channels=1,.beacon_int_infra_match=true,
+   .radar_detect_widths=BIT(NL80211_CHAN_WIDTH_20_NOHT)|BIT(NL80211_CHAN_WIDTH_20)|BIT(NL80211_CHAN_WIDTH_40)|BIT(NL80211_CHAN_WIDTH_80)|BIT(NL80211_CHAN_WIDTH_160),
+   .radar_detect_regions=BIT(NL80211_DFS_FCC)|BIT(NL80211_DFS_ETSI)|BIT(NL80211_DFS_JP)},
+  {.limits=&limits[1],.n_limits=1,.max_interfaces=1,.num_different_channels=1,
+   .radar_detect_widths=BIT(NL80211_CHAN_WIDTH_20_NOHT)|BIT(NL80211_CHAN_WIDTH_20)|BIT(NL80211_CHAN_WIDTH_40)|BIT(NL80211_CHAN_WIDTH_80)|BIT(NL80211_CHAN_WIDTH_160),
+   .radar_detect_regions=BIT(NL80211_DFS_FCC)|BIT(NL80211_DFS_ETSI)|BIT(NL80211_DFS_JP)},
+ };
 	static const u16 rates[] = { 10, 20, 55, 110, 60, 90, 120, 180, 240, 360, 480, 540 };
 	/* Exact rtw_5ghz_a_channels entries; cfg80211 applies the country rules. */
 	static const u8 channels_5g[] = {
@@ -2469,10 +2532,11 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	hw->max_rx_aggregation_subframes = 256;
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP) |
 		BIT(NL80211_IFTYPE_MESH_POINT) | BIT(NL80211_IFTYPE_STATION);
-	if (radio->chip == RTL_AX_8852C) {
-		hw->wiphy->iface_combinations = &dfs_combination;
-		hw->wiphy->n_iface_combinations = 1;
-	}
+	hw->wiphy->iface_combinations=radio->chip==RTL_AX_8852C?dfs_combinations:combinations;
+ hw->wiphy->n_iface_combinations=radio->chip==RTL_AX_8852C?ARRAY_SIZE(dfs_combinations):ARRAY_SIZE(combinations);
+ /* Each VIF has address CAM storage; preserve the base first octet and
+  * let mac80211 allocate distinct addresses within a contiguous mask. */
+ memset(hw->wiphy->addr_mask+1,0xff,ETH_ALEN-1);
 	hw->wiphy->available_antennas_rx = 3;
 	for (i = 0; i < channels; i++) {
 		radio->channels[i].band = band;

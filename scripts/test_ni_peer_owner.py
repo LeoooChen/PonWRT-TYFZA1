@@ -12,13 +12,15 @@ common=common.replace('static int rtl_ax_rx_uplink_enable(void *rx,unsigned id,u
 common=common.replace('static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;assert(id==1);}', 'static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;rx_id[id]=0;}')
 common=common.replace('static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;assert(id==1);}', 'static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;rx_id[id]=0;}')
 common=common.replace('static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;(void)id;return false;}', 'static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;return rx_id[id]!=0;}')
+common=common.replace('static int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}', 'static int detach_error;static int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx,struct net_device *d){if(detach_error)return detach_error;for(unsigned i=0;i<12;i++)if(tx->mcast_dev[i]==d){dev_put(d);tx->mcast_dev[i]=NULL;}return 0;}')
 # Existing low-level model checks age/hash cache ownership; retain it with own helper.
 fe=ns['read']('ethernet/realtek/rtl9617c-fe.c');ni=ns['read']('wireless/realtek/rtl_ax_ap/ni-test.h')
+common=common.replace('static int detach_error;', 'static void dev_put(struct net_device *);static int detach_error;',1)
 code=common+''.join(function(fe,n) for n in ('fe_port','fe_wifi_client','fe_wifi_peer','rtl_fe_wifi_peer_route'))
 code+='''
 static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigned route){return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
-code+=''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','rtl_ax_tx_ni_route','rtl_ax_tx_ni_peer','ni_retire_peer','rtl_ax_tx_ni_retire_peer','rtl_ax_tx_ni_retire_ba'))
+code+=''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','rtl_ax_tx_ni_route','rtl_ax_tx_ni_peer','ni_retire_peer','rtl_ax_tx_ni_retire_peer','rtl_ax_tx_ni_retire_ba','ni_vif_release','rtl_ax_tx_vif_release','rtl_ax_tx_ni_cleanup'))
 code+=r'''
 int main(void){
  for(unsigned failure=0;failure<=3;failure++) {
@@ -65,6 +67,17 @@ int main(void){
   if(failure){assert(dev[0].references==2&&dev[1].references==1);fail_stage=0;assert(!rtl_ax_tx_ni_route(&tx,NULL,0));}
   assert(!dev[0].references&&!dev[1].references&&!tx.ni.peer_dev[1]&&!tx.ni.peer_dev[2]);
   assert(!fe_wifi_peer(&fe,&port[0],mac)&&!fe_wifi_peer(&fe,&port[1],mac));memset(rx_id,0,sizeof(rx_id));
+ }
+ /* The root ring reference migrates while another interface remains live. */
+ {
+  struct net_device a={},b={};struct rtl_ax_tx tx={.pe_active=true,.ni={.route_dev=&a},.mcast_dev={&a,&b}};
+  dev_hold(&a);dev_hold(&a);dev_hold(&b);active_tx=&tx;
+  detach_error=-EIO;assert(rtl_ax_tx_vif_release(&tx,&a)==-EIO);
+  assert(a.references==3&&b.references==1&&tx.ni.retired_vif[0]==&a&&tx.ni.route_dev==&a);
+  assert(rtl_ax_tx_vif_release(&tx,&a)==-EIO&&a.references==3);
+  detach_error=0;assert(!rtl_ax_tx_ni_cleanup(&tx));
+  assert(!a.references&&b.references==2&&tx.ni.route_dev==&b&&!tx.ni.retired_vif[0]);
+  dev_put(&b);dev_put(&b);
  }
  puts("Actual FE/NI two-device same-MAC ownership: publish/withdraw faults, exact refs, stale reassignment, BA-retained RX and global withdrawal PASS");
 }

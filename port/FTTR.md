@@ -8730,6 +8730,50 @@ interface allocation/shared policies remain unfinished. The developer-only NI
 bypass traffic generator also needs its raw metadata contract checked before
 using it with this strict admission. No physical device was accessed.
 
+### Public port0 AP/VAP allocation and interface teardown
+
+Both radios now advertise up to eight AP interfaces on one channel. STA and Mesh
+retain their separate single-interface modes; DFS combinations on C preserve
+the supported widths/regions. Linux's actual combination verifier accepts these
+declarations. A contiguous MAC-address mask lets mac80211 assign distinct VIF
+addresses while retaining the base first octet. The target
+`rtw_phl_wifi_role_alloc@0x13a684` was executed for root plus seven VAPs: all use
+port0/WMM0, MBID1..7 are distinct, and duplicate-address lookup returns the existing
+role. The native driver rejects duplicate VIF addresses rather than giving two
+Linux interfaces ownership of one role.
+
+Interface addition reserves self-MACID/MBID before peers can be allocated, even
+if the BSS has not started. VAP self IDs skip occupied station IDs. Reservation
+survives BSS stop and uncertain CREATE cleanup while its VIF remains live;
+failed sequence binding releases the unexposed reservation. Hardware cleanup
+must finish before retired identities can be reused. Root removal and recreation
+can coexist with live VAPs; their shared port timing remains protected by the
+previous BSS implementation. Monitor removal never releases root AP state.
+
+NI VIF release retires its peers and table binding, then transfers the shared
+ring's initial netdev reference to a surviving bound interface. The last
+interface tears down the ring. A failed detach retains one netdev reference in
+the existing cleanup lifecycle and marks its self role as NI-retiring. A new
+interface cannot claim that self-MACID until NI withdrawal succeeds. Group-stop
+success also releases the old BCMC domain/device reservation, allowing a rebuilt
+interface with a different self-MACID to publish a fresh template in that domain.
+
+Actual add/start/stop/remove tests create all eight interfaces on both chip
+configurations, include an ordinary peer occupying MACID1, exercise all BSSes,
+remove/recreate a VAP and root, and inject binding, firmware teardown and NI
+detach failures. Additional tests cover netdev reference transfer, failed-detach
+retry and BCMC domain reconstruction. Twelve key/BA/NI/FE/DFS/binding regressions,
+Linux combination validation and Image/modules builds pass; seven changed kernel
+inputs match. Artifacts are `artifacts/fttr/vap-*-20261109.*`. PE firmware is
+unchanged and no physical device was accessed.
+
+This opens the factory port0 AP/VAP topology in code; it is not physical
+multi-SSID acceptance. WMM0/EDCA, channel and port color remain shared hardware
+state, as distinct from the per-BSSID CAM colors. Independent per-VIF airtime,
+TSPEC policy and mixed AP/STA/multi-channel operation are not implemented.
+Wi-Fi ID reuse still lacks a proven full upstream packet-retirement barrier;
+existing quarantines and the documented whole-PE pause-ACK simulation gap remain.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

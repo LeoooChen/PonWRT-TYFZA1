@@ -118,7 +118,9 @@ static int rtl_ax_port0_start(struct io *io,struct port *port,void *r,int(*drop)
 static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){return vif;}
 static void cfg80211_stop_iface(void *wiphy,void *wdev,int gfp){(void)wiphy;(void)wdev;(void)gfp;stop_requests++;}
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw->radio;}
-static int rtl_ax_tx_mcast_unbind_vif(struct tx *tx,void *dev){(void)tx;(void)dev;return 0;}
+static int release_error;
+static int rtl_ax_tx_ni_cleanup(struct tx *tx){(void)tx;return release_error;}
+static int rtl_ax_tx_vif_release(struct tx *tx,void *dev){(void)tx;(void)dev;return release_error;}
 static void rtl_ax_tx_ap_address(struct tx *tx,u8 *addr){(void)tx;(void)addr;}
 static void rtl_ax_security_dctl(u8 *p,unsigned id,void *role){(void)id;(void)role;memset(p,0,68);}
 static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_bss_conf *conf){
@@ -184,7 +186,7 @@ code += r"""
 static void rtl_ax_tx_bcmc_close_vif(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;}
 static int bcmc_stop_error;static unsigned bcmc_stops;
 static int rtl_ax_tx_group_stop(struct tx *tx,unsigned id,unsigned port,unsigned mbid){(void)tx;(void)id;(void)port;(void)mbid;bcmc_stops++;return bcmc_stop_error;}
-static int rtl_ax_tx_sequence_bind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
+static int bind_error;static int rtl_ax_tx_sequence_bind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return bind_error;}
 static int rtl_ax_tx_sequence_unbind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
 static int rtl_ax_client_prepare(struct rtl_ax_ap*r,struct ieee80211_vif*v){(void)v;r->sta_role=true;return 0;}
 static void rtl_ax_client_release(struct rtl_ax_ap*r){r->sta_role=false;}
@@ -203,13 +205,62 @@ code += function("pci.c", "rtl_ax_cam_write")
 code += function("pci.c", "rtl_ax_bss_color_update")
 code += function("pci.c", "rtl_ax_self_role_release")
 code += function("pci.c", "rtl_ax_self_role_prepare")
-for name in ("rtl_ax_monitor_add_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_changed"):
+for name in ("rtl_ax_vif_reserve", "rtl_ax_vif_unreserve", "rtl_ax_monitor_add_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_changed"):
     code += function("monitor.h", name)
 code += function("monitor.h", "rtl_ax_tim_work")
 code += r"""
 static void reset_commands(void){commands=fail_command=0;}
 static void check_join(unsigned word,unsigned count){assert(commands==count);unsigned i=count-2;assert(command_class[i]==8&&command_function[i]==0&&command_word[i]==word);assert(command_class[i+1]==6&&command_function[i+1]==0);}
 int main(void){
+ /* Public add callbacks allocate eight interfaces before any AP starts. */
+ for(unsigned chip=3;chip<=4;chip++) {
+  struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=chip,.monitor_started=true};
+  struct ieee80211_hw hw={&r};r.hw=&hw;struct ieee80211_vif v[9]={};
+  struct ieee80211_bss_conf conf={.beacon_int=100,.dtim_period=2,.enable_beacon=true};
+  for(unsigned i=0;i<9;i++){v[i].type=NL80211_IFTYPE_AP;v[i].addr[0]=2;v[i].addr[5]=i+1;v[i].bss_conf=conf;}
+  /* Root probe role already exists. */
+  reset_commands();assert(!rtl_ax_self_role_prepare(&r,&(struct rtl_ax_role_identity){.type=2},v[0].addr,100,2));
+  assert(!rtl_ax_monitor_add_interface(&hw,&v[0]));
+  r.station_ids[1]=true;r.role_owner[1]=0; /* ordinary peer occupies the first free MACID */
+  for(unsigned i=1;i<8;i++) {
+   assert(!rtl_ax_monitor_add_interface(&hw,&v[i]));
+   unsigned id=v[i].drv_priv[0].identity.macid;
+   assert(id==i+1&&r.station_ids[id]&&r.self_roles[id].vif_reserved);
+   assert(v[i].drv_priv[0].identity.mbid==i&&v[i].drv_priv[0].identity.type==3&&r.vif_owner[id]==&v[i]);
+  }
+  assert(rtl_ax_monitor_add_interface(&hw,&v[8])==-ENOSPC);
+  struct ieee80211_vif monitor={.type=NL80211_IFTYPE_MONITOR};
+  assert(!rtl_ax_monitor_add_interface(&hw,&monitor));rtl_ax_monitor_remove_interface(&hw,&monitor);
+  assert(r.vif_owner[0]==&v[0]&&r.self_roles[0].vif_reserved&&r.station_ids[0]);
+  struct ieee80211_vif duplicate=v[1];assert(rtl_ax_monitor_add_interface(&hw,&duplicate)==-EEXIST);
+  for(unsigned i=0;i<8;i++){reset_commands();assert(!rtl_ax_ap_start(&hw,&v[i],&conf));}
+  unsigned id=v[3].drv_priv[0].identity.macid;
+  rtl_ax_ap_stop(&hw,&v[3],&conf);assert(r.self_roles[id].vif_reserved&&r.station_ids[id]);
+  /* Failed teardown retains MACID/MBID until retry, with no freed VIF pointer. */
+  reset_commands();fail_command=1;rtl_ax_monitor_remove_interface(&hw,&v[3]);
+  assert(!r.vif_owner[id]&&r.self_roles[id].retiring&&r.station_ids[id]);
+  reset_commands();assert(!rtl_ax_monitor_add_interface(&hw,&v[8]));
+  assert(v[8].drv_priv[0].identity.mbid==3&&v[8].drv_priv[0].identity.macid==id);
+  /* NI withdrawal failure must retain self role after VIF memory is gone. */
+  release_error=-EIO;reset_commands();rtl_ax_monitor_remove_interface(&hw,&v[8]);
+  assert(r.self_roles[id].ni_retiring&&r.station_ids[id]&&!r.vif_owner[id]);
+  assert(rtl_ax_monitor_add_interface(&hw,&v[8])==-EIO);
+  release_error=0;reset_commands();assert(!rtl_ax_monitor_add_interface(&hw,&v[8]));
+  /* Failure after reservation publishes neither VIF pointer nor a lost slot. */
+  reset_commands();rtl_ax_monitor_remove_interface(&hw,&v[8]);
+  bind_error=-EIO;assert(rtl_ax_monitor_add_interface(&hw,&v[8])==-EIO);
+  assert(!r.vif_owner[id]&&!r.self_roles[id].vif_reserved&&!r.station_ids[id]);bind_error=0;
+  assert(!rtl_ax_monitor_add_interface(&hw,&v[8]));reset_commands();assert(!rtl_ax_ap_start(&hw,&v[8],&conf));
+  /* Root removal while VAPs run can be followed by a new root, not MBID reuse. */
+  r.station_ids[1]=false;reset_commands();rtl_ax_monitor_remove_interface(&hw,&v[0]);
+  assert(r.ap_started&&!r.ap_vif);reset_commands();assert(!rtl_ax_monitor_add_interface(&hw,&v[0]));
+  assert(!v[0].drv_priv[0].identity.mbid&&r.ap_vif==&v[0]);assert(!rtl_ax_ap_start(&hw,&v[0],&conf));
+  for(unsigned i=0;i<8;i++)if(i!=3){reset_commands();rtl_ax_monitor_remove_interface(&hw,&v[i]);}
+  reset_commands();rtl_ax_monitor_remove_interface(&hw,&v[8]);
+  for(unsigned i=0;i<128;i++)assert(!r.vif_owner[i]&&!r.self_roles[i].vif_reserved&&!r.station_ids[i]);
+  assert(!r.ap_started);
+ }
+ root_prepares=mbid_prepares=0;
  /* Three live BSSes retain independent lifecycle and template state. */
  for(unsigned stop_first=0;stop_first<3;stop_first++) {
   struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=3,.monitor_started=true};

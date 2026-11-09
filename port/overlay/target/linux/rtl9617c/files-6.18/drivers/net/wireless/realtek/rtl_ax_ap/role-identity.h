@@ -10,7 +10,7 @@ struct rtl_ax_role_identity {
 /* Retained in the radio until hardware cleanup, independent of vif memory. */
 struct rtl_ax_self_role {
  u8 stage, type, color;
- bool retiring, started, beacon, stopping;
+ bool retiring, started, beacon, stopping, vif_reserved, ni_retiring;
  int bss_result;
  int result;
  u8 cam[60];

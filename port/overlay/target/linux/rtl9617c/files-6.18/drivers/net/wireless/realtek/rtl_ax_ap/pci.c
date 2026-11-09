@@ -882,6 +882,7 @@ static int rtl_ax_self_role_release(struct rtl_ax_ap *radio,unsigned int macid)
 
  if(macid>=128)return -EINVAL;
  owner=&radio->self_roles[macid];identity=&radio->identities[macid];
+ if(owner->ni_retiring)return -EAGAIN;
  if(test_bit(macid,radio->station_ids) && radio->role_owner[macid]!=macid)return -EBUSY;
  owner->retiring=true;
  for(unsigned int i=0;i<128;i++)
@@ -904,8 +905,9 @@ static int rtl_ax_self_role_release(struct rtl_ax_ap *radio,unsigned int macid)
   ret=rtl_ax_cam_write(radio,cam);
   if(ret)return ret;
  }
- __clear_bit(macid,radio->station_ids);
- memset(owner,0,sizeof(*owner));
+ bool reserved=owner->vif_reserved;
+ if(!reserved)__clear_bit(macid,radio->station_ids);
+ memset(owner,0,sizeof(*owner));owner->vif_reserved=reserved;
  return 0;
 }
 
@@ -932,8 +934,8 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const struct rtl_ax
   owner->color=color;
  }
 	/* An occupied peer/another interface cannot be overwritten by a self role. */
-	if(test_bit(macid,radio->station_ids) && (!owner->stage || radio->role_owner[macid]!=macid))return -EBUSY;
-	if(owner->stage && (identity->port!=requested->port || identity->mbid!=requested->mbid))return -EBUSY;
+	if(test_bit(macid,radio->station_ids) && ((!owner->stage && !owner->vif_reserved) || radio->role_owner[macid]!=macid))return -EBUSY;
+	if((owner->stage || owner->vif_reserved) && (identity->port!=requested->port || identity->mbid!=requested->mbid))return -EBUSY;
 	*identity=*requested;radio->role_owner[macid]=macid;
 	rtl_ax_role_unpause(unpause,macid);
 	rtl_ax_role_create(create,macid,mesh);rtl_ax_identity_maintain(create,identity);

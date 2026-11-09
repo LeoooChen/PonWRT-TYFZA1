@@ -13,7 +13,7 @@ struct rtl_ax_ni_state {
  bool active, vp_active;
  bool retire_quiescing;
  u8 retire_macid;
- struct net_device *route_dev;
+ struct net_device *route_dev,*retired_vif[12];
  /* Borrowed under ni_test_lock until FE withdrawal and packet drain finish. */
  struct net_device *peer_dev[128];
  u8 peer_address[128][6],peer_wifi[128];

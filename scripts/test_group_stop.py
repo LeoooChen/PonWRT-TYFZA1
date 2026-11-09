@@ -18,7 +18,7 @@ typedef uint8_t u8;
 #define RTL_MC_PE_BCMC_COUNT 12
 #define RTL_AX_H2C_CMD 0
 #define IEEE80211_NUM_TIDS 16
-struct rtl_ax_ap {unsigned unused;};struct pci_dev {struct rtl_ax_ap *radio;};struct rtl_ax_tx {struct pci_dev *pdev;unsigned bcmc_domain_retiring,bcmc_domains;};
+struct rtl_ax_ap {unsigned unused;};struct pci_dev {struct rtl_ax_ap *radio;};struct rtl_ax_tx {void *bcmc_dev[12];struct pci_dev *pdev;unsigned bcmc_domain_retiring,bcmc_domains;};
 #define pci_get_drvdata(p) ((p)->radio)
 static int fault,step;static unsigned waited,root;static u8 wire[24];
 static void rtl_ax_store32(u8 *p,unsigned v){memcpy(p,&v,4);}

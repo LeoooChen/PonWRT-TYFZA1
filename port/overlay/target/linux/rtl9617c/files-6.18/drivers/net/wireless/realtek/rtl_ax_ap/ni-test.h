@@ -478,10 +478,14 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	u32 status;
 	unsigned int i;
 	if (tx->ni.route_dev) rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
-	if (!tx->ni.active) return 0;
+	if (!tx->ni.active) {
+  for(i=0;i<12;i++)if(tx->ni.retired_vif[i]){dev_put(tx->ni.retired_vif[i]);tx->ni.retired_vif[i]=NULL;}
+  return 0;
+ }
 	ret = ni_test_release(tx);
  if(!ret) {
   for(i=1;i<128;i++)ni_peer_put(tx,i);
+  for(i=0;i<12;i++)if(tx->ni.retired_vif[i]){dev_put(tx->ni.retired_vif[i]);tx->ni.retired_vif[i]=NULL;}
   if(tx->ni.route_dev){dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;}
   return rtl_ax_tx_pause(tx);
  }
@@ -557,6 +561,7 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	ret = ni_restore_registers(tx);
 	if (ret) return ret;
 	for(i=1;i<128;i++)ni_peer_put(tx,i);
+  for(i=0;i<12;i++)if(tx->ni.retired_vif[i]){dev_put(tx->ni.retired_vif[i]);tx->ni.retired_vif[i]=NULL;}
 	if (tx->ni.route_dev) { dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL; }
 	if (tx->ni.test_memory) dma_free_coherent(tx->dma_device, TEST_MEMORY_BYTES, tx->ni.test_memory, tx->ni.test_dma);
 	iounmap(tx->ni.dma); iounmap(tx->ni.regs);
@@ -723,14 +728,6 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	return ret ? ret : 1;
 }
 
-int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *tx)
-{
-	/* A global release outlives individual route bits, including RX-only peers. */
-	if (tx->ni.retire_quiescing && !tx->ni.retire_macid)
-		return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
-	return 0;
-}
-
 static void ni_peer_fence(struct rtl_ax_tx *tx)
 {
 	u32 mask = 0;
@@ -864,6 +861,54 @@ int rtl_ax_tx_ni_retire_ba(struct rtl_ax_tx *tx, unsigned int macid)
 {
 	/* A TX aggregation change does not invalidate RX's key, PN or BA window. */
 	return ni_retire_peer(tx, macid, true);
+}
+
+/* Interface removal is wiphy-serialized. The first ring supplier is only a
+ * lifetime reference; transfer it before mac80211 unregisters that netdev. */
+static int ni_vif_release(struct rtl_ax_tx *tx, struct net_device *netdev)
+{
+ struct net_device *next=NULL;
+ int ret;
+ for(unsigned int i=1;i<128;i++)if(tx->ni.peer_dev[i]==netdev) {
+  ret=rtl_ax_tx_ni_retire_peer(tx,i);if(ret)return ret;
+ }
+ ret=rtl_ax_tx_mcast_unbind_vif(tx,netdev);if(ret)return ret;
+ mutex_lock(&ni_test_lock);
+ if(tx->ni.route_dev!=netdev){mutex_unlock(&ni_test_lock);return 0;}
+ for(unsigned int i=0;i<12;i++)if(tx->mcast_dev[i]){next=tx->mcast_dev[i];break;}
+ if(!next)for(unsigned int i=1;i<128;i++)if(tx->ni.peer_dev[i]){next=tx->ni.peer_dev[i];break;}
+ if(next){dev_hold(next);tx->ni.route_dev=next;dev_put(netdev);}
+ mutex_unlock(&ni_test_lock);
+ return next?0:rtl_ax_tx_ni_route(tx,netdev,0);
+}
+
+int rtl_ax_tx_vif_release(struct rtl_ax_tx *tx, struct net_device *netdev)
+{
+ unsigned int slot=12;
+ int ret;
+ if(!netdev)return -EINVAL;
+ for(unsigned int i=0;i<12;i++) {
+  if(tx->ni.retired_vif[i]==netdev){slot=i;break;}
+  if(!tx->ni.retired_vif[i] && slot==12)slot=i;
+ }
+ if(slot==12)return -ENOSPC;
+ if(!tx->ni.retired_vif[slot]){dev_hold(netdev);tx->ni.retired_vif[slot]=netdev;}
+ ret=ni_vif_release(tx,netdev);
+ if(!ret){tx->ni.retired_vif[slot]=NULL;dev_put(netdev);}
+ return ret;
+}
+
+int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *tx)
+{
+ int ret=0;
+ /* A detached VIF can outlive its peers/keys and failed FE withdrawal. */
+ for(unsigned int i=0;i<12;i++)if(tx->ni.retired_vif[i]) {
+  int error=rtl_ax_tx_vif_release(tx,tx->ni.retired_vif[i]);
+  if(error)ret=error;
+ }
+ if(!ret && tx->ni.retire_quiescing && !tx->ni.retire_macid)
+  ret=rtl_ax_tx_ni_route(tx,tx->ni.route_dev,0);
+ return ret;
 }
 
 int rtl_ax_tx_ni_test(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)

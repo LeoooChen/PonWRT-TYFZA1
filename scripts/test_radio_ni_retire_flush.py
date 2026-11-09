@@ -47,13 +47,13 @@ typedef uint32_t u32;
 static void rtl_ax_store32(void *p,u32 v) {memcpy(p,&v,4);}
 struct net_device {int unused;};
 struct pci_dev {void *radio;};
-struct rtl_ax_tx {struct net_device *bcmc_dev[12];
+struct rtl_ax_tx {struct net_device *mcast_dev[12];struct net_device *bcmc_dev[12];
  unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
  void *rx;
  struct {void *memory;} pe;
- struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;void *vp,*regs;struct net_device *route_dev,*peer_dev[128];u8 peer_address[128][6],peer_wifi[128];
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;void *vp,*regs;struct net_device *route_dev,*retired_vif[12],*peer_dev[128];u8 peer_address[128][6],peer_wifi[128];
   unsigned route_macid,route_tim[128];int ps_work,cpu;} ni;
 };
 struct rtl_ax_ap {struct rtl_ax_tx *tx;};
@@ -61,6 +61,7 @@ static void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx){tx->bcmc_enabled=false;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 
 static int ni_mcast_bind(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}
+static int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}
 static int ni_mcast_unbind(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static struct rtl_ax_tx *current;
 static unsigned drop_mask[128],pending[128],withdrawn[128],drop_calls,pause_calls,poll_calls;
@@ -332,7 +333,7 @@ with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
                       ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw')) + function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
                       function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') +
                       function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') +
-                      function(ni, 'rtl_ax_tx_ni_cleanup') + test)
+                      function(ni, 'ni_vif_release') + function(ni, 'rtl_ax_tx_vif_release') + function(ni, 'rtl_ax_tx_ni_cleanup') + test)
     subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function',
                     '-fsanitize=address,undefined', '-I'+str(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'), str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True, timeout=10)
