@@ -355,12 +355,19 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 
 	rx->deepq_configured = false;
 	writel(readl(ni + CB_CTRL) & ~BIT(31), ni + CB_CTRL);
+	if (readl(ni + CB_CTRL) & BIT(31)) return -EIO;
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
+	if (readl(ni + RMU_CTRL) & BIT(31)) return -EIO;
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
+	if (readl(ni + ES_CTRL) & BIT(31)) return -EIO;
 	/* Native ownership starts with the same TQM reset as the stock Linux driver. */
 	writel(readl(rx->block_reset) | BIT(5), rx->block_reset);
+	/* INIT_DONE can still describe the previous run if the reset write did
+	 * not reach hardware. Verify both edges before replacing any BID owner. */
+	if (!(readl(rx->block_reset) & BIT(5))) return -EIO;
 	udelay(1000);
 	writel(readl(rx->block_reset) & ~BIT(5), rx->block_reset);
+	if (readl(rx->block_reset) & BIT(5)) return -EIO;
 	ret = readl_poll_timeout(ni + 0x6850, value, value & BIT(30), 1, 100000);
 	if (ret)
 		return ret;

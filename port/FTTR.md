@@ -9658,6 +9658,47 @@ upstream of ES can arrive after the observation; complete MCE/AFT production
 retirement, MiniOLT downstream retirement and safe hardware-ID reuse remain
 unproven and are not enabled by this change.
 
+### Verify TQM reset edges before republishing buffer ownership
+
+QM startup closes CB/RMU/ES, pulses TQM reset and polls the initialization-done
+bit before clearing refill state and reloading all BID pools. Previously it
+did not verify the control or reset writes. If either reset edge did not reach
+hardware, a still-set INIT_DONE from the previous run could authorize buffer
+reinitialization while the old queue state remained. The old production start
+prefix at `073132e` reproduces this for control close, reset assertion and reset
+deassertion failures.
+
+Startup now reads back CB/RMU/ES disable and both TQM reset edges. Any failed
+write returns EIO before clearing refill ownership, resetting EPP pointers,
+publishing cache lines or loading EQ/BID entries. The existing bounded ready
+poll remains; timeout also stops before reinitialization. A subsequent start
+repeats the complete gate and reset sequence, including recovery from a reset
+left asserted. Read-modify-write preserves unrelated reset bits, including a
+change observed during the reset interval.
+
+The retained `aal_l3qm_check_init_done` at `0x5ad90` executes against the actual
+`0x6850` bit30; immediate and delayed-read cases confirm this ready contract.
+The reference/target startup reset sequence supplies assertion,1ms delay and
+deassertion, but does not make a stale high ready bit evidence of a successful
+new reset. Native adds the explicit write checks without changing the verified
+EQ layout or reset timing.
+
+`scripts/test_qm_reset_gate.py` executes the production startup prefix up to
+the refill/BID reinitialization boundary. Its45 cases cover all five write
+failures, ready timeout, retry, asserted-reset recovery and unrelated bits.
+ASan/UBSan pass. Old-revision reproduction can isolate either reset edge with
+`--revision 073132e --failure 4` or `--failure 5`. Six regressions pass: separated
+pool allocation, cached EPP publication/lifecycle, original EQ/EPP attributes,
+stop/poll interleavings, FTTR fragmented receive and multicast host copies.
+The AXI-attribute script required its retained input path to be supplied from
+the main checkout; missing default input was not counted as a product failure.
+Image/modules build and final source identity checks pass. Artifacts are
+`artifacts/fttr/qm-reset-*-20261109.*`. PE is unchanged; no device was accessed.
+
+This guards the existing restart boundary before buffer ownership is rebuilt.
+It does not establish stop/free bus-idle, downstream packet retirement or safe
+hardware-ID reuse. Those remain independent incomplete lifecycle requirements.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

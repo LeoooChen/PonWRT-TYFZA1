@@ -311,6 +311,8 @@
 
 153. 将无线ES队列纳入NI退场：实际原厂status函数4096次对照确认CPU2/3在6830高两字节的COS占用位。旧bc25b35已复现EPP空但ES忙仍释放；现在全局空检查包含ES，关闭CPU后再次检查，迟到队列保留映射/引用并仅恢复原本开启的消费者继续排空，写入不生效报EIO，强制PCI清理也拒绝丢弃ES归属。554原生状态/迟到/关闭/写故障/强制清理、16全局生命周期及十项回归、Image/模块/输入一致通过，PE未变、未实机。未使用原厂超时假成功flush；尚未进入ES的MCE/AFT报文及MiniOLT下游仍缺完整屏障，ID安全复用仍未完成。详见[ES退场检查](port/FTTR.md#wireless-es-occupancy-participates-in-ni-retirement)。
 
+154. 修复QM重启复位未生效仍重装BID：旧073132e已分别复现CB/RMU/ES关闭或TQM置位/清除失败时，旧INIT_DONE高位仍允许继续初始化。现在逐项读回确认，任何失败EIO、ready超时均在refill清零/指针/缓存/EQ发布前退出，重试完整流程并保留无关复位位。原厂6850 bit30实际就绪读取、45原生故障/重试/已置位恢复场景、六项QM/FTTR接收回归、Image/模块/输入一致通过。PE未改、未实机；仅修复重启发布前置条件，共享QM停止后的总线访问、完整退场及ID复用仍未证明。详见[TQM复位门控](port/FTTR.md#verify-tqm-reset-edges-before-republishing-buffer-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
