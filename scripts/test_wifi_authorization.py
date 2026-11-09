@@ -31,14 +31,17 @@ typedef uint8_t u8;
 #define dma_wmb() ((void)0)
 #define mutex_lock(p) ((void)(p))
 #define mutex_unlock(p) ((void)(p))
-struct rtl_ax_tx {struct rtl_mc_pe_table *mcast_table;bool peer_authorized[128],pe_active,key_refresh_pending;struct {void *memory;} pe;struct {bool route_peers[128];u8 peer_wifi[128];} ni;};
-struct rtl_ax_ap {struct rtl_ax_tx *tx; bool sta_4addr,peer_authorized[128]; int offload_result; u8 sta_bssid[6];struct {u8 peer[6];} retired_stations[128];};
+struct rtl_ax_tx {struct rtl_mc_pe_table *mcast_table;bool peer_authorized[128],pe_active,key_refresh_pending;struct {void *memory;} pe;struct {bool route_peers[128],retire_requested,peer_retiring[128];u8 peer_wifi[128];} ni;};
+struct rtl_ax_ap {int cleanup_work;struct rtl_ax_tx *tx; bool sta_4addr,peer_authorized[128]; int offload_result; u8 sta_bssid[6];struct {u8 peer[6];} retired_stations[128];};
 struct rtl_ax_station { unsigned macid; };
 struct ieee80211_sta {void *drv_priv;u8 addr[6];};
 #define NL80211_IFTYPE_STATION 2
 #define RTL_AX_CLIENT_MACID 1
 struct ieee80211_vif {int type;};
-struct ieee80211_hw {struct rtl_ax_ap *radio;};
+struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
+#define HZ 100
+static unsigned queued;
+static void wiphy_delayed_work_queue(void *w,int *p,unsigned delay){(void)w;(void)p;assert(delay==HZ);queued++;}
 enum ieee80211_sta_state { IEEE80211_STA_NOTEXIST,IEEE80211_STA_NONE,IEEE80211_STA_AUTH,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED };
 struct rtl9617c_bridge_mcast_ops {unsigned unused;};
 static const struct rtl9617c_bridge_mcast_ops ops;
@@ -57,6 +60,7 @@ static void rtl_ax_client_release(struct rtl_ax_ap *r){(void)r;}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 static void rtl_ax_offload_ready(void *context) {(void)context;}
 static int rtl_ax_tx_ni_retire_peer(struct rtl_ax_tx *tx,unsigned macid) {
+ tx->ni.peer_retiring[macid]=true;
  assert(!tx->peer_authorized[macid]);
  assert(!get(tx->pe.memory+0x11a00+macid*4));
  return -ETIMEDOUT;
@@ -69,19 +73,26 @@ int main(void) {
  struct rtl_ax_tx tx={.mcast_table=&table,.pe_active=true,.pe={memory}};
  tx.peer_authorized[1]=tx.ni.route_peers[1]=true;tx.ni.peer_wifi[1]=17;
  struct rtl_ax_ap radio={.tx=&tx};radio.peer_authorized[1]=true;
- struct ieee80211_hw hw={&radio};struct rtl_ax_station station={.macid=1};struct ieee80211_sta sta={.drv_priv=&station};struct ieee80211_vif vif={};
+ struct ieee80211_hw hw={.radio=&radio};struct rtl_ax_station station={.macid=1};struct ieee80211_sta sta={.drv_priv=&station};struct ieee80211_vif vif={};
  put_unaligned_le32(1,memory+0x11a04);put_unaligned_le32(1,memory+0x11a08);
  assert(!rtl_ax_sta_state(&hw,&vif,&sta,IEEE80211_STA_AUTHORIZED,IEEE80211_STA_ASSOC));
- assert(radio.offload_result==-ETIMEDOUT && !radio.peer_authorized[1]);
+ assert(radio.offload_result==-ETIMEDOUT && !radio.peer_authorized[1] && queued==1);
  assert(!get(memory+0x11a04));
  assert(!table.epoch&&policy_epoch==2&&!writer);
  assert(get(memory+0x11a08)==1);
  assert(!rtl_ax_sta_state(&hw,&vif,&sta,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED));
- assert(get(memory+0x11a04)==17);
+ assert(!get(memory+0x11a04));
+ tx.ni.peer_retiring[1]=false;rtl_ax_tx_peer_authorized(&tx,1,true);assert(get(memory+0x11a04)==17);
  assert(!table.epoch&&policy_epoch==2);
  tx.key_refresh_pending=true;put_unaligned_le32(0,memory+0x11a04);
  rtl_ax_tx_peer_authorized(&tx,1,true);assert(!get(memory+0x11a04));
  tx.key_refresh_pending=false;rtl_ax_tx_peer_authorized(&tx,1,true);assert(get(memory+0x11a04)==17);
+ for(unsigned global=0;global<2;global++) {
+  tx.ni.retire_requested=global;tx.ni.peer_retiring[1]=!global;
+  put_unaligned_le32(0,memory+0x11a04);rtl_ax_tx_peer_authorized(&tx,1,true);assert(!get(memory+0x11a04));
+  tx.ni.retire_requested=tx.ni.peer_retiring[1]=false;
+  rtl_ax_tx_peer_authorized(&tx,1,true);assert(get(memory+0x11a04)==17);
+ }
  tx.pe_active=false;tx.pe.memory=NULL;
  rtl_ax_tx_peer_authorized(&tx,1,false);assert(!tx.peer_authorized[1]);
  puts("actual ARM source: authorization gates close before failed FE withdrawal; other peer unchanged; reauthorization restored");

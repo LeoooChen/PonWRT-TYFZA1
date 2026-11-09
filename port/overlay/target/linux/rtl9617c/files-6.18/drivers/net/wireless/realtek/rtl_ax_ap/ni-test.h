@@ -605,13 +605,17 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 	if (!tx->pe_active || macid >= 128) return -EINVAL;
 	mutex_lock(&ni_test_lock);
 	if (!macid) {
+  WRITE_ONCE(tx->ni.retire_requested,true);
+  for(i=1;i<128;i++)put_unaligned_le32(0,tx->pe.memory+0x11a00+i*4);
+  dma_wmb();
   rtl_ax_tx_bcmc_close(tx);
 		ret = ni_mcast_unbind(tx);
 		if (ret) goto unlock;
-		if (!tx->ni.route_dev) goto unlock;
+		if (!tx->ni.route_dev) {WRITE_ONCE(tx->ni.retire_requested,false);goto unlock;}
   if(tx->bcmc_prepare_failed) {
    ret=ni_test_release(tx);if(ret)goto unlock;
    tx->bcmc_prepare_failed=false;dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
+   WRITE_ONCE(tx->ni.retire_requested,false);
    goto unlock;
   }
 		/* Preserve an unfinished per-peer fence until its owner retires. */
@@ -661,6 +665,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			if (tx->ni.route_peers[i]) ni_test_buffered(tx, i, false);
 			WRITE_ONCE(tx->ni.route_peers[i], false);
 			WRITE_ONCE(tx->peer_offloaded[i], false);
+			WRITE_ONCE(tx->ni.peer_retiring[i], false);
 			ni_peer_put(tx,i);
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
 		}
@@ -669,8 +674,10 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
   memset(tx->bcmc_dev,0,sizeof(tx->bcmc_dev));
 		dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL;
 		WRITE_ONCE(tx->ni.retire_quiescing, false);
+		WRITE_ONCE(tx->ni.retire_requested, false);
 		goto unlock;
 	}
+	if (READ_ONCE(tx->ni.retire_requested) || READ_ONCE(tx->ni.peer_retiring[macid])) {ret=-EAGAIN;goto unlock;}
 	if (tx->ni.active || tx->ni.route_dev) { ret = -EBUSY; goto unlock; }
 	ret = ni_mcast_bind(tx, netdev);
 	if (ret) goto unlock;
@@ -740,7 +747,8 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	if(tx->ni.peer_dev[macid] && (tx->ni.peer_dev[macid]!=netdev || tx->ni.peer_wifi[macid]!=id ||
 	   !ether_addr_equal(tx->ni.peer_address[macid],tx->pe.memory+0xe400+macid*8)))return -ESTALE;
 	/* Preserve the active retirement fence; existing peers keep their routes. */
-	if (READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed) ||
+	if (READ_ONCE(tx->ni.retire_requested) || READ_ONCE(tx->ni.peer_retiring[macid]) ||
+	    READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed) ||
 	    READ_ONCE(tx->key_refresh_pending)) return -EAGAIN;
 	if (!tx->pe_active || (READ_ONCE(tx->peer_offloaded[macid]) &&
 	    READ_ONCE(tx->ni.route_peers[macid]))) return 0;
@@ -750,7 +758,7 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 		if (ret) return ret;
 	}
 	mutex_lock(&ni_test_lock);
-	if (tx->ni.retire_quiescing) { mutex_unlock(&ni_test_lock); return -EAGAIN; }
+	if (tx->ni.retire_requested || tx->ni.peer_retiring[macid] || tx->ni.retire_quiescing) { mutex_unlock(&ni_test_lock); return -EAGAIN; }
 	ret = ni_mcast_bind(tx, netdev);
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	ret=ni_peer_bind(tx,netdev,macid);
@@ -824,7 +832,15 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	u32 status;
 	int ret = 0;
 	if(!macid || macid>=128)return -EINVAL;
-	if (!READ_ONCE(tx->ni.peer_dev[macid]) && !READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) return 0;
+	if (!READ_ONCE(tx->ni.peer_dev[macid]) && !READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) {
+		WRITE_ONCE(tx->ni.peer_retiring[macid], false);
+		return 0;
+	}
+	/* A BA-only withdrawal may escalate to key/STA removal, never back to
+	 * retaining RX while that stronger withdrawal is still outstanding. */
+	if (READ_ONCE(tx->ni.peer_retiring[macid])) keep_rx &= tx->ni.peer_retire_keep_rx[macid];
+	tx->ni.peer_retire_keep_rx[macid] = keep_rx;
+	WRITE_ONCE(tx->ni.peer_retiring[macid], true);
 	if (!keep_rx) rtl_ax_rx_uplink_disable(tx->rx, macid);
 	/* Key/BA retirement must stop admission before attempting FE withdrawal. */
 	rtl_ax_tx_mcast_revoke(tx);
@@ -884,6 +900,7 @@ complete:
 	ni_test_buffered(tx, macid, false);
 	tx->ni.route_tim[macid] = 0;
 	WRITE_ONCE(tx->ni.retire_quiescing, false);
+	WRITE_ONCE(tx->ni.peer_retiring[macid], false);
 	if(!keep_rx)ni_peer_put(tx,macid);
 unlock:
 	mutex_unlock(&ni_test_lock);
@@ -949,7 +966,13 @@ int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *tx)
   int error=rtl_ax_tx_vif_release(tx,tx->ni.retired_vif[i]);
   if(error)ret=error;
  }
- if(!ret && tx->ni.retire_quiescing && !tx->ni.retire_macid)
+ /* Failed authorization/BA withdrawal may have no detached VIF or key
+  * cleanup owner. Retry its exact RX-preservation mode before re-admission. */
+ for(unsigned int i=1;i<128;i++)if(READ_ONCE(tx->ni.peer_retiring[i])) {
+  int error=ni_retire_peer(tx,i,tx->ni.peer_retire_keep_rx[i]);
+  if(error)ret=error;
+ }
+ if(!ret && (tx->ni.retire_requested || (tx->ni.retire_quiescing && !tx->ni.retire_macid)))
   ret=rtl_ax_tx_ni_route(tx,tx->ni.route_dev,0);
  return ret;
 }
@@ -1123,7 +1146,7 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
   tx->bcmc_prepare_failed=false;
   dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
  }
- if(tx->bcmc_retiring || (tx->bcmc_domain_retiring&BIT(domain)) || tx->ni.retire_quiescing){ret=-EAGAIN;goto out;}
+ if(tx->bcmc_retiring || (tx->bcmc_domain_retiring&BIT(domain)) || tx->ni.retire_requested || tx->ni.retire_quiescing){ret=-EAGAIN;goto out;}
  if((tx->bcmc_domains&BIT(domain)) && tx->bcmc_dev[domain]!=dev){ret=-EBUSY;goto out;}
  for(unsigned int i=0;i<RTL_MC_PE_BCMC_COUNT;i++)if(i!=domain && (tx->bcmc_domains&BIT(i))) {
   const struct rtl_mc_pe_bcmc *old=tx->pe.memory+rtl_mc_bcmc_offset(i);

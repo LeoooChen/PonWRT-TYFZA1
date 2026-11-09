@@ -12,6 +12,9 @@ struct rtl_ax_ni_state {
  unsigned int cpu, eq, profile, vp_index;
  bool active, vp_active;
  bool retire_quiescing;
+ /* Requested withdrawal closes admission even before FE/PKT_DROP succeeds.
+  * retire_quiescing separately records an established drain fence. */
+ bool retire_requested, peer_retiring[128], peer_retire_keep_rx[128];
  u8 retire_macid;
  struct net_device *route_dev,*retired_vif[12];
  /* Borrowed under ni_test_lock until FE withdrawal and packet drain finish. */

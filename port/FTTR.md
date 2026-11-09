@@ -9518,6 +9518,58 @@ No kernel/PE code changed and no device was accessed. Resume at a confirmed
 remote byte offset, recovery after End with unknown outcome, cryptographic
 image/model verification and physical flashing/boot acceptance remain open.
 
+### NI retirement requests close admission before fallible setup
+
+The previous radio path recorded `retire_quiescing` only after FE withdrawal,
+PE pause and all SCC packet-drop commands succeeded. If any setup step failed,
+the retained route still looked eligible for a later authorization callback or
+offload worker. The actual old production authorization function reproduces a
+nonzero PE interface ID after failed retirement in
+`test_radio_ni_retire_flush.py --revision e8f49cc`.
+
+The driver now records global/individual retirement requests independently of
+an established EPP/RPQ drain fence. A global request closes every PE peer ID
+before even multicast unbinding; an individual request blocks that peer's
+re-admission. Authorization callbacks, NI peer publication and BCMC startup
+honor these pending requests. Failed FE withdrawal, PE pause or partial DROP
+submission retains the request and retries the existing sequence. It does not
+claim a completed fence or skip the remaining cleanup. Already established
+EPP/RPQ waits retain the prior behavior without repeating completed DROP setup.
+
+Background cleanup also owns pending per-peer requests, including authorization
+withdrawal that has no removed VIF or deleting key. An authorization-withdrawal
+failure schedules cleanup. Each request remembers whether it began as TX-BA-only
+retirement, preserving RX in that case; escalation to key/STA retirement is
+monotonic until completion. Successful full cleanup clears the request before
+normal publication can resume. The existing status line includes global
+`requested` alongside `NI_retire_quiescing` and MACID.
+
+Target `ca_ni_virtual_instance_close` disassembly and its matching reference
+body confirm that virtual-port closure clears the selected ES CPU enable bit,
+disables interrupts/TX/NAPI and releases the IRQ. Its actual
+`aal_l3qm_enable_tx_cpu` implementation changes only the selected low8 ES bit;
+no additional queue-idle or upstream retirement acknowledgement was found in
+this path. Those observations do not authorize ID reuse. Existing original
+Security CAM/DCTL/TX/SCC DROP execution still matches all782 cases.
+
+Validation includes direct old-code reauthorization reproduction, each of four
+per-peer AC DROP failures, each of eight DROP positions across two peers,
+failed global unbinding/PE pause/FE withdrawal, subsequent cleanup, preserved
+RX-only companions, BA-to-STA escalation and existing missing EPP/RPQ completion
+cases. Ten focused suites pass: full NI retirement, authorization, FE transaction,
+two-device ownership, BCMC template, NI restore, station release, key cleanup,
+RX BA cleanup and STA lifecycle. ASan/UBSan cover the ownership fixtures.
+Two older standalone fixtures could not run because of stale extraction/type
+assumptions and are not counted as passing checks. Final Image/modules build
+passes, and all four changed driver inputs match the compiled tree. PE firmware
+is unchanged and no physical device was accessed.
+
+Evidence is `artifacts/fttr/ni-retire-admission-*-20261109.*`,
+`ni-retire-original-drop-20261109.log` and
+`ni-retire-reopen-before-20261109.log`. This fixes failed-retirement admission
+and retry ownership. MCE/AFT upstream delayed packets, full downstream retirement
+and safe reuse after a successful detach remain separate incomplete requirements.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

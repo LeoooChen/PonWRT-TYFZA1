@@ -55,7 +55,7 @@ static unsigned rtl9617c_key_pn_token(unsigned *p){return *p;}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 #define ieee80211_vif_to_wdev(v) (&(v)->wdev)
 struct rtl_ax_tx {struct net_device *bcmc_dev[12];u64 bcmc_policy_attempt;bool pe_active,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;unsigned bcmc_generation,bcmc_live,bcmc_domains,bcmc_domain_retiring;
- struct {void *memory;}pe;struct {bool active,retire_quiescing;unsigned cpu;struct net_device *route_dev;}ni;void *pdev;};
+ struct {void *memory;}pe;struct {bool active,retire_quiescing,retire_requested,peer_retiring[128];unsigned cpu;struct net_device *route_dev;}ni;void *pdev;};
 static bool cpu_pending;
 static int ni_test_lock,fail_bind,fail_pause,fail_prepare,fail_release,fail_publish,fail_drop,fail_wait;
 static unsigned pauses,opens,prepares,releases,publishes,revokes,drops;static u64 policy_epoch=1;
@@ -117,6 +117,7 @@ int main(void){
  s.vif.drv_priv[0].identity.mbid=1;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-ESTALE);
  s.vif.drv_priv[0].identity.mbid=0;
  t.bcmc_generation=90;t.ni.retire_quiescing=true;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN);t.ni.retire_quiescing=false;
+ t.ni.retire_requested=true;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN);t.ni.retire_requested=false;
  s.vif.wdev.netdev=&other;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EBUSY&&!other.refs);s.vif.wdev.netdev=&dev;
  assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4));
  /* Independent active VIF templates survive another VIF closure/failure. */

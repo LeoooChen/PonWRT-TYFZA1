@@ -681,7 +681,9 @@ void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *tx, unsigned int macid, bool au
 		if (tx->pe_active)
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + macid * 4);
 		dma_wmb();
-	} else if (tx->pe_active && !READ_ONCE(tx->key_refresh_pending) && READ_ONCE(tx->ni.route_peers[macid])) {
+	} else if (tx->pe_active && !READ_ONCE(tx->key_refresh_pending) &&
+		   !READ_ONCE(tx->ni.retire_requested) && !READ_ONCE(tx->ni.peer_retiring[macid]) &&
+		   READ_ONCE(tx->ni.route_peers[macid])) {
 		put_unaligned_le32(READ_ONCE(tx->ni.peer_wifi[macid]), tx->pe.memory + 0x11a00 + macid * 4);
 		dma_wmb();
 	}
@@ -1772,8 +1774,8 @@ int rtl_ax_tx_status(struct rtl_ax_tx *tx, char *out, size_t capacity)
 			get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 252));
 	if (tx->pe_active)
 		length += scnprintf(out + length, capacity - length,
-			"NI_retire_quiescing=%u MACID=%u\n",
-			READ_ONCE(tx->ni.retire_quiescing), READ_ONCE(tx->ni.retire_macid));
+			"NI_retire_quiescing=%u MACID=%u requested=%u\n",
+			READ_ONCE(tx->ni.retire_quiescing), READ_ONCE(tx->ni.retire_macid), READ_ONCE(tx->ni.retire_requested));
 	if (tx->pe_active) {
 		void *trace = tx->pe.memory + RTL_AX_RPQ_FAULT_TRACE;
 		u32 count = get_unaligned_le32(trace);

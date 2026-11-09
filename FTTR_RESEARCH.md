@@ -305,6 +305,8 @@
 
 150. 接入下载中断后的显式retry-download：仅当前控制器/后端/SN的待定START记录可重试，私有文件快照长度/原厂CRC先核对，重新读双槽并固定原槽/旧14字节版本及非活动/未提交条件，发送前再次持久化，从字节0重传。原厂ONU Start实际执行16场景证明删除临时文件/释放窗口/清零接收状态；无远端偏移查询依据，End意图已存时拒绝重启。102状态机/原厂报文、三后端各28实际守护进程/CLI场景含二次崩溃/错文件/槽漂移/End待定/持久化失败，记录/管理回归及host/musl整包/67输入/四程序一致通过。内核/PE未改、未实机；CRC不等于签名，跨进程偏移续传、End后未知恢复、机型/签名和启动验证仍待补齐。详见[下载重试](port/FTTR.md#restarting-a-recorded-download-before-end-download)。
 
+151. 修复无线NI退場请求与已建立屏障混淆：旧代码在FE/暂停/DROP失败后可被重新授权写回PE接口ID，实际生产函数已复现。新增全局/逐peer退场请求，任何可失败全局步骤前关闭全部peer，授权/worker/BCMC禁止重开；后台持有并重试未完成请求，记录BA保留RX模式且升级到密钥/STA后不可降级，授权撤销失败排入cleanup。逐AC/双peer八DROP位置、解绑/暂停/FE失败、RX保留/升级/重试及十项回归通过，原厂Security/TX/SCC782对照、Image/模块/四输入一致通过。原厂虚拟端口关闭只清ES使能且未找到新排空确认，未据此放开ID复用；PE未变、未实机。两旧夹具因过时类型/抽取方式失败，未计为通过。详见[NI退场请求门控](port/FTTR.md#ni-retirement-requests-close-admission-before-fallible-setup)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

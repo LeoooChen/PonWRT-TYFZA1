@@ -1428,6 +1428,8 @@ static int rtl_ax_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		radio->peer_authorized[macid] = false;
 		rtl_ax_tx_peer_authorized(radio->tx, macid, false);
 		radio->offload_result = rtl_ax_tx_ni_retire_peer(radio->tx, macid);
+		if (radio->offload_result)
+			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 	}
 	return 0;
 }
