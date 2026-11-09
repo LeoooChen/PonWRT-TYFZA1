@@ -10316,6 +10316,37 @@ and four stripped/staged programs match. Evidence is
 `artifacts/fttr/sync-{reboot,recovery,channel-auto}-*-20261110.*`.
 Kernel/PE are unchanged by this feature; no real device received these commands.
 
+### Hash withdrawal preserves a preceding unfinished command
+
+An age-table or cache timeout can outlive the FE mutex holder. The next flow
+deletion previously submitted a new age index, or overwrote cache CMD data,
+while the previous operation still owned the hardware window. Age read/update
+now rejects an asserted `0x3928` bit31 before issuing a command. Cache operations
+reject `0x38b0` bit0 before changing `0x38ac`. `EBUSY` uses the existing deletion
+retry path, retaining both flows' cookie/Hash ownership and leaving the old
+transaction unchanged until hardware reports idle.
+
+The target `aal_hash_age_set` executes33 row/nibble comparisons and two timeout
+paths. Its cache invalidator executes four initial-busy/completion combinations;
+it writes CMD before its idle wait, which the native implementation deliberately
+does not copy. The oracle retains the target's32-entry bucket default and models
+only age storage and completion timing. It does not prove physical retirement.
+
+`test_fe_withdraw_busy.py` executes production deletion against retained busy
+states from an age read, age write or cache command. Old `a86fe73` reproduces
+overwriting a pending transaction through the second flow. The fix preserves
+both flows across repeated calls, leaves failed age-read output untouched and
+releases each once only after modeled completion. Existing42 retired/multi-flow
+cases, complete multicast learning, FE/LAN rollback, Wi-Fi transactions and
+shared NI window tests pass. The full FE table test covers65536 age slots and
+64 mask entries; ASan/UBSan, Image/modules and header identity pass. Evidence:
+`artifacts/fttr/fe-withdraw-busy-*-20261110.*` and
+`artifacts/fttr/hash-withdraw-original-20261110.json`.
+
+PE firmware is unchanged; no device was accessed. This guards the two Hash
+withdrawal windows, not every other FE table window, and does not establish
+end-to-end packet retirement or safe hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

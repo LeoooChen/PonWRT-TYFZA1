@@ -347,6 +347,8 @@
 
 171. 接入独立syncserv的Reboot/Recovery显式单设备与all auto命令：实执行原builder的MAC/TargetSlave、16槽在线定址和pending14/15，十分派/六ACK对照；每目标只发一次，租约隔离、超时不重放、重注册取消，批量保留逐台结果。仅ack_seen，reboot/recovery_verified始终false，不把ACK当真实重启或配置恢复；Recovery从端效果仍待验证。两命令各25主机/25打包musl网络、既有25选信道/37常驻、261分配故障ASan/UBSan及整包/67输入/四程序一致通过；内核/PE未改，未向实机发送命令。详见[原厂syncserv控制命令](port/FTTR.md#original-syncserv-reboot-and-recovery-commands)。
 
+172. 修复Hash撤销重试覆盖未完成窗口：年龄表read/update先检查3928 bit31，缓存操作在改38ac前检查38b0 bit0；忙时EBUSY走已有cookie/Hash保留重试。a86fe73实际删除链已复现第二流覆盖旧事务；原厂33年龄更新/2超时/4缓存忙分支确认寄存器语义，原缓存先写CMD后等忙不照搬。两流反复重试/最终一次释放、42退休多流、完整组播/FE/LAN/WiFi/共享NI回归、65536 age槽与64 mask表、Image/模块/输入一致通过。PE未改、未实机；仅处理两个撤销窗口，不代表全部FE窗口或全链路退场/ID复用完成。详见[Hash忙窗口归属](port/FTTR.md#hash-withdrawal-preserves-a-preceding-unfinished-command)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

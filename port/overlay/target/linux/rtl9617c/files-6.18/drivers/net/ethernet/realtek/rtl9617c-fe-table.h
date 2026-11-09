@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #ifndef RTL9617C_FE_TABLE_H
 #define RTL9617C_FE_TABLE_H
+#include <linux/errno.h>
 #include "rtl9617c-fe-format.h"
 #include "rtl9617c-qm-deepq.h"
 
@@ -132,7 +133,11 @@ static inline void rtl_fe_cpu_miss(unsigned int words[4])
 static inline int rtl_fe_main_age(const struct rtl_dq_io *io,unsigned int index,unsigned int age)
 {
  unsigned int row=index>>5,slot=index&31,reg=0x3938-(slot>>3)*4,value;
- int ret=io->indirect(io->context,0x3928,0x80000000U|row);
+ int ret;
+ /* A timed-out caller leaves its access and staging row owned by hardware.
+  * The FE mutex serializes callers, but does not finish that old command. */
+ if(io->read(io->context,0x3928)&0x80000000U)return -EBUSY;
+ ret=io->indirect(io->context,0x3928,0x80000000U|row);
  if(ret)return ret;
  value=io->read(io->context,reg);
  value=(value&~(15U<<((slot&7)*4)))|((age&15)<<((slot&7)*4));
@@ -143,7 +148,10 @@ static inline int rtl_fe_main_age_read(const struct rtl_dq_io *io,
  unsigned int index,unsigned int *age)
 {
  unsigned int slot=index&31;
- int ret=io->indirect(io->context,0x3928,0x80000000U|(index>>5));
+ int ret;
+
+ if(io->read(io->context,0x3928)&0x80000000U)return -EBUSY;
+ ret=io->indirect(io->context,0x3928,0x80000000U|(index>>5));
 
  if(ret)return ret;
  *age=(io->read(io->context,0x3938-(slot>>3)*4)>>((slot&7)*4))&15;
@@ -152,6 +160,8 @@ static inline int rtl_fe_main_age_read(const struct rtl_dq_io *io,
 static inline int rtl_fe_cache_command(const struct rtl_dq_io *io,unsigned int index,
  unsigned short crc16,unsigned int command)
 {
+ /* Check before changing CMD data, not just before asserting request. */
+ if(io->read(io->context,0x38b0)&1U)return -EBUSY;
  io->write(io->context,0x38ac,(index&31)|((unsigned int)crc16<<5)|(3U<<26)|(command<<30));
  return io->indirect(io->context,0x38b0,1);
 }
