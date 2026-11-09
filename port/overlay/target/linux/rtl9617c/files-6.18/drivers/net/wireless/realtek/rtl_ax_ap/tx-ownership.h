@@ -2,6 +2,17 @@
 #ifndef RTL_AX_TX_OWNERSHIP_H
 #define RTL_AX_TX_OWNERSHIP_H
 /* Request word5 bit15 is independent of word4 bit23 (STA addressing). */
+/* Rate/request word3 bits24..30 are the WD port/MBID identity, separate
+ * from PHY bandwidth/GI, firmware-rate and the host bit31 marker. */
+/* A checked peer/address publisher sets bit23. CPU WP headers reserve
+ * bytes96..103; NI snapshots use words28/29 (its <=9 segments end at25). */
+#define RTL_AX_TX_SELF_VALID (1U << 23)
+#define RTL_AX_TX_PEER_SELF 0x68400
+#define RTL_AX_TX_CPU_SELF 96
+#define RTL_AX_TX_ROLE_SHIFT 24
+#define RTL_AX_TX_ROLE_MASK (127U << RTL_AX_TX_ROLE_SHIFT)
+#define RTL_AX_TX_ROLE_CAP_MAILBOX 215
+#define RTL_AX_TX_ROLE_CAPABILITY 0x54585231U
 #define RTL_AX_TX_AGG_PRELOAD (1U << 15)
 /* PE-visible DDR tables. Software request IDs and PCIe WP tags are separate. */
 #define RTL_AX_NI_REQUESTS 2048

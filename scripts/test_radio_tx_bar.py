@@ -100,6 +100,11 @@ static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;
 struct rtl_key_pn {void *shared;unsigned generation;};
 static unsigned rtl9617c_key_pn_token(struct rtl_key_pn *p){return p->shared?p->generation:0;}
 #define RTL_AX_TX_AGG_PRELOAD (1U<<15)
+#define RTL_AX_TX_ROLE_SHIFT 24
+#define RTL_AX_TX_ROLE_MASK (127U<<24)
+#define RTL_AX_TX_SELF_VALID (1U<<23)
+#define RTL_AX_TX_CPU_SELF 96
+#define RTL_AX_TX_PEER_SELF 0x68400
 #define RTL_KEY_PN_REQUEST 30
 #define RTL_SEQ_REQUEST 31
 #define RTL_SEQ_ASSIGNED 0x80000000U
@@ -107,7 +112,8 @@ struct ieee80211_hdr {u16 frame_control,duration_id;u8 addr1[6],addr2[6],addr3[6
 struct ieee80211_bar {u16 frame_control,duration;u8 ra[6],ta[6];u16 control,start_seq_num;} __attribute__((packed));
 struct ieee80211_tx_rate {int idx;unsigned flags,count;};
 struct key {unsigned cipher,flags,hw_key_idx,keyidx,iv_len;u64 tx_pn;struct rtl_key_pn rtl9617c_pn;};
-struct vif {unsigned type;};
+struct rtl_ax_vif {struct {unsigned port,mbid;} identity;};
+struct vif {unsigned type;u8 addr[6];struct rtl_ax_vif drv_priv[1];};
 static unsigned sequence_calls;static int sequence_error;
 static int ieee80211_rtl9617c_next_sequence(struct vif *v,u16 *s){assert(v);sequence_calls++;*s=0xabc0;return sequence_error;}
 struct ieee80211_tx_info {unsigned flags;struct {unsigned flags;struct key *hw_key;struct vif *vif;struct ieee80211_tx_rate rates[1];}control;};
@@ -122,7 +128,7 @@ struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;un
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {u64 bcmc_policy_attempt;bool bcmc_enabled;bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  unsigned wmm_quota,ac_pending[128][4],wmm_dropped,peer_bytes[128],peer_packets[128],ac_packets[4];unsigned peer_flows[128][64];
- bool peer_preload[128];bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u64 mcast_policy_attempt[128];
+ bool peer_preload[128];bool peer_qos[128],peer_authorized[128],peer_asleep[128],peer_offloaded[128],peer_client[128];u32 peer_rates[128];u8 peer_role[128];u64 mcast_policy_attempt[128];
  int lock,fttr_work;struct {void *memory;}pe;u8 *pages,*headers,*ring;u32 pages_dma;
  unsigned pe_producer,producer[6],wd_producer[6],pending[256],occupied,last_sequence,last_words[14];
  struct rtl_ax_tx_slot slots[256];const struct rtl_ax_io *io;
@@ -197,7 +203,7 @@ code = '#define RTL_AX_TX_WP_FRAGMENT_BYTES 2047\n#define min(a,b) ((a)<(b)?(a):
 arrays = tx[tx.index('static const u8 rtl_ax_tx_channels'):tx.index('\nstruct rtl_ax_tx_mapping')]
 code += '#define RTL_AX_TX_RINGS 6\n' + arrays
 code += function((driver / 'transport.h').read_text(), 'rtl_ax_txbd')
-for name in ('rtl_ax_tx_wd', 'rtl_ax_tx_checksum', 'rtl_ax_tx_raw_fw_rate', 'rtl_ax_tx_submit'):
+for name in ('rtl_ax_tx_peer_role', 'rtl_ax_tx_peer_rate', 'rtl_ax_tx_wd', 'rtl_ax_tx_checksum', 'rtl_ax_tx_raw_fw_rate', 'rtl_ax_tx_submit'):
     code += function(tx, name)
 code += function(monitor, 'rtl_ax_monitor_tx')
 code += r'''
@@ -247,12 +253,33 @@ int main(void){
   assert(freed==before+1&&t.submitted==1);free(skb.data);
  }
  assert(maps==8&&unmaps==4&&doorbells==2);
+ for(unsigned pe=0;pe<2;pe++)for(unsigned role=0;role<8;role++){
+  memset(memory,0,sizeof(memory));memset(pages,0,sizeof(pages));
+  struct rtl_ax_tx t={.running=true,.pe_active=pe,.pe={memory},.pages=pages,.headers=headers,.ring=ring,.pages_dma=0x08000000,.io=&io};
+  struct ieee80211_hw hw={};struct vif v={.type=NL80211_IFTYPE_AP,.drv_priv={{{.port=2,.mbid=role}}}};
+  u8 bytes[20];memcpy(bytes,original,20);struct sk_buff skb={.data=bytes,.len=20,.info={.control={.vif=&v}}};
+  assert(!rtl_ax_tx_submit(&t,&hw,&skb,4,0,0,7,0,0));
+  if(pe)assert((get_unaligned_le32(memory+0x4000+12)>>24&127)==(0x20|role));
+  else assert((get_unaligned_le32(pages+4*264*128+32)&127)==(0x20|role));
+ }
+
+ /* Firmware rate changes and multiple peer identities retain independent roles. */
+ for(unsigned port=0;port<5;port++)for(unsigned mbid=0;mbid<8;mbid++){
+  struct rtl_ax_tx t={.pe_active=true,.pe={memory}};u8 self[6]={2,1,2,3,4,mbid};
+  rtl_ax_tx_peer_role(&t,7,port,mbid,self);
+  assert(t.peer_role[7]==(port<<4|mbid)&&!memcmp(memory+RTL_AX_TX_PEER_SELF+7*8,self,6));
+  rtl_ax_tx_peer_rate(&t,7,0x01140080,0x1234);
+  assert((t.peer_rates[7]&RTL_AX_TX_ROLE_MASK)==(port<<4|mbid)<<24);
+  assert(t.peer_rates[7]&RTL_AX_TX_SELF_VALID);
+  assert(get_unaligned_le32(memory+0xd000+7*32+12)==(t.peer_rates[7]&~BIT(31)));
+ }
+
  /* HW header conversion bypassed the Linux handler. Only non-QoS calls
   * the interface allocator, and a closed binding fails before DMA mapping. */
  for(unsigned qos=0;qos<2;qos++){
   memset(memory,0,sizeof(memory));
   struct rtl_ax_tx t={.running=true,.pe_active=true,.pe={memory},.pages=pages,.headers=headers,.ring=ring,.pages_dma=0x08000000,.io=&io};
-  struct ieee80211_hw hw={};struct vif vif={.type=NL80211_IFTYPE_AP};
+  struct ieee80211_hw hw={};struct vif vif={.type=NL80211_IFTYPE_AP,.addr={2,0,0,0,1,2},.drv_priv={{{.port=2,.mbid=5}}}};
   u8 frame[84]={2};struct sk_buff skb={.data=frame,.len=84,.info={.flags=IEEE80211_TX_CTL_HW_80211_ENCAP,.control={.vif=&vif}}};
   t.peer_qos[7]=qos;unsigned calls=sequence_calls,before=maps;
   sequence_error=-ESTALE;
@@ -262,6 +289,9 @@ int main(void){
   }
   sequence_error=0;assert(!rtl_ax_tx_submit(&t,&hw,&skb,4,0,0,7,0,0));
   assert(sequence_calls==calls+!qos&&maps==before+1);
+  assert((get_unaligned_le32(memory+0x4000+12)&RTL_AX_TX_ROLE_MASK)==0x25U<<24);
+  assert(get_unaligned_le32(memory+0x4000+12)&RTL_AX_TX_SELF_VALID);
+  assert(!memcmp(headers+96,vif.addr,6));
   assert(get_unaligned_le32(memory+0x4000+124)==(qos?0:RTL_SEQ_ASSIGNED|0xabc));
  }
 }

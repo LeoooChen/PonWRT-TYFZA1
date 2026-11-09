@@ -4,6 +4,7 @@
 #include <linux/types.h>
 struct rtl_ax_tx;
 struct ieee80211_vif;
+void rtl_ax_tx_peer_role(struct rtl_ax_tx *tx, unsigned int macid, unsigned int port, unsigned int mbid, const u8 *self);
 struct ieee80211_key_conf;
 int rtl_ax_tx_sequence_bind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif);
 int rtl_ax_tx_sequence_unbind(struct rtl_ax_tx *tx, struct ieee80211_vif *vif);

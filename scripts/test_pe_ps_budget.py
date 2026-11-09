@@ -27,7 +27,7 @@ policy = r'''
 #include <string.h>
 #include "rx-geometry.h"
 #include "tx-ownership.h"
-typedef uint32_t u32;
+typedef uint8_t u8;typedef uint32_t u32;
 #include "traffic-flow.h"
 #define HZ 100
 #define STA_TX_BUFFER_EXPIRE (10*HZ)
@@ -36,7 +36,7 @@ typedef uint32_t u32;
 struct ieee80211_sta {int unused;};
 struct sdata {struct {struct {unsigned beacon_int;}bss_conf;}vif;};
 struct sta_info {unsigned listen_interval;struct sdata *sdata;struct ieee80211_sta sta;};
-struct rtl_ax_tx {struct {unsigned long internal;} peer_success[128];bool peer_preload[128];struct rtl_ax_traffic_flow peer_flows[128][8];bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
+struct rtl_ax_tx {struct {unsigned long internal;} peer_success[128];bool peer_preload[128];struct rtl_ax_traffic_flow peer_flows[128][8];bool peer_qos[128],peer_offloaded[128],peer_asleep[128],pe_active;u32 peer_rates[128];u8 peer_role[128];struct {void *memory;}pe;struct {u32 ps_seen[2][128];bool ps_issued[128];}ni;};
 #define ewma_rtl_ax_success_init(p) ((p)->internal=0)
 #define ewma_rtl_ax_success_add(p,v) ((p)->internal=(v)<<8)
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *t){(void)t;}

@@ -109,7 +109,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	u32 client = !!(*(u32 *)(memory + 0xd000 + macid * 32 + 16) & BIT(23));
 	if ((fc & 0x0300) != (client ? 0x0200 : 0x0100)) return 0;
 	u8 *peer = memory + 0xe400 + macid * 8;
-	u8 *ap = memory + MAILBOX_OFFSET + 64;
+	u8 *ap = *(u32 *)(memory + 0xd000 + macid * 32 + 12) & RTL_AX_TX_SELF_VALID ?
+		memory + RTL_AX_TX_PEER_SELF + macid * 8 : memory + MAILBOX_OFFSET + 64;
 	if (!mac_equal(data + 4, ap) || !mac_equal(data + 10, peer)) return 0;
 	u32 header = fc & 0x80 ? 26 : 24;
 	if (fc & 0x8000) header += 4;

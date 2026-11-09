@@ -38,14 +38,14 @@ def packet(ipv6, payload_bytes):
 
 
 def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
-         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False, opened=False):
+         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False, opened=False, peer_self=False):
     directory = Path(directory)
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
     base, states, buf, descriptors = 0x04000000, 0x05000000, 0x06000000, 0x06100000
     mb, vp = base + 0x2000, 0x13001100 + (9 + slot) * 0xa0
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
-    for at, size in [(0x1fc00000, 0x10000), (base, 0x20000), (states, 0x20000),
+    for at, size in [(0x1fc00000, 0x10000), (base, 0x80000), (states, 0x20000),
                      (buf, 0x4000), (descriptors, 0x1000), (0x13000000, 0x2000),
                      (0x10000000, 0x10000)]:
         u.mem_map(at, size)
@@ -55,7 +55,9 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     put(0x10002300, (1 << 31 | 1 << 13) if fe_ready else 1 << 31)
     put(0x100038c4, 0xa0000000 if fe_ready else 0)
     peer, ap, dst = bytes.fromhex('067afb78b287'), bytes.fromhex('02e04c076805'), bytes.fromhex('0050c2010200')
-    u.mem_write(mb + 64, ap)
+    u.mem_write(mb + 64, bytes.fromhex("020000dead00") if peer_self else ap)
+    if peer_self:
+        u.mem_write(base+0x68400+2*8,ap+bytes(2));put(base+0xd000+2*32+12,1<<23)
     u.mem_write(base + 0xe410, peer)
     put(base + 0x11a08, 1)
     put(base + 0xd000 + 2 * 32 + 16, (1 << 23) if client else 0)

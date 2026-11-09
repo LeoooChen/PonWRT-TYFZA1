@@ -266,6 +266,8 @@
 
 124. 补齐port0 MBID调度寄存器及独立VAP准备：执行原厂完整启动确认遗漏0xc568，现设置数量7并清15个硬件附加槽使能位，失败重初始化不保留旧ready；VAP仅改自身使能/HIQ窗口/DTIM，要求与root同间隔，不重置共享端口。实际角色准备、信标启停按身份选择操作，使能失败不提前放开发送；HIQ发布失败保留逐MBID待清理位、worker重试并拒绝提前重开。162原厂配置捕获、64相关完整MMIO/选择器/MBID轨迹对照、VAP隔离/参数/计时器/7槽失败重试及ASan/UBSan、AP-mesh/STA-BA/FE事务/DFS回归，Image/模块和三输入一致通过。PE未变、未实机；无ACK的HIQ成功仅代表发布，不能据此解除硬件ID隔离。多接口软件状态、GTK/序列/BCMC与PE身份仍待补齐。详见[MBID调度](port/FTTR.md#mbid-register-scheduling-and-independent-vap-preparation)。
 
+125. 接入CPU/NI→PE发送身份快照：原厂160组C/XB数据/管理WD确认word8低7位port/MBID，CPU请求与直接ARM描述符均携带，NI站点模板/速率更新保留。CPU自地址保存在WP头缓冲96字节处，NI选择时把逐站点地址快照到私有请求28/29，AP/A-MSDU及RX匹配不再依赖全局地址；STA保留既有Linux三地址语义，未单方面改写。TXR1能力拒绝旧固件。49完整TX/32RX身份、40站点速率、67584请求、发布/组播/BCMC/FTTR退场/PS回归通过；PE32280字节、栈7312、重复构建一致、非uplink13992，Image/模块和五输入一致通过。旧全内存污染对比夹具读取失败，未计入证据，临时修改已撤销。未实机；每VIF非QoS序列/GTK/BCMC及完整接口分配、全链路退场仍未完成。详见[PE身份快照](port/FTTR.md#cpu-and-ni-pe-transmit-role-snapshots)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

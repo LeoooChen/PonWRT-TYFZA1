@@ -1119,6 +1119,7 @@ connected:
 		goto remove;
 	rtl_ax_tx_peer_qos(radio->tx, id, sta->wme,
 		DIV_ROUND_UP(ieee80211_sta_ps_buffer_timeout(sta), HZ));
+	rtl_ax_tx_peer_role(radio->tx, id, radio->identities[id].port, radio->identities[id].mbid, vif->addr);
 	rtl_ax_tx_peer_client(radio->tx, id, client, sta->addr);
 	rtl_ax_rx_uapsd(radio->rx, id, client ? 0 : sta->uapsd_queues);
 	{

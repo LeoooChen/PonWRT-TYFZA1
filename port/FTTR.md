@@ -8245,6 +8245,55 @@ and three changed-source identities pass; artifacts are
 was accessed. Per-VIF GTK/sequence/BCMC, full interface allocation and PE identity
 still remain, along with end-to-end packet retirement and physical acceptance.
 
+### CPU and NI PE transmit-role snapshots
+
+CPU submissions now encode the interface port/MBID in request word3 bits24..30;
+the direct ARM WD path and PE builder both emit it in WD word8 bits6..0. Target
+C/XB DATA and management encoders agree on this layout across160 cases.
+Per-station rate templates retain these identity bits across firmware rate
+updates and the non-uplink probe-rate path. The producer uses the actual
+interface private identity, while per-peer NI templates are initialized after
+peer reset and before admission. Existing single-interface allocation is unchanged.
+
+A peer's local interface address is stored in the TX context at0x68400 (128
+8-byte rows, immediately after the CPU multicast stamps). Request word3 bit23
+marks the address as explicitly supplied. CPU encapsulation copies it into
+bytes96..103 of the software WP header allocation, which remains owned until
+completion. NI selection snapshots it into private request words28/29: NI uses
+at most nine address pairs, and those two words carry FTTR generations only for
+CPU requests. Requests queued for hardware credit retain the captured address
+when global/peer templates change. AP encapsulation and its A-MSDU outer header
+use this per-interface address; RX receiver matching uses the same per-peer
+address rather than the global radio address. Unmarked diagnostic/BCMC templates
+retain the existing root address behavior. The live producer marks supported
+peer and CPU encapsulation templates explicitly.
+
+STA three-address TX retains the documented Linux Ethernet-SA decision; changing
+only the PE address would diverge from the Linux path. This remains an explicit
+factory difference requiring coordinated Linux/forwarding policy work. Multicast
+BCMC still has its single-root GTK/sequence contract; it is not made multi-VIF by
+this change. Non-QoS sequence and full per-VIF key/BCMC isolation remain open.
+
+New capability TXR1 at mailbox215 makes ARM reject older firmware which lacks
+these request semantics. The generated PE image is32280 bytes, sha256
+`fa72ae956d130a691cba93ef689643732fbfa3c59f588c0805f8dab6c384c212`, with a
+conservative7312-byte static-stack sum within8192 bytes. Repeat production build
+is byte-identical; the non-uplink variant builds at13992 bytes.
+
+`test_pe_tx_role.py` passes49 linked CPU/NI/AP/STA/multicast/A-MSDU cases,
+including CPU credit stalls and changing the NI address table after staging,
+plus32 RX per-peer/foreign-address/admission checks. Actual ARM submission tests
+cover direct and PE port/MBID emission, CPU address snapshots and40 per-peer
+rate-update combinations. The67584-request construction comparison, linked
+publication,282 multicast+12 full TX/RPQ,103 CPU multicast,245 BCMC,251 FTTR
+NI/PE drain cases, RX crypto/address and PS budget/generation regressions pass.
+An older whole-memory-poison comparison fixture hit an unmapped read and is not
+used as evidence; its temporary edits were removed. Image/modules build and
+five source/generated-input identities pass. Local reports are
+`artifacts/fttr/tx-role-*-20261109.*`. No physical device was accessed; these
+results do not prove air-interface behavior, complete packet retirement or
+hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

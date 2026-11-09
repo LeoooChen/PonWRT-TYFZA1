@@ -21,6 +21,7 @@
 #include "tx-ownership.h"
 #include "traffic-flow.h"
 #include "security.h"
+#include "role-identity.h"
 #include "tx.h"
 #include "rx.h"
 #include "pe_probe.h"
@@ -96,6 +97,7 @@ struct rtl_ax_tx {
 	bool peer_client[128];
 	bool peer_asleep[128];
 	u32 peer_rates[128];
+	u8 peer_role[128];
 	struct ewma_rtl_ax_success peer_success[128];
 	u64 peer_sleep_events, peer_wake_events;
 	u64 ps_releases, ps_eosp;
@@ -219,6 +221,9 @@ static int rtl_ax_tx_pe_start(struct rtl_ax_tx *tx)
 		ret = -EPROTONOSUPPORT;
 	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
 		RTL_SEQ_CAP_MAILBOX * 4) != RTL_SEQ_CAPABILITY)
+		ret = -EPROTONOSUPPORT;
+	if (!ret && get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX +
+		RTL_AX_TX_ROLE_CAP_MAILBOX * 4) != RTL_AX_TX_ROLE_CAPABILITY)
 		ret = -EPROTONOSUPPORT;
 	if (!ret) tx->pe_active = true;
 	return ret;
@@ -517,6 +522,36 @@ int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx)
  if(!ret)tx->bcmc_retiring=false;
  return ret;
 }
+/* Called while the station route is closed. Existing requests retain their
+ * word3 snapshot; changing a peer never rewrites a queued request. */
+void rtl_ax_tx_peer_role(struct rtl_ax_tx *tx, unsigned int macid,
+	unsigned int port, unsigned int mbid, const u8 *self)
+{
+	unsigned long flags;
+	u32 role = (port << 4) | mbid;
+
+	if (macid >= 128 || port > 4 || mbid > 7) return;
+	spin_lock_irqsave(&tx->lock, flags);
+	if (tx->peer_role[macid] != role) rtl_ax_tx_mcast_revoke(tx);
+	if (tx->pe_active) {
+		u8 *address = tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8;
+		if (!ether_addr_equal(address, self)) rtl_ax_tx_mcast_revoke(tx);
+		memcpy(address, self, ETH_ALEN);
+	}
+	tx->peer_role[macid] = role;
+	tx->peer_rates[macid] = (tx->peer_rates[macid] & ~RTL_AX_TX_ROLE_MASK) |
+		(role << RTL_AX_TX_ROLE_SHIFT) | RTL_AX_TX_SELF_VALID;
+	if (tx->pe_active) {
+		u8 *field = tx->pe.memory + 0xd000 + macid * 32 + 12;
+		u32 rate = get_unaligned_le32(field);
+
+		put_unaligned_le32((rate & ~RTL_AX_TX_ROLE_MASK) |
+			(role << RTL_AX_TX_ROLE_SHIFT) | RTL_AX_TX_SELF_VALID, field);
+		dma_wmb();
+	}
+	spin_unlock_irqrestore(&tx->lock, flags);
+}
+
 void rtl_ax_tx_peer_client(struct rtl_ax_tx *tx, unsigned int macid, bool client, const u8 *bssid)
 {
 	if (tx->peer_client[macid] != client || (client && tx->pe_active &&
@@ -538,6 +573,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 	tx->peer_offloaded[macid] = false;
 	tx->peer_asleep[macid] = false;
 	tx->peer_rates[macid] = 0;
+	tx->peer_role[macid] = 0;
 	ewma_rtl_ax_success_init(&tx->peer_success[macid]);
 	ewma_rtl_ax_success_add(&tx->peer_success[macid], 100);
 	if (tx->pe_active) {
@@ -545,6 +581,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 		memset(tx->pe.memory + 0xd000 + macid * 32, 0, 32);
 		memset(tx->pe.memory + 0x12000 + macid * 8 * 4, 0, 32);
 		memset(tx->pe.memory + 0xe400 + macid * 8, 0, 8);
+		memset(tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, 0, 8);
 		memset(tx->pe.memory + 0xe800 + macid * 16, 0, 16);
 		memset(tx->pe.memory + RTL_AX_NI_PS_CANCEL + macid * 8, 0, 8);
 		memset(tx->pe.memory + RTL_AX_NI_PS_DONE + macid * 8, 0, 8);
@@ -660,6 +697,8 @@ void rtl_ax_tx_peer_rate(struct rtl_ax_tx *tx, unsigned int macid, u32 rate, u32
 	unsigned long flags;
 
 	spin_lock_irqsave(&tx->lock, flags);
+	rate = (rate & ~RTL_AX_TX_ROLE_MASK) | (u32)tx->peer_role[macid] << RTL_AX_TX_ROLE_SHIFT |
+		(tx->peer_rates[macid] & RTL_AX_TX_SELF_VALID);
 	tx->peer_rates[macid] = rate | BIT(31);
 	if (tx->pe_active) {
 		put_unaligned_le32(rate, tx->pe.memory + 0xd000 + macid * 32 + 12);
@@ -799,6 +838,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	bool template_ready = false;
 	u32 pn_generation = 0, mcast_stamp = 0;
 	u16 sequence = 0;
+	u32 role = info->control.vif && !(info->flags & IEEE80211_TX_CTL_INJECTED) ?
+		((struct rtl_ax_vif *)info->control.vif->drv_priv)->identity.port << 4 |
+		((struct rtl_ax_vif *)info->control.vif->drv_priv)->identity.mbid : 0;
 	u64 begin = READ_ONCE(rtl_ax_datapath_profile) ? ktime_get_ns() : 0;
 	/* TXQ/PS queues may outlive the ingress FTTR service generation. */
 	if (rtl9617c_fttr_stale(skb)) return -ESTALE;
@@ -930,6 +972,11 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			request[3] |= BIT(20);
 		if (rtl_ax_tx_raw_fw_rate(tx, skb, macid))
 			request[3] = tx->peer_rates[macid] | BIT(20);
+		request[3] = (request[3] & ~RTL_AX_TX_ROLE_MASK) | role << RTL_AX_TX_ROLE_SHIFT;
+		if (encap && info->control.vif) {
+			memcpy(tx->headers + id * 128 + RTL_AX_TX_CPU_SELF, info->control.vif->addr, ETH_ALEN);
+			request[3] |= RTL_AX_TX_SELF_VALID;
+		}
 		slot.firmware_rate = !!(request[3] & BIT(20));
 		request[4] = request_flags; request[5] = aggregate | density << 8 | key |
 			(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0);
@@ -1010,6 +1057,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4, header_bytes,
 		info->flags & IEEE80211_TX_CTL_NO_ACK, is_multicast_ether_addr(header->addr1),
 		rtl_ax_tx_channels[ring], qsel, tid_indicators[tid], macid, aggregate, density);
+	rtl_ax_store32(page + 32, rtl_ax_ap_read32(page + 32) | role);
 	if (info->control.hw_key) {
 		rtl_ax_store32(page, rtl_ax_ap_read32(page) | BIT(24));
 		if ((info->control.hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&

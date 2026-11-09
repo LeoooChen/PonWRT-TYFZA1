@@ -45,6 +45,10 @@ static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;
 #define BIT(n) (1U<<(n))
 #define RTL_AX_TX_WP_ADDRESS_MAX 10
 #define RTL_AX_TX_AGG_PRELOAD (1U<<15)
+#define RTL_AX_TX_ROLE_SHIFT 24
+#define RTL_AX_TX_ROLE_MASK (127U<<24)
+#define RTL_AX_TX_SELF_VALID (1U<<23)
+#define RTL_AX_TX_CPU_SELF 96
 #define READ_ONCE(x) (x)
 #define ETH_HLEN 14
 #define ETH_ALEN 6
@@ -60,7 +64,7 @@ static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;
 #define RTL_SEQ_REQUEST 31
 #define RTL_SEQ_ASSIGNED 0x80000000U
 struct key {unsigned flags,hw_key_idx,keyidx,cipher;u64 tx_pn;};
-struct vif {unsigned type;};
+struct vif {unsigned type;u8 addr[6];};
 struct info {unsigned flags;struct {struct key *hw_key;unsigned flags;struct vif *vif;}control;};
 struct hdr {uint16_t frame_control,seq_ctrl;u8 addr1[6];};
 struct skb {u8 *data;unsigned len;struct info *info;u64 rtl9617c_fttr_generation;};
@@ -116,7 +120,7 @@ static void NAME(struct tx*tx,struct info*info,struct hdr*header,struct skb*skb,
  unsigned rate,unsigned gi,unsigned bandwidth,unsigned tid,unsigned aggregate,unsigned density,
  bool encap,bool pe_sequence,unsigned original_header_bytes,const u8*original_header){
  bool template_ready=false;
- unsigned sequence=0xabc0;
+ unsigned sequence=0xabc0,role=0x35;
  unsigned pn_generation=slot.pe_key_pn?123:0;
  static const u8 tid_indicators[]={0,0,1,1,0,1,0,1};
 '''

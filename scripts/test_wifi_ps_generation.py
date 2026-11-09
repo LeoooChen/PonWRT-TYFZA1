@@ -36,6 +36,7 @@ common = r'''
 #include "tx-ownership.h"
 #include "traffic-flow.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
+#define RTL_AX_TX_PEER_SELF 0x68400
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
 #define READ_ONCE(v) (v)
@@ -61,7 +62,7 @@ struct ieee80211_sta {unsigned id;};
 struct ieee80211_local {_Atomic u32 ps_generation;};
 struct sta_info {struct ieee80211_sta sta;struct ieee80211_local *local;pthread_mutex_t ps_lock;_Atomic u32 ps_generation;bool service_period;};
 struct rtl_ax_tx {bool pe_active;pthread_mutex_t lock;void *hw;unsigned ps_releases,ps_eosp;
- bool peer_qos[128],peer_offloaded[128],peer_asleep[128],peer_preload[128];u32 peer_rates[128];
+ bool peer_qos[128],peer_offloaded[128],peer_asleep[128],peer_preload[128];u32 peer_rates[128];u8 peer_role[128];
  struct rtl_ax_traffic_flow peer_flows[128][8];struct {unsigned long internal;} peer_success[128];
  unsigned peer_sleep_events,peer_wake_events;
  struct {void *memory;}pe;struct {u32 ps_seen[2][128],route_tim[128];bool ps_issued[128];}ni;};

@@ -352,7 +352,8 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 #endif
 	);
 	u32 da0 = ethernet[0], addresses = ethernet[1], sa = ethernet[2];
-	u32 ap0 = mailbox[16], ap1 = mailbox[17];
+	u32 ap0 = request[3] & RTL_AX_TX_SELF_VALID ? request[28] : mailbox[16];
+	u32 ap1 = request[3] & RTL_AX_TX_SELF_VALID ? request[29] : mailbox[17];
 	u32 amsdu = !!(flags & BIT(21)), client = !!(flags & BIT(23));
 	const u32 *bssid = (const void *)(memory + 0xe400 + macid * 8);
 	u32 ra0 = client ? bssid[0] : da0;
@@ -465,7 +466,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 			/* Gather addresses once; byte assembly belongs in private DMEM. */
 			u32 ethernet_words[4] = {input[0].value, input[1].value,
 				input[2].value, ((const u8 *)input)[12] | (u32)((const u8 *)input)[13] << 8};
-			u32 ap_words[2] = {mailbox[16], mailbox[17]};
+			const u32 *self = rate & RTL_AX_TX_SELF_VALID ?
+				uncached(mailbox[14] + id * 128 + RTL_AX_TX_CPU_SELF) : (const u32 *)&mailbox[16];
+			u32 ap_words[2] = {self[0], self[1]};
 			u8 *ethernet = (void *)ethernet_words, *ap_address = (void *)ap_words;
 			const u8 *bssid = memory + 0xe400 + macid * 8;
 			u32 client = !!(flags & BIT(23));
@@ -560,7 +563,7 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	word(page + 28, (rate & BIT(20) ? 0 : BIT(31)) | ((rate >> 16) & 3) << 28 |
 		((rate >> 12) & 7) << 25 | (rate & 0x1ff) << 16);
 	/* Original DATA metadata enables fallback for firmware-selected rates. */
-	word(page + 32, (rate & BIT(20) ? 0 : BIT(9) | BIT(10)) |
+	word(page + 32, ((rate >> RTL_AX_TX_ROLE_SHIFT) & 127) | (rate & BIT(20) ? 0 : BIT(9) | BIT(10)) |
 		(rate & BIT(21) ? BIT(11) : 0));
 	/* Original TXSC keeps oversized MPDU retries within their PHY family. */
 	word(page + 36, ((flags & BIT(14)) ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 255 : 0) |
@@ -900,6 +903,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				context[RTL_FTTR_PE_CAP_MAILBOX] = RTL_FTTR_PE_CAPABILITY;
 				context[RTL_KEY_PN_CAP_MAILBOX] = RTL_KEY_PN_CAPABILITY;
 				context[RTL_SEQ_CAP_MAILBOX] = RTL_SEQ_CAPABILITY;
+				context[RTL_AX_TX_ROLE_CAP_MAILBOX] = RTL_AX_TX_ROLE_CAPABILITY;
 				sync();
 			}
 #endif
@@ -1064,7 +1068,8 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				if (caps & BIT(17)) ni_request[3] |= BIT(20);
 				u32 probe = (mailbox[56] >> 5) & 15;
 				if (!(caps & BIT(17)) && !asleep && !(mailbox[56] & 31) && (caps & BIT(probe))) {
-					ni_request[3] = 0x80 | probe | (caps & BIT(16) ? BIT(12) : 0) | BIT(19);
+					ni_request[3] = (ni_request[3] & (RTL_AX_TX_ROLE_MASK | RTL_AX_TX_SELF_VALID)) |
+						0x80 | probe | (caps & BIT(16) ? BIT(12) : 0) | BIT(19);
 				}
 				ni_request[2] = (ni_request[2] & 0x3f0000) | BIT(24) |
 					(length + ((ni_request[2] >> 16) & 63) + 8 - 14);
@@ -1105,6 +1110,10 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				u32 *out = tx_requests[slot][write];
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];
+				if (ni_packet && (out[3] & RTL_AX_TX_SELF_VALID)) {
+					const u32 *self = (void *)(memory + RTL_AX_TX_PEER_SELF + (out[4] >> 24) * 8);
+					out[28] = self[0]; out[29] = self[1];
+				}
 				if (!ni_packet) {
 					out[RTL_FTTR_PE_REQUEST_LOW] = request[RTL_FTTR_PE_REQUEST_LOW];
 					out[RTL_FTTR_PE_REQUEST_HIGH] = request[RTL_FTTR_PE_REQUEST_HIGH];
@@ -1117,6 +1126,10 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			{
 				u32 ring = request[1] & 7, next;
 				if (!ni_packet && !pe_wp_available(memory, ring)) continue;
+				if (ni_packet && (request[3] & RTL_AX_TX_SELF_VALID)) {
+					const u32 *self = (void *)(memory + RTL_AX_TX_PEER_SELF + (request[4] >> 24) * 8);
+					ni_request[28] = self[0]; ni_request[29] = self[1];
+				}
 				pe_build_tx(mailbox, memory, request, &next);
 				producers[ring] = next; publish |= BIT(ring);
 			}
