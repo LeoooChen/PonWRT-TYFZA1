@@ -23,10 +23,10 @@ for chip in ('8852c','8192xb'):
  for port in range(5):
   for mbid in range(8 if not port else 1):
    s.clear();s.update(registers={},operations=[],time_us=0,phase='group_drop')
-   data=bytearray(8);data[0]=8 if mbid else 7;data[6]=port;data[7]=mbid;o.uc.mem_write(n['params'],bytes(data))
+   data=bytearray(8);data[0]=7 if port else 8;data[6]=port;data[7]=mbid;o.uc.mem_write(n['params'],bytes(data))
    assert not o.call('h2c_pkt_drop',n['adapter'],n['params'],0,0)
    event=next(e for e in s['operations'] if e['op']=='H2C');wire=bytes.fromhex(event['payload'])
-   assert wire==struct.pack('<6I',(8 if mbid else 7)|port<<24,mbid,0,0,0,0)
+   assert wire==struct.pack('<6I',(7 if port else 8)|port<<24,mbid,0,0,0,0)
    assert not event['receive_ACK'] and not event['done_ACK']
    drops.append(dict(chip=chip,port=port,mbid=mbid,wire=wire.hex()))
 a.output.write_text(json.dumps(dict(sha256=hashlib.sha256(a.module.read_bytes()).hexdigest(),keys=rows,drops=drops,

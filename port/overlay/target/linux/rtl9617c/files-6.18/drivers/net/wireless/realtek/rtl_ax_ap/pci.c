@@ -380,6 +380,21 @@ static int rtl_ax_h2c_send(void *ctx, const unsigned char *data,
 	return rtl_ax_h2c_publish(radio, class, length);
 }
 
+/* command_lock protects BSS state against radar reception. No VIF pointers
+ * are needed by the receive worker or retained teardown. */
+static void rtl_ax_bss_summary(struct rtl_ax_ap *radio)
+{
+ bool started=false, mesh=false, beacon=false;
+ for(unsigned int i=0;i<128;i++) {
+  const struct rtl_ax_self_role *bss=&radio->self_roles[i];
+  started|=bss->started;mesh|=bss->started && bss->type==6;
+  beacon|=bss->started && bss->beacon;
+ }
+ WRITE_ONCE(radio->ap_started,started);
+ WRITE_ONCE(radio->mesh_started,mesh);
+ WRITE_ONCE(radio->beacon_enabled,beacon);
+}
+
 static int rtl_ax_monitor_receive(struct rtl_ax_ap *radio,
 	const struct rtl_ax_rx_packet *packet);
 static void rtl_ax_scan_complete_frame(struct rtl_ax_ap *radio,
@@ -414,7 +429,9 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 				dfs->events++;
 				rtl_ax_tx_dfs_block(radio->tx, true);
 				rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
-				radio->beacon_enabled = false;
+				for(unsigned int i=0;i<128;i++)radio->self_roles[i].beacon=false;
+				rtl_ax_update32(&radio->io,0xc568,0xfe,0);
+				rtl_ax_bss_summary(radio);
 			}
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);
@@ -841,8 +858,9 @@ int rtl_ax_mac_drop_group(struct pci_dev *pdev, unsigned int port, unsigned int 
 	u8 packet[24] = {};
 
 	if (port > 4 || mbid > 7 || (port && mbid)) return -EINVAL;
-	/* Factory HIQ_PORT7 / HIQ_MBSSID8; MAC band0, port in byte3. */
-	rtl_ax_store32(packet, (mbid ? 8 : 7) | port << 24);
+	/* Port0 root is MBID0, alongside seven VAPs. HIQ_PORT7 would
+	 * discard all BSSes sharing that port; HIQ_MBSSID8 selects one. */
+	rtl_ax_store32(packet, (port ? 7 : 8) | port << 24);
 	rtl_ax_store32(packet + 4, mbid);
 	return rtl_ax_command(radio, RTL_AX_H2C_CMD, 1, 9, 27, packet, sizeof(packet), false);
 }
@@ -905,6 +923,9 @@ static int rtl_ax_self_role_prepare(struct rtl_ax_ap *radio, const struct rtl_ax
 	if(macid>=128 || requested->port || requested->mbid>7 ||
 	   (requested->type!=2 && requested->type!=3 && requested->type!=6))return -EINVAL;
 	owner=&radio->self_roles[macid];identity=&radio->identities[macid];
+ bool shared=false;
+ for(unsigned int i=0;i<128;i++)if(i!=macid && radio->self_roles[i].started)shared=true;
+ if(shared && (!radio->port0.ready || interval!=radio->port0.interval))return -EBUSY;
  if(owner->retiring){
   u8 color=owner->color;
   ret=rtl_ax_self_role_release(radio,macid);if(ret)return ret;
@@ -958,6 +979,8 @@ update_cam:
 			ret = rtl_ax_port0_vap_prepare(&radio->io, &radio->port0,
 				identity->mbid, interval, dtim);
 			if (!ret) ret = rtl_ax_port0_drop_mbid(radio, identity->mbid);
+		} else if(shared) {
+			ret=rtl_ax_port0_root_resume(&radio->io,&radio->port0,interval,dtim);
 		} else {
 			ret = rtl_ax_port0_start(&radio->io, &radio->port0, radio,
 				rtl_ax_port0_drop_mbid, interval, dtim);

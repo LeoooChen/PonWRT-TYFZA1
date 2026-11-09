@@ -278,6 +278,7 @@
 
 130. 接入按self-MACID保留的角色生命周期：CREATE/JOIN/CAM/站点表统一使用显式身份，阶段/类型/颜色/确认快照独立保存，peer记录其self owner；修复非零self仍创建CAM/表0的遗漏。self与peer共用预留，CREATE超时保留并先清理再重建，移除等待子站点/密钥/组播WP，固件删除与CAM擦除分阶段重试，首次CAM超时无快照也按原索引清理；接口释放后的worker不持有旧VIF指针，新接口先完成旧清理。root0/VAP41/63并存、两芯片/创建失败/独立删除/peer-key持有/无快照/颜色继承及STA-BA/密钥/AP-mesh/FE/DFS回归通过，Image/模块和四输入一致通过。PE未变、未实机；全局AP/信标/异步工作和实际多接口分配仍未完全拆分，接口数量限制保留。详见[self角色生命周期](port/FTTR.md#retained-self-role-state-by-macid)。
 131. 修复跨接口异步peer归属：目标ELF `rtw_get_stainfo` 的独立adapter哈希/缓存实执行确认同MAC站点隔离；原生wiphy任务按self-MACID、接口实例号与身份定位VIF，BA/FE/速率/流量路径拒绝旧接口和错误MACID。原子速率回调不读取VIF指针表；NI的TIM/PS/活动、RPQ反馈、RX PN/SN与BAR重播按本地/对端地址和MACID核对。CPU请求保存完成所需地址，STA使用无线AP地址；BCMC不提交普通peer速率反馈。实际双BSS同MAC不同密钥/设备/回调、移除重建、RX不同RA和错误MACID用例及16448 RPQ、67584请求、密钥/BA/STA/AP-mesh/FE/原厂RA回归通过；Image/模块及8个输入一致。main已含b28f290，PE未变、未实机；公开单接口限制、全局AP/信标/BCMC调度和硬件完整退役缺口保留。详见[异步peer与完成归属](port/FTTR.md#peer-work-and-completion-ownership-across-interfaces)。
+132. 拆分BSS启停/信标状态到self-MACID：停止单个BSS保留其他BSS的接收、TIM/速率/硬件转发工作，BCMC按接口独立发布，GTK清理失败互不抑制；失败的组播停止保留身份并重试。根BSS在VAP活跃时只恢复自身DTIM/HIQ，间隔冲突发命令前拒绝；port0根组播清理改为原厂MBID0选择器，避免整端口丢弃其他BSS。雷达关闭根及全部VAP开关与TX，扫描恢复不依赖已移除根VIF。三BSS启停/重启/移除/TIM、独立BCMC、255种DTIM保留、64原厂MMIO轨迹、96清理失败向量及DFS/STA/密钥/FE回归通过，Image/模块与4输入一致。公开单接口限制、NI单播route/device单例、共享颜色/EDCA与调度缺口仍保留；PE未变，未实机。详见[BSS生命周期](port/FTTR.md#independent-bss-lifecycle-and-shared-port0-scheduling)。
 
 ## 建议接着做的工作
 

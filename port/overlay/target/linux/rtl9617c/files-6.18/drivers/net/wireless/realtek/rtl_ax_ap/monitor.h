@@ -119,7 +119,11 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	tasklet_kill(&radio->tx_tasklet);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
-	radio->beacon_enabled = false;
+	rtl_ax_update32(&radio->io,0xc568,0xfe,0);
+	spin_lock_irqsave(&radio->command_lock,flags);
+	for(unsigned int i=0;i<128;i++)radio->self_roles[i].beacon=false;
+	rtl_ax_bss_summary(radio);
+	spin_unlock_irqrestore(&radio->command_lock,flags);
 	ret = rtl_ax_tx_pause(radio->tx);
 	if (ret) dev_err(&radio->pdev->dev, "TX pause on radio stop failed: %d\n", ret);
 	rtl_ax_rx_close(radio->rx);
@@ -324,7 +328,8 @@ static void rtl_ax_mesh_sync_work(struct wiphy *wiphy, struct wiphy_work *work)
 	struct ieee80211_vif *vif = radio->ap_vif;
 	struct sk_buff *skb;
 
-	if (!radio->ap_started || !radio->beacon_enabled)
+	if (!vif || !radio->self_roles[((struct rtl_ax_vif *)vif->drv_priv)->identity.macid].started ||
+	    !radio->self_roles[((struct rtl_ax_vif *)vif->drv_priv)->identity.macid].beacon)
 		return;
 	/* Firmware repeats the uploaded template. Fetching the mesh beacon
 	 * once per interval lets mac80211 schedule neighbor drift correction. */
@@ -340,6 +345,7 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned long flags;
 	unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
+	struct rtl_ax_self_role *bss=&radio->self_roles[((struct rtl_ax_vif *)vif->drv_priv)->identity.macid];
 	int ret;
 
 	if (radio->radar_required &&
@@ -348,7 +354,8 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
  if(vif->type==NL80211_IFTYPE_AP) {
   ret=rtl_ax_tx_group_stop(radio->tx,((struct rtl_ax_vif *)vif->drv_priv)->identity.macid,
    ((struct rtl_ax_vif *)vif->drv_priv)->identity.port,((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid);
-  if(ret)return ret;
+  if(ret){bss->bss_result=ret;return ret;}
+  bss->stopping=false;
  }
 	const struct rtl_ax_role_identity *identity=&((struct rtl_ax_vif *)vif->drv_priv)->identity;
 	radio->self_roles[identity->macid].color=conf->he_bss_color.enabled?conf->he_bss_color.color:0;
@@ -362,9 +369,12 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	}
 	if (!ret)
 		ret = rtl_ax_ap_template(hw, vif, conf);
-	radio->ap_result = ret;
+	bss->bss_result=radio->ap_result = ret;
 	if (ret) {
+		spin_lock_irqsave(&radio->command_lock,flags);
 		rtl_ax_port0_beacon(&radio->io, mbid, false);
+		bss->beacon=false;rtl_ax_bss_summary(radio);
+		spin_unlock_irqrestore(&radio->command_lock,flags);
 		return ret;
 	}
 	rtl_ax_port0_color(&radio->io, conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
@@ -377,13 +387,13 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		if (ret) goto unlock;
 		radio->dfs.in_cac = false;
 		rtl_ax_tx_dfs_block(radio->tx, false);
-		WRITE_ONCE(radio->mesh_started, vif->type == NL80211_IFTYPE_MESH_POINT);
-		WRITE_ONCE(radio->ap_started, true);
-		radio->beacon_enabled = true;
+		bss->started=bss->beacon=true;
+		rtl_ax_bss_summary(radio);
 	}
 unlock:
+	if(ret){bss->beacon=false;rtl_ax_bss_summary(radio);}
 	spin_unlock_irqrestore(&radio->command_lock, flags);
-	radio->ap_result = ret;
+	bss->bss_result=radio->ap_result = ret;
 	if (!ret && vif->type == NL80211_IFTYPE_MESH_POINT) {
 		radio->mesh_tsf_remainder = 0;
 		wiphy_delayed_work_queue(hw->wiphy, &radio->mesh_sync_work,
@@ -397,11 +407,8 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, offload_work);
 	unsigned int macid, index;
-	struct ieee80211_vif *vif = radio->sta_vif ? radio->sta_vif : radio->ap_vif;
 	radio->offload_retry = false;
 	if (radio->scanning || (!radio->ap_started && !radio->sta_associated)) return;
-	if (!vif || vif->type == NL80211_IFTYPE_MESH_POINT) return;
-	if (radio->sta_vif && (radio->sta_4addr || ieee80211_vif_to_wdev(vif)->use_4addr)) return;
 	radio->offload_result=rtl_ax_tx_key_refresh(radio->tx);
 	if (radio->offload_result) {
 		radio->offload_retry=true;
@@ -416,7 +423,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			return;
 		}
 	}
- if(vif->type==NL80211_IFTYPE_AP && radio->scan_offload_result) {
+ if(!radio->sta_vif && radio->scan_offload_result) {
   radio->scan_offload_result=rtl_ax_tx_bcmc_stop(radio->tx);
   if(radio->scan_offload_result) {
    radio->offload_retry=true;wiphy_delayed_work_queue(wiphy,&radio->cleanup_work,HZ);return;
@@ -428,6 +435,8 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 		struct ieee80211_key_conf *key;
 		struct ieee80211_vif *vif=rtl_ax_peer_vif(radio,macid);
 		if(!vif || vif->type==NL80211_IFTYPE_MESH_POINT)continue;
+		if(vif->type==NL80211_IFTYPE_STATION ? (!radio->sta_associated || radio->sta_4addr || ieee80211_vif_to_wdev(vif)->use_4addr) :
+		   !radio->self_roles[radio->role_owner[macid]].started)continue;
 		/* NI bypasses wake_tx_queue; its active TIDs need the same BA
 		 * request policy while data transmission continues normally. */
 		if (radio->peer_authorized[macid]) {
@@ -480,25 +489,27 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			if (ret == -ESTALE || ret == -ENOMEM) radio->offload_retry = true;
 		}
 	}
- if(vif->type==NL80211_IFTYPE_AP) {
-  /* Failed GTK unlink may have left the old CAM map in hardware. */
-  for(index=0;index<RTL_AX_SECURITY_ENTRIES;index++)
-   if(radio->security_unlink[index]==((struct rtl_ax_vif *)vif->drv_priv)->identity.macid+1U)break;
+ for(unsigned int self=0;self<128;self++) {
+  struct ieee80211_vif *vif=radio->vif_owner[self];
+  struct rtl_ax_self_role *bss=&radio->self_roles[self];
+  if(!vif || vif->type!=NL80211_IFTYPE_AP || !bss->started)continue;
+  /* A failed unlink belongs only to this interface's self role. */
+  for(index=0;index<RTL_AX_SECURITY_ENTRIES;index++)if(radio->security_unlink[index]==self+1)break;
   if(index!=RTL_AX_SECURITY_ENTRIES) {
-   rtl_ax_tx_bcmc_close_vif(radio->tx,vif);radio->offload_retry=true;
-   wiphy_delayed_work_queue(wiphy,&radio->cleanup_work,HZ);return;
+   rtl_ax_tx_bcmc_close_vif(radio->tx,vif);radio->offload_retry=true;continue;
+  }
+  if(READ_ONCE(bss->beacon) && !bss->bss_result && !radio->dfs.error && !radio->dfs.detected && !radio->dfs.in_cac) {
+   struct ieee80211_key_conf *key;
+   struct ieee80211_tx_info info={.control={.vif=vif}};
+   int ret=ieee80211_rtl9617c_bcmc_key(vif,&key);
+   if(!ret)ret=rtl_ax_tx_bcmc(radio->tx,vif,key,rtl_ax_tx_basic_rate(radio,NULL,&info));
+   if(ret) {
+    rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
+    if(ret!=-EOPNOTSUPP && ret!=-EOVERFLOW)radio->offload_retry=true;
+   }
   }
  }
- if(vif->type==NL80211_IFTYPE_AP && radio->beacon_enabled && !radio->ap_result && !radio->dfs.error) {
-  struct ieee80211_key_conf *key;
-  struct ieee80211_tx_info info={.control={.vif=vif}};
-  int ret=ieee80211_rtl9617c_bcmc_key(vif,&key);
-  if(!ret)ret=rtl_ax_tx_bcmc(radio->tx,vif,key,rtl_ax_tx_basic_rate(radio,NULL,&info));
-  if(ret) {
-   rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
-   if(ret!=-EOPNOTSUPP && ret!=-EOVERFLOW)radio->offload_retry=true;
-  }
- }
+
 	if (radio->offload_retry)
 		wiphy_delayed_work_queue(wiphy, &radio->cleanup_work, HZ);
 }
@@ -540,13 +551,16 @@ static void rtl_ax_sta_set_4addr(struct ieee80211_hw *hw, struct ieee80211_vif *
 
 static void rtl_ax_tim_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
-	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, beacon_work);
-
-	if (!radio->ap_started)
-		return;
-	radio->ap_result = rtl_ax_ap_template(radio->hw, radio->ap_vif, &radio->ap_vif->bss_conf);
-	if (!radio->ap_result)
-		radio->tim_updates++;
+ struct rtl_ax_ap *radio=container_of(work,struct rtl_ax_ap,beacon_work);
+ for(unsigned int self=0;self<128;self++) {
+  struct ieee80211_vif *vif=radio->vif_owner[self];
+  struct rtl_ax_self_role *bss=&radio->self_roles[self];
+  if(!vif || !bss->started || (vif->type!=NL80211_IFTYPE_AP && vif->type!=NL80211_IFTYPE_MESH_POINT))continue;
+  bss->bss_result=rtl_ax_ap_template(radio->hw,vif,&vif->bss_conf);
+  radio->ap_result=bss->bss_result;
+  if(!bss->bss_result)radio->tim_updates++;
+  else rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
+ }
 }
 
 static int rtl_ax_set_tim(struct ieee80211_hw *hw, struct ieee80211_sta *sta, bool set)
@@ -565,17 +579,19 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	unsigned long flags;
 	unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
 
+ struct rtl_ax_self_role *bss=&radio->self_roles[((struct rtl_ax_vif *)vif->drv_priv)->identity.macid];
  if(vif->type==NL80211_IFTYPE_AP) {
   int ret=rtl_ax_tx_group_stop(radio->tx,((struct rtl_ax_vif *)vif->drv_priv)->identity.macid,
    ((struct rtl_ax_vif *)vif->drv_priv)->identity.port,((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid);
+  bss->stopping=ret!=0;
+  if(ret){bss->bss_result=radio->ap_result=ret;wiphy_delayed_work_queue(hw->wiphy,&radio->cleanup_work,HZ);}
   if(ret)dev_err(&radio->pdev->dev,"BCMC retirement failed: %d\n",ret);
  }
 	spin_lock_irqsave(&radio->command_lock, flags);
 	rtl_ax_port0_beacon(&radio->io, mbid, false);
-	radio->beacon_enabled = false;
-	WRITE_ONCE(radio->mesh_started, false);
-	WRITE_ONCE(radio->ap_started, false);
-	if (radio->dfs.enabled) {
+	bss->started=bss->beacon=false;
+	rtl_ax_bss_summary(radio);
+	if (radio->dfs.enabled && !radio->ap_started) {
 		radio->dfs.in_cac = true;
 		rtl_ax_tx_dfs_block(radio->tx, true);
 	}
@@ -583,16 +599,18 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	if (mbid) {
 		int ret = rtl_ax_port0_drop_mbid(radio, mbid);
 		if (ret) {
-			radio->ap_result = ret;
+			bss->bss_result=radio->ap_result = ret;
 			dev_err(&radio->pdev->dev, "MBID%u stop failed: %d\n", mbid, ret);
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 		}
 	}
-	wiphy_work_cancel(hw->wiphy, &radio->offload_work);
-	wiphy_work_cancel(hw->wiphy, &radio->beacon_work);
-	wiphy_delayed_work_cancel(hw->wiphy, &radio->mesh_sync_work);
-	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
-	rtl_ax_receive_mode(&radio->io, 0);
+ if(!radio->ap_started && !radio->sta_associated) {
+  wiphy_work_cancel(hw->wiphy,&radio->offload_work);
+  wiphy_work_cancel(hw->wiphy,&radio->beacon_work);
+  wiphy_work_cancel(hw->wiphy,&radio->ra_update_work);
+ } else wiphy_work_queue(hw->wiphy,&radio->offload_work);
+ if(vif->type==NL80211_IFTYPE_MESH_POINT)wiphy_delayed_work_cancel(hw->wiphy,&radio->mesh_sync_work);
+ rtl_ax_receive_mode(&radio->io,radio->scanning?0:radio->ap_started?4:radio->sta_vif?2:0);
 }
 
 static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
@@ -612,10 +630,10 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 		radio->sta_vif = NULL;
 	}
 
-	if (radio->ap_vif == vif) {
-		if (vif->type == NL80211_IFTYPE_MESH_POINT && radio->ap_started)
+	if (vif->type==NL80211_IFTYPE_AP || vif->type==NL80211_IFTYPE_MESH_POINT) {
+		if (radio->self_roles[self].started)
 			rtl_ax_ap_stop(hw, vif, &vif->bss_conf);
-		radio->ap_vif = NULL;
+		if(radio->ap_vif==vif)radio->ap_vif = NULL;
 		unsigned int id=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
 		ret=rtl_ax_self_role_release(radio,id);
 		if(ret) {
@@ -659,6 +677,7 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned int ac;
+ struct rtl_ax_self_role *bss=&radio->self_roles[((struct rtl_ax_vif *)vif->drv_priv)->identity.macid];
  if(vif->type==NL80211_IFTYPE_AP && (changed&(BSS_CHANGED_BASIC_RATES|BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED|BSS_CHANGED_BEACON_INT))) {
   rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
   wiphy_work_queue(hw->wiphy,&radio->offload_work);
@@ -685,8 +704,8 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	if (vif->type == NL80211_IFTYPE_MESH_POINT &&
 	    (changed & BSS_CHANGED_BEACON_ENABLED)) {
 		if (conf->enable_beacon &&
-		    (!radio->ap_started || (changed & BSS_CHANGED_BEACON_INT))) {
-			radio->ap_result = rtl_ax_ap_start(hw, vif, conf);
+		    (!bss->started || (changed & BSS_CHANGED_BEACON_INT))) {
+			bss->bss_result=radio->ap_result = rtl_ax_ap_start(hw, vif, conf);
 			if (radio->ap_result) {
 				dev_err(&radio->pdev->dev, "mesh start failed: %d\n", radio->ap_result);
 				cfg80211_stop_iface(hw->wiphy, ieee80211_vif_to_wdev(vif), GFP_KERNEL);
@@ -695,12 +714,12 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 		}
 	}
 	if ((changed & BSS_CHANGED_HE_BSS_COLOR) &&
-	    (radio->ap_started || radio->sta_associated)) {
+	    (bss->started || radio->sta_associated)) {
 		int ret = rtl_ax_bss_color_update(radio,((struct rtl_ax_vif *)vif->drv_priv)->identity.macid,
 			conf->he_bss_color.enabled ? conf->he_bss_color.color : 0);
 
 		if (ret) {
-			radio->ap_result = ret;
+			bss->bss_result=radio->ap_result = ret;
 			/* ACK loss leaves CAM state uncertain. Stop scheduling while
 			 * cfg80211 completes the asynchronous interface teardown. */
 			rtl_ax_tx_dfs_block(radio->tx, true);
@@ -710,10 +729,10 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 			return;
 		}
 	}
-	if (!radio->ap_started)
+	if (!bss->started)
 		return;
 	if (changed & BSS_CHANGED_BEACON) {
-		radio->ap_result = rtl_ax_ap_template(hw, vif, conf);
+		bss->bss_result=radio->ap_result = rtl_ax_ap_template(hw, vif, conf);
 		if (radio->ap_result)
 			dev_err(&radio->pdev->dev, "beacon template update failed: %d\n", radio->ap_result);
 	}
@@ -724,13 +743,14 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 		spin_lock_irqsave(&radio->command_lock, flags);
 		enable = conf->enable_beacon && !radio->dfs.in_cac && !radio->dfs.detected && !radio->dfs.error;
 		unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
-		radio->ap_result = enable && (radio->mbid_drop_pending & BIT(mbid)) ? -EBUSY :
+		bss->bss_result=radio->ap_result = enable && (radio->mbid_drop_pending & BIT(mbid)) ? -EBUSY :
 			rtl_ax_port0_beacon(&radio->io, mbid, enable);
-		radio->beacon_enabled = !radio->ap_result && enable;
+		bss->beacon = !bss->bss_result && enable;
+		rtl_ax_bss_summary(radio);
 		spin_unlock_irqrestore(&radio->command_lock, flags);
 		if (mbid && !enable) {
 			int ret = rtl_ax_port0_drop_mbid(radio, mbid);
-			if (ret) radio->ap_result = ret;
+			if (ret) bss->bss_result=radio->ap_result = ret;
 		}
 		if (radio->ap_result) {
 			dev_err(&radio->pdev->dev, "MBID%u beacon switch failed: %d\n", mbid, radio->ap_result);
@@ -1008,6 +1028,12 @@ static void rtl_ax_cleanup_work(struct wiphy *wiphy, struct wiphy_work *work)
 	bool retry = rtl_ax_tx_ni_cleanup(radio->tx) != 0;
 
 	retry |= rtl_ax_security_cleanup(radio);
+ for(i=0;i<128;i++)if(radio->self_roles[i].stopping) {
+  const struct rtl_ax_role_identity *identity=&radio->identities[i];
+  int ret=rtl_ax_tx_group_stop(radio->tx,i,identity->port,identity->mbid);
+  radio->self_roles[i].bss_result=ret;
+  if(ret)retry=true;else radio->self_roles[i].stopping=false;
+ }
 	/* Publication failures are retryable; a successful no-ACK drop command
 	 * still does not establish downstream packet retirement. */
 	for (i = 1; i < 8; i++)
@@ -1448,7 +1474,7 @@ static void rtl_ax_sw_scan_start(struct ieee80211_hw *hw,
 	radio->scanning = true;
  radio->scan_offload_result = radio->sta_associated ?
 		rtl_ax_tx_ni_retire_peer(radio->tx, RTL_AX_CLIENT_MACID) :
-  radio->ap_vif && radio->ap_vif->type==NL80211_IFTYPE_AP ? rtl_ax_tx_bcmc_stop(radio->tx) : 0;
+  radio->ap_started && !radio->mesh_started ? rtl_ax_tx_bcmc_stop(radio->tx) : 0;
 	mutex_lock(&radio->command_mutex);
 	/* Factory CRC-OK reports already include foreign beacons. */
 	mutex_unlock(&radio->command_mutex);
@@ -1462,7 +1488,7 @@ static void rtl_ax_sw_scan_complete(struct ieee80211_hw *hw,
 
 	mutex_lock(&radio->command_mutex);
 	radio->scanning = false;
- if(radio->ap_vif && radio->ap_vif->type==NL80211_IFTYPE_AP)wiphy_work_queue(hw->wiphy,&radio->offload_work);
+ if(radio->ap_started && !radio->mesh_started)wiphy_work_queue(hw->wiphy,&radio->offload_work);
 	/* mac80211 restores hw.conf before this callback but ignores a failed
 	 * channel transaction. Retry that restore before admitting NI traffic. */
 	if (radio->sta_associated && !radio->scan_offload_result && radio->dfs.error)

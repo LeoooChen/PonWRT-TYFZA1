@@ -29,6 +29,9 @@ common = common.replace('return 0;}\nstatic struct ieee80211_sta *ieee80211_find
 common = common.replace('(void)t;(void)v;(void)id;return 0;}\nstatic unsigned fail_stage', '(void)t;assert(expected_vif[id]==v);policy_calls[id]++;return 0;}\nstatic unsigned fail_stage')
 common = common.replace('static unsigned ba_callbacks;', 'static unsigned ba_callbacks;static struct ieee80211_vif *callback_vif;')
 common = common.replace('(void)vif;(void)addr;assert(tid==1);ba_callbacks++;', '(void)addr;assert(tid==1);callback_vif=vif;ba_callbacks++;')
+common = common.replace('static unsigned bcmc_calls,bcmc_closes;', 'static unsigned bcmc_by_self[128],closed_by_self[128];static unsigned bcmc_calls,bcmc_closes;')
+common = common.replace('(void)v;rtl_ax_tx_bcmc_close(t);', 'closed_by_self[v->drv_priv[0].identity.macid]++;rtl_ax_tx_bcmc_close(t);')
+common = common.replace('bcmc_calls++;return bcmc_error;', 'bcmc_by_self[v->drv_priv[0].identity.macid]++;bcmc_calls++;return bcmc_error;')
 common += r'''
 #define IEEE80211_RC_BW_CHANGED 1
 #define IEEE80211_RC_NSS_CHANGED 2
@@ -53,7 +56,7 @@ int main(void){
   vifs[i].type=NL80211_IFTYPE_AP;vifs[i].addr[0]=2;vifs[i].addr[5]=i+1;vifs[i].wdev.netdev=&devices[i];
   vifs[i].drv_priv[0]=(struct rtl_ax_vif){.identity={.macid=self,.mbid=i,.type=i?3:2},.generation=10+i};
   r.identities[id]=vifs[i].drv_priv[0].identity;r.identities[id].macid=id;
-  r.role_owner[id]=self;r.vif_owner[self]=&vifs[i];r.peer_vif_generation[id]=10+i;
+  r.self_roles[self].started=true;r.role_owner[id]=self;r.vif_owner[self]=&vifs[i];r.peer_vif_generation[id]=10+i;
   r.tx_ba[id].address[0]=2;r.peer_authorized[id]=r.ra_registered[id]=true;
   peers[i].drv_priv[0].macid=id;peers[i].wme=true;peers[i].deflink.ht_cap.ht_supported=true;
   keys[i]=(struct ieee80211_key_conf){.hw_key_idx=i?5:3,.keyidx=i,.cipher=4};
@@ -85,6 +88,18 @@ int main(void){
   struct rtl_ax_role_identity save=vifs[1].drv_priv[0].identity;((u8*)&vifs[1].drv_priv[0].identity)[field]^=1;
   assert(!rtl_ax_peer_vif(&r,8));vifs[1].drv_priv[0].identity=save;
  }
+ /* Separate BCMC publication: one failed GTK unlink cannot suppress the other BSS. */
+ r.self_roles[0].beacon=r.self_roles[41].beacon=true;
+ rtl_ax_offload_work(&w,&r.offload_work);assert(bcmc_by_self[0]==1&&bcmc_by_self[41]==1);
+ r.security_unlink[10]=1;
+ rtl_ax_offload_work(&w,&r.offload_work);
+ assert(bcmc_by_self[0]==1&&bcmc_by_self[41]==2&&closed_by_self[0]==1&&r.offload_retry);
+ r.security_unlink[10]=0;r.self_roles[0].bss_result=-EIO;
+ rtl_ax_offload_work(&w,&r.offload_work);assert(bcmc_by_self[0]==1&&bcmc_by_self[41]==3);
+ r.self_roles[0].bss_result=0;r.self_roles[41].started=false;
+ rtl_ax_offload_work(&w,&r.offload_work);assert(bcmc_by_self[0]==2&&bcmc_by_self[41]==3);
+ r.dfs.detected=true;rtl_ax_offload_work(&w,&r.offload_work);
+ assert(bcmc_by_self[0]==2&&bcmc_by_self[41]==3);
  r.role_owner[8]=255;assert(!rtl_ax_peer_vif(&r,8));assert(!rtl_ax_peer_vif(&r,128));
  puts("Two BSSes/same STA MAC: distinct keys/routes/BA callbacks, stale lookup/MACID, removed/recreated VIF, atomic RC generation and identity checks PASS");
 }

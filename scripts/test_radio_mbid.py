@@ -57,6 +57,19 @@ void faults(void){
   assert(!rtl_ax_port0_beacon(&io,mbid,false));assert(!(read32(NULL,0xc568)&BIT(mbid)));
   unsigned prior=count;assert(rtl_ax_port0_vap_prepare(&io,&port,mbid,101,3)==-EINVAL&&count==prior);
  }
+ /* Restart root without touching live VAP DTIM/HIQ/TSF/enable state. */
+ for(unsigned dtim=1;dtim<=255;dtim++) {
+  reset(0xa50700fe);port.ready=true;port.interval=100;
+  seed(0xc400,0x13c04);seed(0xc414,0xc0064);seed(0xc540,0x12345678);seed(0xc544,0x87654321);
+  for(unsigned i=1;i<8;i++)regs[0xc590+i]=10+i;
+  assert(!rtl_ax_port0_root_resume(&io,&port,100,dtim));
+  assert(read32(NULL,0xc568)==0xa50700fe&&read32(NULL,0xc414)==0xc0064);
+  assert(read32(NULL,0xc540)==0x12345678&&read32(NULL,0xc544)==0x87654321);
+  for(unsigned i=1;i<8;i++)assert(regs[0xc590+i]==10+i);
+  assert(regs[0xc427]==dtim&&regs[0xc590]==50&&!(read32(NULL,0xc400)&BIT(12)));
+  unsigned before=count;assert(rtl_ax_port0_root_resume(&io,&port,200,dtim)==-EINVAL&&count==before);
+ }
+ reset(0);assert(rtl_ax_port0_root_resume(&io,&port,100,1)==-ENETDOWN&&!count);
  reset(0);assert(rtl_ax_port0_beacon(&io,1,true)==-EINVAL&&!count);
  assert(rtl_ax_port0_beacon(&io,8,true)==-EINVAL&&!count);
 }

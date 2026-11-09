@@ -25,7 +25,7 @@ common=r'''
 #define dev_err(...) ((void)0)
 struct rx {bool running;};struct tx {bool netdev_reference;struct rx *rx;};
 struct io {void (*write32)(void*,unsigned,unsigned);};
-struct rtl_ax_ap {int mesh_sync_work,cleanup_work,ra_work,dm_work,ra_update_work,command_mutex,command_lock,tx_tasklet;
+struct rtl_ax_ap {bool ap_started,mesh_started;struct rtl_ax_self_role {bool started,beacon;unsigned type;}self_roles[128];int mesh_sync_work,cleanup_work,ra_work,dm_work,ra_update_work,command_mutex,command_lock,tx_tasklet;
  struct {bool enabled,in_cac;int error;}dfs;bool monitor_started,beacon_enabled,radar_required;
  struct io io;struct tx *tx;struct rx *rx;};
 struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
@@ -41,7 +41,9 @@ static int rtl_ax_tx_pause(struct tx *tx){assert(!tx->netdev_reference);return 0
 static void rtl_ax_rx_close(struct rx *rx){rx->running=false;}
 static int rtl_ax_dfs_stop_locked(struct rtl_ax_ap *radio){(void)radio;return 0;}
 '''
-common += source[start:end]
+pci=(root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/pci.c').read_text()
+a=pci.index('static void rtl_ax_bss_summary(');b=pci.index('\n}\n',a)+3
+common += pci[a:b] + source[start:end]
 common += r'''
 int main(void){struct rx rx={true};struct tx tx={true,&rx};
  struct rtl_ax_ap radio={.rx=&rx,.tx=&tx,.io={write32},.monitor_started=true};

@@ -33,6 +33,7 @@ common = r'''
 #include <stdio.h>
 typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define ETH_ALEN 6
+#define WRITE_ONCE(x,v) ((x)=(v))
 #define BIT(n) (1U<<(n))
 #define RTL_AX_BIT(n) BIT(n)
 #define RTL_AX_H2C_CMD 0
@@ -76,7 +77,7 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;void *wiphy;};
 struct rtl_ax_io {void(*write8)(void *,unsigned,u8);};
 struct rtl_ax_ap {u32 vif_generation,peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 role_owner[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct ieee80211_hw *hw;struct rtl_ax_io io;int command_mutex,cleanup_work,tx;
  bool sta_role,sta_associated,scanning,station_ids[128],peer_authorized[128];
- bool ap_started,beacon_enabled;unsigned edca_valid;int ap_result,command_lock;
+ bool ap_started,beacon_enabled,mesh_started;unsigned edca_valid;int ap_result,command_lock;
  struct {bool in_cac,detected;int error;}dfs;
  struct {bool pending,client;u8 self[6],peer[6];} retired_stations[128];
  u8 sta_bssid[6];int mesh_sync_work;u32 sta_join;int offload_result,offload_work;};
@@ -126,6 +127,7 @@ static void cfg80211_stop_iface(void*w,void*v,int g){(void)w;(void)v;(void)g;sto
 static void rtl_ax_edca_apply(struct rtl_ax_ap *r,struct ieee80211_vif *v,unsigned ac){(void)r;(void)v;(void)ac;assert(0);}
 static int rtl_ax_ap_template(struct ieee80211_hw *h,struct ieee80211_vif *v,struct ieee80211_bss_conf *c){(void)h;(void)v;(void)c;assert(0);return 0;}
 '''
+common += function((driver/'pci.c').read_text(),'rtl_ax_bss_summary')
 common += function((driver/'pci.c').read_text(),'rtl_ax_cam_write') + function((driver/'pci.c').read_text(),'rtl_ax_bss_color_update')
 test = r'''
 int main(void){
@@ -191,7 +193,7 @@ int main(void){
   struct rtl_ax_ap r={.sta_associated=kind==2,.ap_started=kind==3,.io={write8}};
   struct ieee80211_hw hw={.radio=&r};r.hw=&hw;
   struct ieee80211_vif v={.drv_priv={{{.macid=1}}},.type=kind,.bss_conf={.he_bss_color={true,color}}};
-  r.self_roles[1].cam[8]=7;r.self_roles[1].cam[52]=0xfd;r.self_roles[1].color=17;regs[0xc6a0]=0xa5a5a5a5;
+  r.self_roles[1].started=kind==3;r.self_roles[1].cam[8]=7;r.self_roles[1].cam[52]=0xfd;r.self_roles[1].color=17;regs[0xc6a0]=0xa5a5a5a5;
   fail_at=calls+1;unsigned before=stopped,old_pause=paused;
   rtl_ax_ap_changed(&hw,&v,&v.bss_conf,BSS_CHANGED_HE_BSS_COLOR);
   assert(paused==old_pause+1&&stopped==before+1&&r.self_roles[1].color==17&&regs[0xc6a0]==0xa5a5a5a5);

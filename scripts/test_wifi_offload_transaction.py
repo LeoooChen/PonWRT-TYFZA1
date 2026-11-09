@@ -95,7 +95,7 @@ struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struc
 struct rtl_ax_tx {struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
-struct rtl_ax_ap {u8 role_owner[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
+struct rtl_ax_ap {u8 role_owner[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;bool detected,in_cac;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  struct ieee80211_key_conf *security_keys[128];unsigned security_unlink[128];bool ra_registered[128];
@@ -113,6 +113,7 @@ static unsigned bcmc_calls,bcmc_closes;static int bcmc_error;static struct ieee8
 static void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *t){t->bcmc_enabled=false;bcmc_closes++;}
 static void rtl_ax_tx_bcmc_close_vif(struct rtl_ax_tx *t,struct ieee80211_vif *v){(void)v;rtl_ax_tx_bcmc_close(t);}
 static int rtl_ax_tx_bcmc_drop_all(struct rtl_ax_tx *t){(void)t;return 0;}
+static int rtl_ax_tx_group_stop(struct rtl_ax_tx *t,unsigned id,unsigned port,unsigned mbid){(void)t;(void)id;(void)port;(void)mbid;return 0;}
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *t){rtl_ax_tx_bcmc_close(t);return bcmc_error;}
 static int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *v,struct ieee80211_key_conf **key){assert(v->type==3);*key=&gtk;return 0;}
 static unsigned rtl_ax_tx_basic_rate(struct rtl_ax_ap *r,struct ieee80211_sta *sta,struct ieee80211_tx_info *i){assert(r&&!sta&&i->control.vif);return 4;}
@@ -192,8 +193,8 @@ int main(void){
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.ni={.active=initial,.cpu=3}};
   struct wiphy wiphy={};struct ieee80211_hw hw={&wiphy};struct ieee80211_vif vif={.wdev={.netdev=&dev}};
   struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.monitor_started=true};
-  if(client){vif.wdev.iftype=2;dev.ieee80211_ptr=&vif.wdev;radio.sta_vif=&vif;radio.ap_vif=NULL;radio.ap_started=false;radio.sta_associated=true;}
-  vif.drv_priv[0].generation=1;radio.peer_vif_generation[1]=1;radio.vif_owner[0]=&vif;
+  if(client){vif.type=2;vif.wdev.iftype=2;dev.ieee80211_ptr=&vif.wdev;radio.sta_vif=&vif;radio.ap_vif=NULL;radio.ap_started=false;radio.sta_associated=true;}
+  vif.drv_priv[0].generation=1;radio.peer_vif_generation[1]=1;radio.vif_owner[0]=&vif;radio.self_roles[0].started=true;
   const u8 mac[6]={2,1,2,3,4,5};active_radio=&radio;active_fe=&fe;active_tx=&tx;timers=ba_callbacks=0;queued=NULL;key_error=0;open_key=opened;
   init(&fe.ports);init(&fe.flows);init(&fe.wifi_peers);fe.memory=actions;list_add_tail(&port.list,&fe.ports);
   if(initial){dev_hold(&dev);tx.ni.route_dev=&dev;}
@@ -278,13 +279,13 @@ int main(void){
  /* Exercise the actual worker's group-only entry and retry gates. */
  {
   struct rtl_ax_tx tx={};struct wiphy w={};struct ieee80211_hw hw={&w};
-  struct ieee80211_vif vif={.type=3};struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.beacon_enabled=true};
+  struct ieee80211_vif vif={.type=3};struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.beacon_enabled=true,.vif_owner={&vif},.self_roles={{.started=true,.beacon=true}}};
   active_radio=&radio;active_tx=&tx;bcmc_calls=bcmc_closes=timers=0;
   bcmc_error=-ESTALE;rtl_ax_offload_work(&w,&radio.offload_work);
   assert(bcmc_calls==1&&bcmc_closes==1&&radio.offload_retry&&timers==1);
   bcmc_error=0;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2&&!radio.offload_retry);
   radio.scanning=true;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2);radio.scanning=false;
-  radio.ap_result=-EIO;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2);radio.ap_result=0;
+  radio.self_roles[0].bss_result=radio.ap_result=-EIO;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==2);radio.self_roles[0].bss_result=radio.ap_result=0;
   radio.scan_offload_result=-ETIMEDOUT;bcmc_error=-ETIMEDOUT;rtl_ax_offload_work(&w,&radio.offload_work);
   assert(bcmc_calls==2&&radio.offload_retry&&radio.scan_offload_result==-ETIMEDOUT);
   bcmc_error=0;rtl_ax_offload_work(&w,&radio.offload_work);assert(bcmc_calls==3&&!radio.scan_offload_result);

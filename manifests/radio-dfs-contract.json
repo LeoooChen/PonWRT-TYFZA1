@@ -1,5 +1,5 @@
 {
-  "factory_module_sha256": "745328f06968003a02afa7ba7a3656f54be8f715d993f382f2a2e68acbad374e",
+  "factory_module_sha256": "0f8e947c3ac90908800bd4d5ddc350862f7b09495b63eeab4be22d56af8d0252",
   "classifier_vectors": 589,
   "classification": "actual relocated ARM64 factory functions",
   "dynamic_vectors": 66,
@@ -17,7 +17,8 @@
     "ring epoch wrap and expiry",
     "CAC keeps hardware TX blocked",
     "AP start releases TX",
-    "radar during AP commands prevents start"
+    "radar during AP commands prevents start",
+    "radar closes all retained BSS beacon switches"
   ],
   "hardware_device": false,
   "full_test_suite": false

@@ -8583,6 +8583,55 @@ SSIDs. This work fixes peer task/completion ownership and does not establish a
 full hardware retirement barrier or safe resource reuse. No physical device was
 accessed.
 
+### Independent BSS lifecycle and shared port0 scheduling
+
+Each retained self-MACID now owns its BSS started/beacon/result state and pending
+BCMC stop. AP start/change/stop and TIM template refresh use that owner. Aggregate
+radio flags describe whether any BSS is active. Stopping or removing one BSS
+leaves the other BSSes' receive mode, TIM work, rate work and offload work active;
+only the last BSS stop returns DFS to CAC and cancels the shared workers. BCMC
+publication iterates the live interface owners, so a failed GTK unlink or template
+on one interface does not suppress the others. A failed group stop retains the
+identity for the cleanup worker even after the VIF is removed. Successful restart
+must finish that stop before clearing its retry state. Scan completion detects
+active BSSes even when the original root VIF has been removed.
+
+Root restart while VAPs remain active preserves the shared TSF, interval, MBID
+switches and other BSSes' DTIM/HIQ windows. It only disables the root switch and
+sets the root's own HIQ window/DTIM. A conflicting interval is rejected before
+firmware role writes. VAP setup retains the existing independent register path.
+The port0 root group drop now uses original `HIQ_MBSSID8, MBID0`; the previous
+`HIQ_PORT7` selector would drop other BSSes sharing port0. Ports1..4 still use
+the port selector. `trace_stock_group_owner.py` now executes that explicit root
+MBID recipe in both target chip encoders, and `test_group_stop.py` compares all
+24 payloads with pause/drop/wait failure ownership (96 vectors).
+
+Radar reception disables root and all seven VAP beacon switches under the
+command lock, clears their retained beacon state and blocks TX. BSS lifecycle
+state survives for orderly stop; offload cannot reopen BCMC after radar/CAC.
+The actual radar mutation block is exercised with multiple active BSSes in
+`test_radio_dfs.py`, alongside 589 target classifier vectors and 66 dynamic
+vectors. This report records the actual retained factory module hash used here.
+
+The actual AP functions are tested with root0, self41/MBID1 and self63/MBID2:
+stop each one first, refresh surviving TIM templates, restart root without port
+reset, reject an interval change without touching another owner, remove root,
+and stop the last VAP. BCMC tests cover independent publication, GTK unlink
+failure and radar. MMIO tests cover all255 root DTIM values while preserving VAP
+fields, in addition to the64 original MBID/port traces. Stop retry after a freed
+VIF, key cleanup, AP/mesh/STA and FE failure/retry regressions pass. Image/modules
+builds and all four changed kernel inputs match;
+`artifacts/fttr/bss-*-20261109.*` contains the reports. The older broad
+`test_radio_regulatory.py` fixture lacks several existing driver fields/APIs and
+cannot compile; radar and radio-stop coverage above comes from the maintained
+DFS/stop-route tests, not from that fixture.
+
+Public interface count remains one. Interface allocation, NI unicast's singleton
+route/device assumptions, shared BSSID color/EDCA policy and scheduling are still
+incomplete. The software BCMC FIFO and some gates remain shared, so per-domain
+close may temporarily pause unrelated traffic. PE firmware is unchanged; no
+hardware retirement/reuse claim is added and no physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

@@ -13,7 +13,7 @@ code=r'''
 #include <string.h>
 #include <errno.h>
 typedef uint8_t u8;
-#include "/Users/leo/OrbStack/ubuntu2404/home/leo/PonWRT-TYFZA1-fttr/port/overlay/target/linux/rtl9617c/files-6.18/include/linux/rtl9617c-seq.h"
+#include "rtl9617c-seq.h"
 #define BIT(n) (1U<<(n))
 #define RTL_MC_PE_BCMC_COUNT 12
 #define RTL_AX_H2C_CMD 0
@@ -46,7 +46,7 @@ void invalid(void){struct rtl_ax_tx tx={};step=0;
 '''
 with tempfile.TemporaryDirectory() as folder:
  c=Path(folder)/'test.c';so=Path(folder)/'test.so';c.write_text(code)
- subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC',str(c),'-o',str(so)],check=True)
+ subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror','-shared','-fPIC','-I'+str(r/'port/overlay/target/linux/rtl9617c/files-6.18/include/linux'),str(c),'-o',str(so)],check=True)
  lib=C.CDLL(str(so));out=C.create_string_buffer(24);lib.run.argtypes=[C.c_uint]*3+[C.c_int,C.c_void_p];count=0
  for row in json.loads(a.original.read_text())['drops']:
   for fail in range(4):
@@ -55,5 +55,5 @@ with tempfile.TemporaryDirectory() as folder:
    count+=1
  lib.run(0,0,0,0,out);lib.invalid()
  c.write_text(code+'\nint main(void){u8 out[24];for(unsigned f=0;f<4;f++)run(41,0,7,f,out);invalid();return 0;}\n')
- subprocess.run(['cc','-O1','-fsanitize=address,undefined',str(c),'-o',str(Path(folder)/'test')],check=True);subprocess.run([str(Path(folder)/'test')],check=True)
+ subprocess.run(['cc','-O1','-fsanitize=address,undefined','-I'+str(r/'port/overlay/target/linux/rtl9617c/files-6.18/include/linux'),str(c),'-o',str(Path(folder)/'test')],check=True);subprocess.run([str(Path(folder)/'test')],check=True)
 print(f'Group drain: {count} original HIQ commands and pause/drop/wait faults retain the owning MACID; root delegation and invalid identity passed')

@@ -184,7 +184,7 @@ struct rtl_ax_ap {
  struct {unsigned primary,bandwidth,center;}channel;
  struct ieee80211_hw *hw;
  unsigned dfs_domain,chip;bool radar_required,ap_started,mesh_started,beacon_enabled;
- int command_lock,ap_result,mesh_sync_work,offload_work;struct {u8 color;}self_roles[128];long long mesh_tsf_remainder;
+ int command_lock,ap_result,mesh_sync_work,offload_work;struct rtl_ax_self_role {u8 color,type;bool started,beacon,stopping;int bss_result;}self_roles[128];long long mesh_tsf_remainder;
  struct {unsigned valid;}security_roles[1];
 };
 #define NL80211_BAND_5GHZ 1
@@ -214,7 +214,14 @@ static void rtl_ax_port0_color(const struct rtl_ax_io *p,unsigned v){(void)p;(vo
 static void rtl_ax_receive_mode(const struct rtl_ax_io *p,unsigned v){(void)p;(void)v;}
 '''
 source += ''.join(function('pci.c', name) for name in ('rtl_ax_dfs_stop_locked', 'rtl_ax_dfs_start_locked'))
+source += function('pci.c', 'rtl_ax_bss_summary')
 source += function('monitor.h', 'rtl_ax_ap_start')
+receive=function('pci.c','rtl_ax_receive')
+a=receive.index('\t\t\tdfs->detected = true;');b=receive.index('\n\t\t\t}',a)
+source += 'void radar_bss(void){struct rtl_ax_tx tx={.io=&io,.scheduler_saved=0x3ffff};struct rtl_ax_ap object={.tx=&tx,.io=io},*radio=&object;struct rtl_ax_dfs *dfs=&radio->dfs;\n'
+source += 'for(unsigned i=0;i<3;i++){radio->self_roles[i].started=true;radio->self_roles[i].beacon=true;}memset(regs,0,sizeof(regs));regs[0xc400/4]=0x13c04;regs[0xc568/4]=0xa50700fe;regs[0xc398/4]=0x3ffff;used=0;\n'
+source += receive[a:b]
+source += '\nassert(radio->ap_started&&!radio->beacon_enabled&&dfs->detected);assert(!(regs[0xc400/4]&BIT(12))&&regs[0xc568/4]==0xa5070000&&!regs[0xc398/4]);for(unsigned i=0;i<3;i++)assert(radio->self_roles[i].started&&!radio->self_roles[i].beacon); }\n'
 source += r'''
 void lifecycle(void){
  struct rtl_ax_tx tx={.io=&io,.scheduler_saved=0x3ffff};
@@ -236,7 +243,7 @@ void lifecycle(void){
  rtl_ax_tx_open(&tx);assert(!regs[0xc398/4]);
  assert(!rtl_ax_ap_start(&hw,&vif,&conf));
  assert(radio.ap_started&&!radio.dfs.in_cac&&regs[0xc398/4]==0x3ffff);
- used=0;radio.ap_started=false;rtl_ax_tx_dfs_block(&tx,true);inject_radar=true;
+ used=0;radio.self_roles[0].started=false;radio.ap_started=false;rtl_ax_tx_dfs_block(&tx,true);inject_radar=true;
  assert(rtl_ax_ap_start(&hw,&vif,&conf)==-EBUSY);
  assert(!radio.ap_started&&!regs[0xc398/4]&&radio.ap_result==-EBUSY);
  inject_radar=false;used=0;timeout=true;
@@ -431,7 +438,8 @@ with tempfile.TemporaryDirectory(prefix='rtl-ax-dfs-') as temporary:
         count = native.hardware(enabled, actual)
         assert list(zip(actual[:count * 2:2], actual[1:count * 2:2])) == writes
     native.ownership()
-    native.lifecycle()
+    native.radar_bss()
+native.lifecycle()
 
 result = dict(factory_module_sha256=hashlib.sha256(module.read_bytes()).hexdigest(),
               classifier_vectors=vectors, classification='actual relocated ARM64 factory functions',
@@ -439,7 +447,7 @@ result = dict(factory_module_sha256=hashlib.sha256(module.read_bytes()).hexdiges
               profiles=['FCC', 'MKK W53', 'MKK W56', 'ETSI', 'KCC'],
               hardware='MAC/BB enable/disable writes equal factory cfg_dfs and radar_detect_enable/disable',
               boundaries=['RFK/DFS queue ownership', 'report engine timeout propagates', 'ring epoch wrap and expiry',
-                          'CAC keeps hardware TX blocked', 'AP start releases TX', 'radar during AP commands prevents start'],
+                          'CAC keeps hardware TX blocked', 'AP start releases TX', 'radar during AP commands prevents start', 'radar closes all retained BSS beacon switches'],
               hardware_device=False, full_test_suite=False)
 (root / 'manifests/radio-dfs-contract.json').write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps(result, indent=2))

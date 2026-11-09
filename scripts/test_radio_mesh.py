@@ -67,12 +67,12 @@ static void rtl_ax_store32(u8 *,u32);
 static u32 rtl_ax_ap_read32(const u8 *);
 #include "role-identity.h"
 struct ieee80211_vif {void *netdev;struct rtl_ax_vif drv_priv[1];int type;bool use_4addr;struct {bool idle;}cfg; u8 addr[6]; struct ieee80211_bss_conf bss_conf;};
-struct port {int result;};
+struct port {int result;bool ready;unsigned interval;};
 struct io {int unused;}; struct tx {bool blocked;};
 #include "cam-owner.h"
 struct rtl_ax_ap {u32 vif_generation,peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 role_owner[128];bool station_ids[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;
- struct {u8 nhm_noise_ratio;} environment;s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work,cleanup_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
- bool monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
+ struct {u8 nhm_noise_ratio;} environment;s64 mesh_tsf_remainder;unsigned tim_updates;struct {bool queued;}mesh_sync_work,cleanup_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
+ bool scanning,monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;
  struct {unsigned valid;}security_roles[128];u8 security_unlink[128];
  unsigned chip,edca_valid;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;
@@ -87,6 +87,7 @@ static void __set_bit(unsigned i,bool *p){p[i]=true;}
 static void __clear_bit(unsigned i,bool *p){p[i]=false;}
 #define RTL_AX_SECURITY_ENTRIES 128
 static unsigned cancellations,stop_requests;
+static unsigned template_self[128];
 static unsigned bcn_enable,mbid_enable=0x70000,rx_mode,templates,fail_template,fail_command,commands,mbid_prepares,root_prepares,last_drop;static int mbid_error,drop_error;
 static unsigned command_class[32],command_function[32],command_word[32],command_macid[32],table_macid;
 static void rtl_ax_store32(u8 *p,u32 value){memcpy(p,&value,4);}
@@ -110,8 +111,9 @@ static int rtl_ax_station_tables(struct rtl_ax_ap *r,unsigned id){(void)r;table_
 static int rtl_ax_port0_drop_mbid(void *p,unsigned id){(void)p;last_drop=id;return drop_error;}
 static int rtl_ax_port0_vap_prepare(struct io *io,struct port *p,unsigned id,unsigned interval,unsigned dtim){(void)io;(void)p;assert(id&&id<8&&interval==100&&dtim==2);mbid_prepares++;return mbid_error;}
 static int rtl_ax_port0_beacon(struct io *io,unsigned id,bool en){(void)io;if(id){if(en)mbid_enable|=BIT(id);else mbid_enable&=~BIT(id);}else bcn_enable=en?BIT(12):0;return mbid_error;}
+static int rtl_ax_port0_root_resume(struct io *io,struct port *p,unsigned interval,unsigned dtim){(void)io;assert(p->ready&&interval==p->interval&&dtim==2);return 0;}
 static int rtl_ax_port0_start(struct io *io,struct port *port,void *r,int(*drop)(void*,unsigned),unsigned interval,unsigned dtim){
- (void)io;(void)port;(void)r;(void)drop;assert(interval==100&&dtim==2);root_prepares++;return 0;
+ (void)io;(void)port;(void)r;(void)drop;assert(interval==100&&dtim==2);root_prepares++;port->ready=true;port->interval=interval;return 0;
 }
 static struct ieee80211_vif *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){return vif;}
 static void cfg80211_stop_iface(void *wiphy,void *wdev,int gfp){(void)wiphy;(void)wdev;(void)gfp;stop_requests++;}
@@ -120,7 +122,7 @@ static int rtl_ax_tx_mcast_unbind_vif(struct tx *tx,void *dev){(void)tx;(void)de
 static void rtl_ax_tx_ap_address(struct tx *tx,u8 *addr){(void)tx;(void)addr;}
 static void rtl_ax_security_dctl(u8 *p,unsigned id,void *role){(void)id;(void)role;memset(p,0,68);}
 static int rtl_ax_ap_template(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_bss_conf *conf){
- (void)hw;(void)vif;(void)conf;templates++;return fail_template ? -ENOMEM : 0;
+ (void)hw;(void)conf;template_self[vif->drv_priv[0].identity.macid]++;templates++;return fail_template ? -ENOMEM : 0;
 }
 static void rtl_ax_port0_color(struct io *io,unsigned color){(void)io;(void)color;}
 static void rtl_ax_receive_mode(struct io *io,unsigned mode){(void)io;rx_mode=mode;}
@@ -142,7 +144,7 @@ static unsigned delivered_flags;
 static void ieee80211_rx_ni(struct ieee80211_hw *hw,struct sk_buff *skb){(void)hw;delivered_flags=skb->status.flag;}
 """
 code += r"""
-struct net_device {};struct ieee80211_sta;
+struct wiphy {};struct wiphy_work {};struct net_device {};struct ieee80211_sta;
 enum tc_setup_type { TC_SETUP_BLOCK };
 struct net_device_path_ctx {struct net_device *dev;};
 struct net_device_path {unsigned type;struct net_device *dev;};
@@ -152,6 +154,7 @@ static int rtl9617c_wifi_setup_tc(struct net_device *dev,enum tc_setup_type type
 """
 
 code += r"""
+#define container_of(p,t,m) ((t*)((char*)(p)-__builtin_offsetof(t,m)))
 #define BIT_ULL(n) (1ULL<<(n))
 #define min(a,b) ((a)<(b)?(a):(b))
 #define min_t(t,a,b) ((t)(a)<(t)(b)?(t)(a):(t)(b))
@@ -195,16 +198,58 @@ code += function("monitor.h", "rtl_ax_scan_complete_frame")
 
 for name in ("rtl_ax_role_unpause", "rtl_ax_role_create", "rtl_ax_role_join", "rtl_ax_role_cam"):
     code += function("role.h", name)
+code += function("pci.c", "rtl_ax_bss_summary")
 code += function("pci.c", "rtl_ax_cam_write")
 code += function("pci.c", "rtl_ax_bss_color_update")
 code += function("pci.c", "rtl_ax_self_role_release")
 code += function("pci.c", "rtl_ax_self_role_prepare")
 for name in ("rtl_ax_monitor_add_interface", "rtl_ax_ap_start", "rtl_ax_ap_stop", "rtl_ax_monitor_remove_interface", "rtl_ax_ap_changed"):
     code += function("monitor.h", name)
+code += function("monitor.h", "rtl_ax_tim_work")
 code += r"""
 static void reset_commands(void){commands=fail_command=0;}
 static void check_join(unsigned word,unsigned count){assert(commands==count);unsigned i=count-2;assert(command_class[i]==8&&command_function[i]==0&&command_word[i]==word);assert(command_class[i+1]==6&&command_function[i+1]==0);}
 int main(void){
+ /* Three live BSSes retain independent lifecycle and template state. */
+ for(unsigned stop_first=0;stop_first<3;stop_first++) {
+  struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=3,.monitor_started=true};
+  struct ieee80211_hw hw={&r};struct ieee80211_vif v[3]={};r.hw=&hw;
+  unsigned ids[3]={0,41,63};struct ieee80211_bss_conf conf={.beacon_int=100,.dtim_period=2,.enable_beacon=true};
+  for(unsigned i=0;i<3;i++) {
+   v[i].type=NL80211_IFTYPE_AP;v[i].drv_priv[0].identity=(struct rtl_ax_role_identity){.macid=ids[i],.mbid=i,.type=i?3:2};
+   v[i].addr[0]=2;v[i].addr[5]=i+1;v[i].bss_conf=conf;r.vif_owner[ids[i]]=&v[i];
+   reset_commands();assert(!rtl_ax_ap_start(&hw,&v[i],&conf));
+  }
+  r.ap_vif=&v[0];r.dfs.enabled=true;cancellations=0;
+  unsigned root_before=root_prepares,vap_before=mbid_prepares;
+  rtl_ax_ap_stop(&hw,&v[stop_first],&conf);
+  assert(r.ap_started&&r.beacon_enabled&&!r.dfs.in_cac&&!tx.blocked&&rx_mode==4&&!cancellations);
+  for(unsigned i=0;i<3;i++)assert(r.self_roles[ids[i]].started==(i!=stop_first));
+  unsigned counts[3];for(unsigned i=0;i<3;i++)counts[i]=template_self[ids[i]];
+  rtl_ax_tim_work(NULL,(void*)&r.beacon_work);
+  for(unsigned i=0;i<3;i++)assert(template_self[ids[i]]==counts[i]+(i!=stop_first));
+  reset_commands();assert(!rtl_ax_ap_start(&hw,&v[stop_first],&conf));
+  assert(root_prepares==root_before&&mbid_prepares==vap_before+(stop_first!=0));
+  bcmc_stop_error=-EIO;rtl_ax_ap_stop(&hw,&v[stop_first],&conf);
+  assert(r.self_roles[ids[stop_first]].stopping&&r.cleanup_work.queued&&r.ap_started);
+  bcmc_stop_error=0;reset_commands();assert(!rtl_ax_ap_start(&hw,&v[stop_first],&conf));
+  assert(!r.self_roles[ids[stop_first]].stopping);
+  /* Mesh TIM still uploads a template through the same owner iteration. */
+  v[2].type=NL80211_IFTYPE_MESH_POINT;unsigned mesh_templates=template_self[63];
+  rtl_ax_tim_work(NULL,(void*)&r.beacon_work);assert(template_self[63]==mesh_templates+1);
+  v[2].type=NL80211_IFTYPE_AP;
+  /* Shared interval mismatch is rejected before changing another BSS. */
+  conf.beacon_int=200;reset_commands();struct rtl_ax_self_role other=r.self_roles[ids[(stop_first+1)%3]];
+  assert(rtl_ax_ap_start(&hw,&v[stop_first],&conf)==-EBUSY&&!commands);
+  assert(!memcmp(&other,&r.self_roles[ids[(stop_first+1)%3]],sizeof(other)));
+  conf.beacon_int=100;reset_commands();assert(!rtl_ax_ap_start(&hw,&v[stop_first],&conf));
+  /* Removing root does not release VAP state or cancel its beacon work. */
+  reset_commands();rtl_ax_monitor_remove_interface(&hw,&v[0]);
+  assert(!r.vif_owner[0]&&!r.ap_vif&&r.self_roles[41].started&&r.self_roles[63].started&&rx_mode==4);
+  rtl_ax_ap_stop(&hw,&v[1],&conf);assert(r.ap_started&&!cancellations);
+  rtl_ax_ap_stop(&hw,&v[2],&conf);assert(!r.ap_started&&!r.beacon_enabled&&r.dfs.in_cac&&tx.blocked&&rx_mode==0&&cancellations==3);
+ }
+ root_prepares=mbid_prepares=0;cancellations=0;
  /* Real self-role state is indexed by self MACID, not the global AP0. */
  for(unsigned chip=3;chip<=4;chip++)for(unsigned failed=0;failed<=4;failed++){
   struct tx tx={};struct rtl_ax_ap r={.tx=&tx,.chip=chip,.monitor_started=true};
@@ -265,7 +310,7 @@ int main(void){
   struct ieee80211_hw hw={&r};struct ieee80211_bss_conf conf={.beacon_int=100,.dtim_period=2,.enable_beacon=true};r.hw=&hw;
   bcn_enable=BIT(12);mbid_enable=0x70000|BIT(1);
   rtl_ax_ap_changed(&hw,&vap,&conf,BSS_CHANGED_BEACON_ENABLED); /* before started: no switch */
-  r.ap_started=true;rtl_ax_ap_changed(&hw,&vap,&conf,BSS_CHANGED_BEACON_ENABLED);
+  r.self_roles[0].started=r.ap_started=true;rtl_ax_ap_changed(&hw,&vap,&conf,BSS_CHANGED_BEACON_ENABLED);
   assert((mbid_enable&BIT(mbid))&&bcn_enable==BIT(12));
   r.mbid_drop_pending=BIT(mbid);unsigned blocked=stop_requests;
   rtl_ax_ap_changed(&hw,&vap,&conf,BSS_CHANGED_BEACON_ENABLED);

@@ -76,6 +76,21 @@ static inline int rtl_ax_port0_vap_prepare(const struct rtl_ax_io *io,
 	return 0;
 }
 
+/* Root restart while VAPs retain this port's TSF/interval. The root's
+ * independent DTIM/HIQ fields follow the same original port0 layout. */
+static inline int rtl_ax_port0_root_resume(const struct rtl_ax_io *io,
+ struct rtl_ax_port0 *port, unsigned int interval, unsigned int dtim)
+{
+ int ret;
+ if(!port->ready)return -ENETDOWN;
+ if(interval!=port->interval || !dtim || dtim>255)return -EINVAL;
+ ret=rtl_ax_port0_beacon(io,0,false);if(ret)return ret;
+ io->write8(io->ctx,0xc590,50);
+ io->write8(io->ctx,0xc427,dtim);
+ port->dtim=dtim;
+ return 0;
+}
+
 /* Original mac_get_tsf@240928: port0 low/high at C438/C43C. */
 static inline u64 rtl_ax_port0_tsf(const struct rtl_ax_io *io)
 {
