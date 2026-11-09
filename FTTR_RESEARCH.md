@@ -291,6 +291,8 @@
 142. 补齐GetWebPassword/SetWebPassword：原厂MIB175/30字节构造、嵌套形式和ACK分支实执行；新增web-password脱敏查询、私有文件web-password-apply和常驻WebPassword。单次写入后独立比对，version7/bit22发送前持久化，崩溃只读恢复，Ready0不写，事件不输出密码；password_matches不等于登录验证。31网络场景、15字段校验、ASan/UBSan及Time/IPTV/端口/store回归和host/musl构建通过。原厂线协议明文JSON、持久化私有文件含目标值均明确记录。内核/PE未变、未实机或登录测试。详见[Web凭据同步](port/FTTR.md#original-web-password-synchronization-with-redacted-output)。
 143. 关闭此前完整PE暂停ACK离线验证缺口：最小MIPS指令复现定位到Unicorn2.1.4全地址写钩子在分支延迟槽栈写后触发异常；观察收窄到邮箱/NI门铃，未修改生产指令或削弱断言。完整RX回归与36组pe_main暂停/恢复通过（1/4/17包、描述符回绕、首尾/门铃暂停、命令回绕），确认门铃先于ACK、暂停期间不继续提交/回收、恢复后处理余包且PN/SN与514缓冲区归属正确。PE1排空、ARM暂停/NI恢复等6项回归与重建PE逐字节一致通过。此为验证工具修复，完整MCE/AFT/ES在途包退役和ID复用仍未证明；未实机。详见[完整暂停ACK验证](port/FTTR.md#full-pe-pause-ack-and-resume-validation)。
 
+144. 补齐原厂QosSync传输与常驻发送归属：执行控制器实际构造/编码/pending18回复，确认透传ahsapd.qos对象并强制字符串SyncFromMaster="1"，没有独立回读。新增qos-sync私有文件入口及常驻QoS，按WiFi→Radios→Time→IPTV/Ports→WebPassword→QoS→EasyMesh执行；Ready0不写，version8/bit23发送前持久化，重启保留结果未知并停止后续策略，不猜查询或自动重放。38 glibc/37打包musl网络场景、1976字节边界、输入不变/分配故障ASan/UBSan及六类既有管理回归通过；整包/FPGA伴随包重编与staging、67源码和四程序一致性、musl UCI联动通过。内核/PE未改、main仍为76ad78c、未实机；实际从端QoS安装/本地事件导入/硬件调度映射、全链路退场和ID复用仍未完成。详见[QoS同步](port/FTTR.md#original-qossync-transport-and-durable-send-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

@@ -9,7 +9,19 @@ code=r'''
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include "sync-client.h"
+static int failure, calls;
+static bool fail(void) {return failure && ++calls==failure;}
+struct json_object *__real_json_object_new_object(void);
+struct json_object *__wrap_json_object_new_object(void) {return fail()?NULL:__real_json_object_new_object();}
+struct json_object *__real_json_object_new_string(const char *s);
+struct json_object *__wrap_json_object_new_string(const char *s) {return fail()?NULL:__real_json_object_new_string(s);}
+int __real_json_object_object_add(struct json_object *o,const char *k,struct json_object *v);
+int __wrap_json_object_object_add(struct json_object *o,const char *k,struct json_object *v) {return fail()?-1:__real_json_object_object_add(o,k,v);}
+const char *__real_json_object_to_json_string_ext(struct json_object *o,int f);
+const char *__wrap_json_object_to_json_string_ext(struct json_object *o,int f) {return fail()?NULL:__real_json_object_to_json_string_ext(o,f);}
 static int decode(const char *text,size_t length,unsigned settings,bool *ack){
  const uint8_t peer[6]={2,0,0,0,0,1};
  struct fttr_sync_message m={.payload=(const uint8_t*)text,.length=length};
@@ -26,6 +38,43 @@ static int decode(const char *text,size_t length,unsigned settings,bool *ack){
  json_object_put(summary);json_object_put(observed);return ret;
 }
 int main(void){
+ int fd[2];assert(!socketpair(AF_UNIX,SOCK_DGRAM,0,fd));
+ struct json_object *input=json_tokener_parse("{\"ahsapd.qos\":{\"synthetic\":[1,null,\"two\"],\"SyncFromMaster\":\"0\"}}");
+ const uint8_t source[6]={2,0,0,0,0,1},target[6]={2,0,0,0,0,2};
+ char before[256];snprintf(before,sizeof(before),"%s",json_object_to_json_string_ext(input,JSON_C_TO_STRING_PLAIN));
+ for(int n=1;n<64;n++) {
+  calls=0;failure=n;
+  int result=fttr_sync_request(fd[0],source,target,0x88aa,5,15,input);
+  int count=calls;failure=0;
+  char frame[2048];ssize_t got=recv(fd[1],frame,sizeof(frame),MSG_DONTWAIT);
+  assert(!strcmp(before,json_object_to_json_string_ext(input,JSON_C_TO_STRING_PLAIN)));
+  if(count<n) {assert(!result && got>20);break;}
+  /* The first serialization is the pre-existing generic content shortcut;
+   * QosSync builds its own payload, so failure there is not consequential. */
+  if(n==1)assert(!result && got>20);
+  else assert(result==-ENOMEM && got<0 && errno==EAGAIN);
+  assert(n!=63);
+ }
+ json_object_put(input);close(fd[0]);close(fd[1]);
+ bool qos_ack=false;
+ const char *qos_replies[]={"{\"Result\":1}","{\"RPCMethod\":\"QosSync\",\"Result\":1}",
+  "{\"Result\":0}","{\"Result\":true}","{\"RPCMethod\":\"Register\"}",
+  "{\"RPCMethod\":\"WanIPChange\",\"Result\":1}","{\"RPCMethod\":\"QosSync\\u0000x\",\"Result\":1}","{}"};
+ const int qos_errors[]={0,0,-EREMOTEIO,-EBADMSG,-ESTALE,-EAGAIN,-EBADMSG,-EAGAIN};
+ for(unsigned i=0;i<sizeof(qos_errors)/sizeof(*qos_errors);i++) {
+  qos_ack=false;
+  assert(decode(qos_replies[i],strlen(qos_replies[i]),15,&qos_ack)==qos_errors[i]);
+  assert(qos_ack==!qos_errors[i]);
+ }
+ const char *qos_inputs[]={"{\"ahsapd.qos\":{}}","{\"ahsapd.qos\":{\"nested\":[null,true,42,\"test\"],\"SyncFromMaster\":\"0\"}}",
+  "{}","{\"ahsapd.qos\":null}","{\"ahsapd.qos\":[]}","{\"ahsapd.qos\":{},\"RPCMethod\":\"Other\"}"};
+ for(unsigned i=0;i<sizeof(qos_inputs)/sizeof(*qos_inputs);i++) {
+  struct json_object *q=json_tokener_parse(qos_inputs[i]);
+  char saved[256];snprintf(saved,sizeof(saved),"%s",json_object_to_json_string_ext(q,JSON_C_TO_STRING_PLAIN));
+  assert(fttr_sync_qos_validate(q)==(i<2?0:-EINVAL));
+  assert(!strcmp(saved,json_object_to_json_string_ext(q,JSON_C_TO_STRING_PLAIN)));
+  json_object_put(q);
+ }
  const char *valid="{\"Result\":1,\"MAC\":\"020000000001\",\"TimeEnable\":1,\"TimeZone\":24,\"NTPServer1\":\"192.0.2.1\",\"NTPServer2\":\"\"}";
  bool ack=false;assert(!decode(valid,strlen(valid),7,&ack)&&ack);
  struct {const char *text;int error;} tests[]={
@@ -103,10 +152,10 @@ int main(void){
   const char *text=json_object_to_json_string_ext(obj,JSON_C_TO_STRING_PLAIN);
   assert(decode(text,strlen(text),13,&ack)==-EBADMSG);json_object_put(obj);
  }
- puts("Settings/password parser ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
+ puts("Settings/password/QoS parser and allocation faults ASan/UBSan: incomplete/bare ACK, foreign method/MAC, malformed JSON/types/NUL/length and independent reply ownership PASS");
 }
 '''
 with tempfile.TemporaryDirectory() as tmp:
  p=Path(tmp);(p/'test.c').write_text(code)
- subprocess.run(['cc','-std=c11','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(src),str(p/'test.c'),*[str(src/(n+'.c')) for n in ('sync-client','sync-wire','sync-peer')],'-ljson-c','-o',str(p/'test')],check=True)
+ subprocess.run(['cc','-std=c11','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I'+str(src),str(p/'test.c'),*[str(src/(n+'.c')) for n in ('sync-client','sync-wire','sync-peer')],'-ljson-c',*[f'-Wl,--wrap={n}' for n in ('json_object_new_object','json_object_new_string','json_object_object_add','json_object_to_json_string_ext')],'-o',str(p/'test')],check=True)
  subprocess.run([str(p/'test')],check=True)

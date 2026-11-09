@@ -24,7 +24,7 @@ enum phase { IDLE, PREFLIGHT_SEND, PREFLIGHT, WRITE_SEND, WRITE, READBACK_SEND, 
 
 struct policy_peer {
 	uint8_t mac[6];
-	struct json_object *registration, *wifi, *mesh, *radios, *time, *iptv, *ports, *password;
+	struct json_object *registration, *wifi, *mesh, *radios, *time, *iptv, *ports, *password, *qos;
 	struct json_object *input, *record;
 	unsigned int attempted;
 	bool blocked;
@@ -59,7 +59,7 @@ static int64_t now_ms(void)
 
 static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYNC_PEERS])
 {
-	struct json_object *list, *entry, *mac, *registration, *wifi, *revision, *mesh, *radios, *time, *iptv, *ports, *password;
+	struct json_object *list, *entry, *mac, *registration, *wifi, *revision, *mesh, *radios, *time, *iptv, *ports, *password, *qos;
 	size_t i, j, k, count;
 	uint8_t address[6];
 
@@ -128,6 +128,12 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
    if(fttr_sync_web_password_validate(password))return -EINVAL;
    j++;
   }
+		qos = NULL;
+		if (json_object_object_get_ex(entry, "QoS", &qos)) {
+			int error = fttr_sync_qos_validate(qos);
+			if (error) return error;
+			j++;
+		}
 		mesh = NULL;
 		if (json_object_object_get_ex(entry, "EasyMesh", &mesh)) {
 			if (!json_object_is_type(mesh, json_type_boolean)) return -EINVAL;
@@ -148,7 +154,7 @@ static int policies(struct json_object *value, struct policy_peer peers[FTTR_SYN
 		peers[i].wifi = wifi;
 		peers[i].mesh = mesh;
 		peers[i].radios = radios;
-		peers[i].time = time;peers[i].iptv=iptv;peers[i].ports=ports;peers[i].password=password;
+		peers[i].time = time;peers[i].iptv=iptv;peers[i].ports=ports;peers[i].password=password;peers[i].qos=qos;
 		peers[i].input = entry;
 	}
 	return 0;
@@ -189,6 +195,14 @@ static bool password_configuration(const struct session *session)
  return session->policy->password && session->configuration==wifi+radios+(session->policy->time?1:0)+((session->policy->iptv || session->policy->ports)?1:0);
 }
 
+static bool qos_configuration(const struct session *session)
+{
+	unsigned int wifi = session->policy->wifi ? json_object_array_length(session->policy->wifi) : 0;
+	unsigned int radios = session->policy->radios ? json_object_array_length(session->policy->radios) : 0;
+	return session->policy->qos && session->configuration == wifi + radios +
+		!!session->policy->time + !!(session->policy->iptv || session->policy->ports) + !!session->policy->password;
+}
+
 static bool radio_configuration(const struct session *session)
 {
  unsigned int wifi=session->policy->wifi?json_object_array_length(session->policy->wifi):0;
@@ -202,12 +216,13 @@ static struct json_object *desired(const struct session *session)
 	if (session->configuration<wifi) return json_object_array_get_idx(session->policy->wifi,session->configuration);
 	unsigned int radio=session->configuration-wifi;
 	return session->policy->radios && radio<json_object_array_length(session->policy->radios)?
-		json_object_array_get_idx(session->policy->radios,radio):time_configuration(session)?session->policy->time:iptv_configuration(session)?session->policy->iptv:ports_configuration(session)?session->policy->ports:password_configuration(session)?session->policy->password:NULL;
+		json_object_array_get_idx(session->policy->radios,radio):time_configuration(session)?session->policy->time:iptv_configuration(session)?session->policy->iptv:ports_configuration(session)?session->policy->ports:password_configuration(session)?session->policy->password:qos_configuration(session)?session->policy->qos:NULL;
 }
 
 static unsigned int configuration_bit(const struct session *session)
 {
 	unsigned int wifi=session->policy->wifi?json_object_array_length(session->policy->wifi):0;
+	if(qos_configuration(session))return 1U<<23;
 	if(password_configuration(session))return 1U<<22;
 	if(ports_configuration(session))return 1U<<21;
 	if(iptv_configuration(session))return 1U<<20;
@@ -246,6 +261,13 @@ static void event(const char *name, const struct session *session, const struct 
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
 		json_object_object_add(value, "advertised_ready", json_object_get(ready));
 		json_object_object_add(value, "peer_acceptance_verified", json_object_new_boolean(0));
+	}
+	if (!strcmp(name, "sync_resident_qos")) {
+		json_object_object_add(value, "setting", json_object_new_string("QoS"));
+		json_object_object_add(value, "ack_seen", json_object_new_boolean(session->ack_seen));
+		json_object_object_add(value, "prior_write_outcome_unknown", json_object_new_boolean(session->phase == RECOVER_SEND));
+		json_object_object_add(value, "write_replayed", json_object_new_boolean(0));
+		json_object_object_add(value, "scheduler_verified", json_object_new_boolean(0));
 	}
 	if (!strcmp(name, "sync_resident_easymesh")) {
 		json_object_object_add(value, "requested_enabled", json_object_get(session->policy->mesh));
@@ -336,8 +358,16 @@ static void revoke(struct session *session, const struct fttr_sync_peer *peer, i
 
 static void next_configuration(struct session *session)
 {
-	if (desired(session))
-		phase(session, session->policy->attempted & configuration_bit(session) ? RECOVER_SEND : PREFLIGHT_SEND);
+	if (desired(session)) {
+		struct json_object *ready;
+		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
+		if (session->policy->attempted & configuration_bit(session))
+			phase(session, RECOVER_SEND);
+		else if (qos_configuration(session))
+			phase(session, json_object_get_int(ready) ? WRITE_SEND : IDLE);
+		else
+			phase(session, PREFLIGHT_SEND);
+	}
 	else {
 		struct json_object *ready;
 		json_object_object_get_ex(session->policy->registration, "Ready", &ready);
@@ -378,7 +408,16 @@ static void completed(struct session *session, const struct fttr_sync_peer *peer
 		}
 	} else if (session->phase == WRITE) {
 		session->write_result = result;
-		phase(session, READBACK_SEND);
+		if (qos_configuration(session)) {
+			event("sync_resident_qos", session, peer, slot, result, -EOPNOTSUPP);
+			if (result) {
+				session->policy->blocked = true;
+				phase(session, IDLE);
+			} else {
+				session->configuration++;
+				next_configuration(session);
+			}
+		} else phase(session, READBACK_SEND);
 	} else if (session->phase == READBACK) {
 		event("sync_resident_apply", session, peer, slot, session->write_result ? session->write_result : result, result);
 		if (result || session->write_result) {
@@ -455,12 +494,13 @@ static int receive_message(int fd, const uint8_t source[6], uint16_t ethertype,
 		return 0;
 	message.slot = slot;
 	bool info_phase = session->phase == INFO || session->phase == MESH_READ;
-	bool password=desired(session) && password_configuration(session);
+	bool qos=desired(session) && qos_configuration(session);
+ bool password=desired(session) && password_configuration(session);
  bool ports=desired(session) && ports_configuration(session);
  bool iptv=desired(session) && iptv_configuration(session);
  bool time=desired(session) && time_configuration(session);
  bool radio=desired(session) && radio_configuration(session);
-	ret = fttr_sync_reply_decode(&message, peer->mac, info_phase ? 3 : session->phase == MESH ? 2 : password?(session->phase==WRITE?14:13):ports?(session->phase==WRITE?12:11):iptv?(session->phase==WRITE?10:9):time?(session->phase==WRITE?8:7):radio?(session->phase==WRITE?5:4):1, session->phase == WRITE || session->phase == MESH,
+	ret = fttr_sync_reply_decode(&message, peer->mac, info_phase ? 3 : session->phase == MESH ? 2 : qos?15:password?(session->phase==WRITE?14:13):ports?(session->phase==WRITE?12:11):iptv?(session->phase==WRITE?10:9):time?(session->phase==WRITE?8:7):radio?(session->phase==WRITE?5:4):1, session->phase == WRITE || session->phase == MESH,
 		&session->ack_seen, &summary, &observed);
 	json_object_put(summary);
 	if (session->ack_seen)
@@ -499,7 +539,7 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 			struct policy_peer *peer = &configured[slot];
 
 			if ((!peer->wifi || !json_object_array_length(peer->wifi)) && !peer->mesh &&
-			    (!peer->radios || !json_object_array_length(peer->radios)) && !peer->time && !peer->iptv && !peer->ports && !peer->password)
+			    (!peer->radios || !json_object_array_length(peer->radios)) && !peer->time && !peer->iptv && !peer->ports && !peer->password && !peer->qos)
 				continue;
 			ret = fttr_sync_store_load(store, source, peer->mac, ethertype, peer->input, &peer->record, &peer->attempted);
 			if (ret)
@@ -591,6 +631,14 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 							wake = session->receivers[i].deadline;
 					continue;
 				}
+				/* QosSync has no proven read RPC. Retained intent prevents a
+				 * second write after a crash, including a lost successful ACK. */
+				if (current == RECOVER_SEND && qos_configuration(session)) {
+					event("sync_resident_qos", session, &peers[slot], slot, -EINPROGRESS, -EOPNOTSUPP);
+					session->policy->blocked = true;
+					phase(session, IDLE);
+					continue;
+				}
 				if ((current == WRITE_SEND || current == MESH_SEND) && store >= 0 &&
 				    !(session->policy->attempted & bit)) {
 					ret = fttr_sync_store_mark(store, peers[slot].mac, session->policy->record,
@@ -610,12 +658,13 @@ int fttr_sync_controller(int fd, const uint8_t source[6], uint16_t ethertype, st
 					json_object_object_add(mesh_request, "EnableEasymesh", json_object_new_string(
 						json_object_get_boolean(session->policy->mesh) ? "1" : "0"));
 				}
-				bool password=desired(session) && password_configuration(session);
+				bool qos=desired(session) && qos_configuration(session);
+ bool password=desired(session) && password_configuration(session);
  bool ports=desired(session) && ports_configuration(session);
  bool iptv=desired(session) && iptv_configuration(session);
  bool time=desired(session) && time_configuration(session);
  bool radio=desired(session) && radio_configuration(session);
-				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, (current == INFO_SEND || current == MESH_READ_SEND) ? 3 : current == MESH_SEND ? 2 : password?(current==WRITE_SEND?14:13):ports?(current==WRITE_SEND?12:11):iptv?(current==WRITE_SEND?10:9):time?(current==WRITE_SEND?8:7):radio?(current==WRITE_SEND?5:4):1,
+				ret = fttr_sync_request(fd, source, peers[slot].mac, ethertype, slot, (current == INFO_SEND || current == MESH_READ_SEND) ? 3 : current == MESH_SEND ? 2 : qos?15:password?(current==WRITE_SEND?14:13):ports?(current==WRITE_SEND?12:11):iptv?(current==WRITE_SEND?10:9):time?(current==WRITE_SEND?8:7):radio?(current==WRITE_SEND?5:4):1,
 					mesh_request ? mesh_request : current == WRITE_SEND ? desired(session) : NULL);
 				json_object_put(mesh_request);
 				if (ret)

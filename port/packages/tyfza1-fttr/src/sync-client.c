@@ -134,7 +134,7 @@ out:
 	json_object_put(filtered);return ret;
 }
 
-static int wan_reply(struct json_object *value, bool *ack_seen)
+static int notification_reply(struct json_object *value, const char *method, bool *ack_seen)
 {
 	struct json_object *field;
 
@@ -144,7 +144,7 @@ static int wan_reply(struct json_object *value, bool *ack_seen)
 			return -EBADMSG;
 		if (!strcmp(json_object_get_string(field), "Register"))
 			return -ESTALE;
-		if (strcmp(json_object_get_string(field), "WanIPChange"))
+		if (strcmp(json_object_get_string(field), method))
 			return -EAGAIN;
 	}
 	if (!json_object_object_get_ex(value, "Result", &field))
@@ -155,6 +155,60 @@ static int wan_reply(struct json_object *value, bool *ack_seen)
 		return -EREMOTEIO;
 	*ack_seen = true;
 	return 0;
+}
+
+/* The factory forwards the ahsapd.qos object without interpreting its policy
+ * fields. Preserve that boundary; no mapping to native scheduler registers is
+ * implied by this transport. SyncFromMaster is imposed on a private copy. */
+static struct json_object *qos_request(struct json_object *value, const char *mac)
+{
+	struct json_object *fields, *request, *copy;
+	if (!value || !json_object_is_type(value, json_type_object) ||
+	    json_object_object_length(value) != 1 ||
+	    !json_object_object_get_ex(value, "ahsapd.qos", &fields) ||
+	    !json_object_is_type(fields, json_type_object))
+		return NULL;
+	request = json_object_new_object();
+	copy = json_object_new_object();
+	if (!request || !copy) {
+		json_object_put(request); json_object_put(copy); return NULL;
+	}
+	json_object_object_foreach(fields, key, field) {
+		struct json_object *held = json_object_get(field);
+		if (json_object_object_add(copy, key, held)) {
+			json_object_put(held); goto failed;
+		}
+	}
+	const char *keys[] = { "SyncFromMaster", "RPCMethod", "MAC" };
+	const char *values[] = { "1", "QosSync", mac };
+	for (unsigned int i = 0; i < 3; i++) {
+		struct json_object *field = json_object_new_string(values[i]);
+		if (!field) goto failed;
+		if (json_object_object_add(i ? request : copy, keys[i], field)) {
+			json_object_put(field); goto failed;
+		}
+	}
+	if (json_object_object_add(request, "ahsapd.qos", copy)) goto failed;
+	return request;
+failed:
+	json_object_put(copy); json_object_put(request); return NULL;
+}
+
+int fttr_sync_qos_validate(struct json_object *value)
+{
+	struct json_object *fields, *request;
+	if (!value || !json_object_is_type(value, json_type_object) ||
+	    json_object_object_length(value) != 1 ||
+	    !json_object_object_get_ex(value, "ahsapd.qos", &fields) ||
+	    !json_object_is_type(fields, json_type_object))
+		return -EINVAL;
+	request = qos_request(value, "000000000000");
+	if (!request) return -ENOMEM;
+	const char *text = json_object_to_json_string_ext(request, JSON_C_TO_STRING_PLAIN);
+	size_t length = text ? strlen(text) : 0;
+	json_object_put(request);
+	if (!text) return -ENOMEM;
+	return length > FTTR_SYNC_FRAME_MAX - FTTR_SYNC_HEADER ? -EMSGSIZE : 0;
 }
 
 /* This notification reports an address, including an unspecified address on
@@ -372,8 +426,8 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    !json_object_is_type(value, json_type_object))
 		goto out;
 	if(settings>=7 && settings<=14) {ret=settings_reply(value,peer,settings,ack_seen,summary,observed);goto out;}
-	if (settings == 6) {
-		ret = wan_reply(value, ack_seen);
+	if (settings == 6 || settings == 15) {
+		ret = notification_reply(value, settings == 15 ? "QosSync" : "WanIPChange", ack_seen);
 		goto out;
 	}
 	if (settings==4 || settings==5) {
@@ -577,11 +631,23 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 14 || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14) && !configuration)) return -EINVAL;
+	if (settings > 15 || ((settings == 2 || settings == 5 || settings == 6 || settings == 8 || settings == 10 || settings == 12 || settings == 14 || settings == 15) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
- if(settings>=7 && settings<=14) {
+ if (settings == 15) {
+  struct json_object *request;
+  char mac[13];
+  ret=fttr_sync_qos_validate(configuration);
+  if(ret)return ret;
+  snprintf(mac,sizeof(mac),"%02X%02X%02X%02X%02X%02X",source[0],source[1],source[2],source[3],source[4],source[5]);
+  request=qos_request(configuration,mac);
+  if(!request)return -ENOMEM;
+  const char *text=json_object_to_json_string_ext(request,JSON_C_TO_STRING_PLAIN);
+  if(!text) {json_object_put(request);return -ENOMEM;}
+  length=snprintf(payload,sizeof(payload),"%s",text);
+  json_object_put(request);
+ } else if(settings>=7 && settings<=14) {
   bool password=settings>=13,ports=settings==11 || settings==12,iptv=settings==9 || settings==10,writing=settings==8 || settings==10 || settings==12 || settings==14;
   if(writing && (password?fttr_sync_web_password_validate(configuration):ports?fttr_sync_iptv_ports_validate(configuration):iptv?fttr_sync_iptv_validate(configuration):fttr_sync_time_validate(configuration)))return -EINVAL;
   struct json_object *request=json_object_new_object();if(!request)return -ENOMEM;
@@ -623,7 +689,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], settings, content);
 	if (length < 0 || (size_t)length >= sizeof(payload))
 		return -E2BIG;
-	ret = fttr_sync_pack(source, settings>=4 && settings<=6?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
+	ret = fttr_sync_pack(source, (settings>=4 && settings<=6) || settings==15?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
 		payload, length, frame, sizeof(frame));
 	if (ret < 0)
 		return ret;

@@ -9118,6 +9118,68 @@ reuse and physical timing/traffic acceptance remain incomplete. Production
 kernel/PE sources are unchanged in this increment and no physical device was
 accessed.
 
+### Original QosSync transport and durable send ownership
+
+The retained controller's `build_QosSyncSetting` at `0x4128a0` obtains
+`ahsapd.qos` from the output of `ubus call ahsapd.qos getQosConfig`, preserves
+the object's fields and overwrites `SyncFromMaster` with the **string** `"1"`.
+Its envelope has `RPCMethod: "QosSync"`, the master's MAC and that object.
+Pending method18 consumes Result replies without an independent configuration
+readback. `tools/trace_stock_fttr_qos.py` executes those target instructions,
+the original Ethernet encoder and reply dispatcher. Ubus/file/JSON boundaries
+are modeled; the synthetic inner fields are not an asserted vendor QoS schema.
+
+Native explicit synchronization accepts a private JSON file containing exactly
+the `ahsapd.qos` object exported by the matching implementation:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa qos-sync /etc/fttr-qos.json
+```
+
+The target receives one unicast request. The object is copied before imposing
+`SyncFromMaster`, so the caller's configuration and durable record remain
+unchanged. Missing/non-object payloads fail before transmission. The final
+encoded JSON must fit the existing1976-byte single-frame payload limit; a
+larger policy fails with EMSGSIZE, without truncation or partial transmission.
+Original request fragmentation and arbitrary QoS field semantics have not
+been established. Allocation/copy/serialization failures also prevent sending.
+The exchange has the existing three-second limit, filters Ethernet source and
+explicit RPCMethod, supports existing response reassembly, and aborts on a new
+registration. A successful ACK reports `ack_seen`; `scheduler_verified` and
+`configuration_verified` remain false. Output contains no raw policy values.
+
+Resident peers can add `"QoS": {"ahsapd.qos": {...}}` to their private policy.
+Scheduling is WiFi, Radios, Time, IPTV or IPTVPorts, WebPassword, QoS, EasyMesh.
+QoS requires matching pinned registration and Ready1. Version8 records retain
+the requested object and bit23 write intent, synced before transmission. A
+timeout, rejection or re-registration cannot trigger automatic retransmission.
+On restart an existing intent emits `sync_resident_qos` with EINPROGRESS and
+`prior_write_outcome_unknown: true`, sends neither a second write nor an
+invented query, and blocks later settings in that policy. Even an ACK observed
+before restart is not proof of installed QoS. A changed revision explicitly
+permits a new transaction; changed configuration under the same revision is
+rejected. Without `--state`, suppression lasts only for the process lifetime.
+
+Validation: five original builders including nested/escaped fields and the
+forced marker, missing source/parse/object failures, original wire bytes and
+pending18 ACK/rejection branches;38 actual glibc CLI/resident/veth cases and37
+equivalent packaged musl cases (glibc fsync injection is separate), including
+the exact envelope size limit, wrong source/method, fragmented ACK, failed
+identity, Ready0, crash/restart, fsync failure, revision drift and all seven
+configuration stages. ASan/UBSan checks exercise malformed replies, immutable
+input and each native JSON allocation/copy/serialization failure. Existing
+WAN26, Time27, WebPassword31, resident37, store38 and EasyMesh19 CLI/12 info/20
+resident cases pass. The packaged musl UCI converter/resident test also passes.
+
+The FTTR package and retained FPGA companion rebuild and stage successfully;
+67 package source/header inputs match current source, and all four installed
+programs match their package staging files. Reports are
+`artifacts/fttr/qos-{original,native,musl,regressions,policy,package-identity}-20261109.json`
+and `qos-package-20261109.log`. This refreshes the userspace packages, not the
+complete kernel/rootfs/FIT image. No kernel/PE production code changed and no
+physical device was accessed. Actual subordinate policy installation, local
+configuration event import and native hardware scheduler mapping remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -9174,7 +9236,10 @@ accessed.
    Get/Set/readback transactions as described above; physical clock synchronization
    and automatic local-time policy extraction remain unverified or incomplete.
    Explicit WanIPChange notifications, Radio configuration and EasyMesh
-   transactions with independent reported-state readback are implemented. The original ff69/ff6a Wi-Fi update transaction is implemented with
+   transactions with independent reported-state readback are implemented.
+   QosSync's original opaque transport and durable resident send ownership are
+   implemented above; its ACK does not establish scheduler installation.
+   The original ff69/ff6a Wi-Fi update transaction is implemented with
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
    settings mapping and
    actual subordinate capability/behavior verification remain work.
