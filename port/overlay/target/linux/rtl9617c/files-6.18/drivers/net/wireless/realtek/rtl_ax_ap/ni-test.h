@@ -217,6 +217,7 @@ static int ni_uplink_stop(struct rtl_ax_tx *tx)
 	void *memory;
 	u32 status;
 	int ret;
+	tx->ni.uplink_ready = false;
 	if (!tx->ni.uplink_memory) return 0;
 	memory = rtl_ax_rx_pe_memory(tx->rx);
 	put_unaligned_le32(0, memory + PE_PROBE_MAILBOX + 372);
@@ -226,6 +227,7 @@ static int ni_uplink_stop(struct rtl_ax_tx *tx)
 	ret = readl_poll_timeout(tx->ni.vp + 0x1c, status, (status & RTL_AX_NI_TX_MASK) == (readl(tx->ni.vp + 0x18) & RTL_AX_NI_TX_MASK), 10, 100000);
 	if (ret) { rtl_ax_tx_open(tx); return ret; }
 	writel(0, tx->ni.vp);
+	if (readl(tx->ni.vp) & BIT(0)) { rtl_ax_tx_open(tx); return -EIO; }
 	put_unaligned_le32(0, memory + PE_PROBE_MAILBOX + 352);
 	put_unaligned_le32(get_unaligned_le32(memory + PE_PROBE_MAILBOX + 360),
 		memory + PE_PROBE_MAILBOX + 364);
@@ -268,7 +270,13 @@ static int ni_uplink_start(struct rtl_ax_tx *tx)
 	u32 status;
 	int ret;
 
-	if (tx->ni.uplink_memory) return 0;
+	if (tx->ni.uplink_memory) {
+		if (tx->ni.uplink_ready) return 0;
+		/* A failed load/stop retains allocation and saved registers. It is
+		 * not a live queue: finish that rollback before taking a new snapshot. */
+		ret = ni_uplink_stop(tx);
+		if (ret) return ret;
+	}
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) return ret;
 	tx->ni.uplink_memory = dma_alloc_coherent(tx->dma_device, RTL_AX_NI_TX_BYTES, &tx->ni.uplink_dma, GFP_KERNEL);
@@ -298,6 +306,11 @@ static int ni_uplink_start(struct rtl_ax_tx *tx)
 	dma_wmb();
 	put_unaligned_le32(0xb3001100 + tx->ni.vp_index * 0xa0, mailbox + 352);
 	writel(1, tx->ni.vp);
+	if (!(readl(tx->ni.vp) & BIT(0))) {
+		ni_uplink_stop(tx);
+		return -EIO;
+	}
+	tx->ni.uplink_ready = true;
 	rtl_ax_tx_open(tx);
 	return 0;
 }

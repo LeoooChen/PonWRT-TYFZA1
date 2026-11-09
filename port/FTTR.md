@@ -9875,6 +9875,43 @@ PE firmware is unchanged and no physical device was accessed. This preserves
 existing queued data and partial-start ownership; it does not prove all upstream
 producers stopped, safe ID reuse, or full physical startup/teardown acceptance.
 
+### Uplink allocation is distinct from a successfully running NI queue
+
+`ni_uplink_start` previously returned success whenever its descriptor memory
+existed, including memory retained after a failed queue load or stop. That
+allowed a later peer-enable attempt to treat a disabled/uninitialized queue
+as usable. The old production functions from `6cd836b` reproduce the false
+success after load failure in `test_ni_uplink_pattern.py --revision 6cd836b`.
+
+The driver now tracks `uplink_ready` separately from allocation. Stop clears
+readiness before any fallible operation. Start with retained, non-ready memory
+must complete the previous stop/rollback before allocating and snapshotting a
+new queue. Failed cleanup preserves the original allocation and saved registers
+and returns its error. VP disable is read back before clearing the published
+mailbox pointer or releasing descriptor memory; VP enable is read back before
+declaring readiness. Failed enable enters the same retained cleanup path.
+Successfully running starts remain idempotent.
+
+Validation covers12 failures/retries over both VP9/10, including failed initial
+load, PE pause, incomplete DMA cursor, rejected disable/enable and stuck base
+access. Tests verify retained allocation/snapshot identity, no second allocation
+or false success while cleanup fails, eventual restart and exact restoration of
+unrelated selector bits. The actual ARM `uplink_counter_start` followed by linked
+PE completion executes40 old/new cursor and one/two-tail cases; all514 RX buffers
+remain accounted for and held payloads return only after the preserved two-slot
+distance. Actual original DMA completion runs4096 cursor/reclaim pairs, retaining
+the documented two descriptors and recording its four synthetic short-distance
+wrap defects rather than treating those defects as native requirements.
+
+Eleven related suites pass, including NI preparation/restore/retirement,
+publication/ownership, BCMC, RX handoff, pause and the full linked RXQ test.
+ASan/UBSan cover native start/stop. Final Image/modules build passes and both
+changed driver inputs match the compiled tree. PE firmware is unchanged;
+artifacts are `artifacts/fttr/uplink-ready-*-20261109.*`. No physical device was
+accessed. This fixes retry readiness and checks the existing tail preservation;
+it does not establish complete upstream/downstream packet retirement or safe
+hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

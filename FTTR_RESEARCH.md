@@ -321,6 +321,8 @@
 
 158. 补齐NI准备阶段八队列与回滚归属：准备前核对ES关闭/空及全部EPP，保留实际RD而不追平WR，八组base/profile快照先于可失败配置，拒绝覆盖已有映射。单播在prepare前持有netdev，复用统一ni_prepare_failed，回滚失败保留引用/cleanup请求且不无条件重开，完成后才可重试。fc6c4b6生产prepare/route均复现旧问题；96完整准备场景、实际回滚失败/cleanup/重新准入及十一回归、Image/模块/两输入一致通过。PE未改、未实机；完整生产者屏障、ID复用和物理启停仍未证明。详见[NI准备归属](port/FTTR.md#ni-preparation-retains-every-queue-and-failed-rollback-owner)。
 
+159. 修复上行DMA残留分配被误判为已启动：新增uplink_ready，stop先撤就绪，失败start/stop保留旧内存与寄存器快照，再次start先完成清理，VP启停读回确认后才发布就绪/释放。6cd836b生产函数已复现失败加载后再次start假成功；两VP共12故障/恢复、ARM游标重建→链接PE的40尾缓冲区代际场景及514库存、原厂4096完成对照、十一回归与Image/模块/两输入一致通过。PE未改、未实机；预取保留规则不变，完整生产者/下游屏障和ID安全复用仍未证明。详见[上行就绪归属](port/FTTR.md#uplink-allocation-is-distinct-from-a-successfully-running-ni-queue)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
