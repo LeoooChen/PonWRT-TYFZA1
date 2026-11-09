@@ -35,6 +35,30 @@ static void ni_state_init(struct rtl_ax_tx *tx)
  INIT_WORK(&state->ps_work, ni_route_ps);
 }
 
+/* A failed FE publication can already own hardware rules. Pin its exact
+ * interface/address before publishing and retain it across every retry. */
+static int ni_peer_bind(struct rtl_ax_tx *tx, struct net_device *dev, unsigned int macid)
+{
+ const u8 *address;
+ if(!dev || !macid || macid>=128)return -EINVAL;
+ address=tx->pe.memory+0xe400+macid*8;
+ if(tx->ni.peer_dev[macid])
+  return tx->ni.peer_dev[macid]==dev && ether_addr_equal(tx->ni.peer_address[macid],address)?0:-ESTALE;
+ dev_hold(dev);tx->ni.peer_dev[macid]=dev;
+ ether_addr_copy(tx->ni.peer_address[macid],address);
+ return 0;
+}
+static void ni_peer_put(struct rtl_ax_tx *tx, unsigned int macid)
+{
+ if(tx->ni.peer_dev[macid])dev_put(tx->ni.peer_dev[macid]);
+ tx->ni.peer_dev[macid]=NULL;
+}
+static int ni_peer_withdraw(struct rtl_ax_tx *tx, unsigned int macid)
+{
+ if(!tx->ni.peer_dev[macid])return -ESTALE;
+ return rtl9617c_wifi_peer_route(tx->ni.peer_dev[macid],tx->ni.peer_address[macid],0);
+}
+
 static void ni_test_buffered(struct rtl_ax_tx *tx, unsigned int macid, u16 tids)
 {
 	struct ieee80211_sta *sta;
@@ -222,7 +246,7 @@ static void uplink_counter_start(struct rtl_ax_tx *tx, u32 start)
 	put_unaligned_le32(start, memory + PE_PROBE_MAILBOX + 472);
 }
 
-static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
+static int ni_uplink_start(struct rtl_ax_tx *tx)
 {
 	u8 *mailbox = rtl_ax_rx_pe_memory(tx->rx) + PE_PROBE_MAILBOX;
 	u32 status;
@@ -252,9 +276,9 @@ static int ni_uplink_start(struct rtl_ax_tx *tx, unsigned int wifi_id)
 	writel(0, tx->ni.vp + 0x78);
 	put_unaligned_le32(tx->ni.uplink_dma, mailbox + 356);
 	uplink_counter_start(tx, readl(tx->ni.vp + 0x1c) & RTL_AX_NI_TX_MASK);
-	put_unaligned_le32(wifi_id, mailbox + 368);
+	put_unaligned_le32(0, mailbox + 368); /* legacy single-interface field */
 	put_unaligned_le32(1, mailbox + 372);
-	rtl_ax_rx_uplink_peer(tx->rx, wifi_id, tx->hw);
+	rtl_ax_rx_uplink_start(tx->rx, tx->hw);
 	dma_wmb();
 	put_unaligned_le32(0xb3001100 + tx->ni.vp_index * 0xa0, mailbox + 352);
 	writel(1, tx->ni.vp);
@@ -454,7 +478,11 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	if (tx->ni.route_dev) rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
 	if (!tx->ni.active) return 0;
 	ret = ni_test_release(tx);
-	if (!ret) return rtl_ax_tx_pause(tx);
+ if(!ret) {
+  for(i=1;i<128;i++)ni_peer_put(tx,i);
+  if(tx->ni.route_dev){dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;}
+  return rtl_ax_tx_pause(tx);
+ }
 	/* PCIe DMA is already closed by radio teardown. Stop NI publication
 	 * before releasing the PE mailbox, its IRQ action, or the EPP memory. */
 	writel(readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu), tx->ni.regs + 0x6108);
@@ -526,6 +554,7 @@ static int ni_test_remove(struct rtl_ax_tx *tx)
 	}
 	ret = ni_restore_registers(tx);
 	if (ret) return ret;
+	for(i=1;i<128;i++)ni_peer_put(tx,i);
 	if (tx->ni.route_dev) { dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL; }
 	if (tx->ni.test_memory) dma_free_coherent(tx->dma_device, TEST_MEMORY_BYTES, tx->ni.test_memory, tx->ni.test_dma);
 	iounmap(tx->ni.dma); iounmap(tx->ni.regs);
@@ -569,10 +598,10 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			goto release;
 		}
 		for (i = 1; i < 128; i++) {
-			if (!tx->ni.route_peers[i]) continue;
+			if (!tx->ni.peer_dev[i]) continue;
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
 			dma_wmb();
-			ret = rtl9617c_wifi_peer_route(tx->ni.route_dev, tx->pe.memory + 0xe400 + i * 8, false);
+			ret = ni_peer_withdraw(tx,i);
 			if (ret) goto unlock;
 		}
 		/* FE no longer submits this peer. Return its queued, unsent BIDs even
@@ -604,6 +633,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			if (tx->ni.route_peers[i]) ni_test_buffered(tx, i, false);
 			WRITE_ONCE(tx->ni.route_peers[i], false);
 			WRITE_ONCE(tx->peer_offloaded[i], false);
+			ni_peer_put(tx,i);
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
 		}
 		WRITE_ONCE(tx->ni.route_macid, 0);
@@ -640,6 +670,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		 * Starting the shared NI rings does not authorize other templates. */
 		if (i != macid || !tx->peer_authorized[i] ||
 		    !(get_unaligned_le32(tx->pe.memory + 0xd000 + i * 32 + 16) & BIT(18))) continue;
+		ret=ni_peer_bind(tx,netdev,i);if(ret)goto unlock;
 		put_unaligned_le32(1, tx->pe.memory + 0x11a00 + i * 4);
 		dma_wmb();
 		WRITE_ONCE(tx->ni.route_peers[i], true);
@@ -654,6 +685,9 @@ unlock:
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid)
 {
 	int id, ret;
+	if(!netdev || !macid || macid>=128)return -EINVAL;
+	if(tx->ni.peer_dev[macid] && (tx->ni.peer_dev[macid]!=netdev ||
+	   !ether_addr_equal(tx->ni.peer_address[macid],tx->pe.memory+0xe400+macid*8)))return -ESTALE;
 	/* Preserve the active retirement fence; existing peers keep their routes. */
 	if (READ_ONCE(tx->ni.retire_quiescing) || READ_ONCE(tx->bcmc_prepare_failed) ||
 	    READ_ONCE(tx->key_refresh_pending)) return -EAGAIN;
@@ -670,7 +704,9 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	if (tx->ni.retire_quiescing) { mutex_unlock(&ni_test_lock); return -EAGAIN; }
 	ret = ni_mcast_bind(tx, netdev);
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
-	ret = ni_uplink_start(tx, id);
+	ret=ni_peer_bind(tx,netdev,macid);
+	if(ret){mutex_unlock(&ni_test_lock);return ret;}
+	ret = ni_uplink_start(tx);
 	if (ret) { mutex_unlock(&ni_test_lock); return ret; }
 	put_unaligned_le32(1, tx->pe.memory + 0x11a00 + macid * 4);
 	dma_wmb();
@@ -679,8 +715,8 @@ int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned 
 	WRITE_ONCE(tx->ni.route_peers[macid], true);
 	ret = rtl9617c_wifi_peer_route(netdev, tx->pe.memory + 0xe400 + macid * 8, 16 + tx->ni.cpu);
 	if (!ret) {
-		WRITE_ONCE(tx->peer_offloaded[macid], true);
-		rtl_ax_rx_uplink_enable(tx->rx, macid);
+		ret=rtl_ax_rx_uplink_enable(tx->rx, macid, id);
+		if(!ret)WRITE_ONCE(tx->peer_offloaded[macid], true);
 	}
 	mutex_unlock(&ni_test_lock);
 	return ret ? ret : 1;
@@ -746,7 +782,8 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	unsigned int i;
 	u32 status;
 	int ret = 0;
-	if (!READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) return 0;
+	if(!macid || macid>=128)return -EINVAL;
+	if (!READ_ONCE(tx->ni.peer_dev[macid]) && !READ_ONCE(tx->ni.route_peers[macid]) && !rtl_ax_rx_uplink_active(tx->rx, macid)) return 0;
 	if (!keep_rx) rtl_ax_rx_uplink_disable(tx->rx, macid);
 	/* Key/BA retirement must stop admission before attempting FE withdrawal. */
 	rtl_ax_tx_mcast_revoke(tx);
@@ -770,8 +807,7 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 			/* Do not replace the first peer's fence. Withdraw this peer's
 			 * FE route now, and complete its teardown after the first one. */
 			mutex_lock(&ni_test_lock);
-			ret = rtl9617c_wifi_peer_route(tx->ni.route_dev,
-					tx->pe.memory + 0xe400 + macid * 8, false);
+			ret = ni_peer_withdraw(tx,macid);
 			mutex_unlock(&ni_test_lock);
 			return ret ? ret : -EAGAIN;
 		}
@@ -781,7 +817,7 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 		    rtl_ax_rx_uplink_active(tx->rx, i))) break;
 	if (!keep_rx && i == 128 && !READ_ONCE(tx->bcmc_enabled)) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
 	mutex_lock(&ni_test_lock);
-	ret = rtl9617c_wifi_peer_route(tx->ni.route_dev, tx->pe.memory + 0xe400 + macid * 8, false);
+	ret = ni_peer_withdraw(tx,macid);
 	if (ret) goto unlock;
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) goto unlock;
@@ -807,6 +843,7 @@ complete:
 	ni_test_buffered(tx, macid, false);
 	tx->ni.route_tim[macid] = 0;
 	WRITE_ONCE(tx->ni.retire_quiescing, false);
+	if(!keep_rx)ni_peer_put(tx,macid);
 unlock:
 	mutex_unlock(&ni_test_lock);
 	if (!ret && !keep_rx) {

@@ -38,8 +38,9 @@ def packet(ipv6, payload_bytes):
 
 
 def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
-         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False, opened=False, peer_self=False):
+         wrong_direction=False, amsdu=False, corrupt=None, gcmp=False, opened=False, peer_self=False, duplicate_peer=False, cam_valid=True, wifi_id=None):
     directory = Path(directory)
+    wifi_id = slot + 1 if wifi_id is None else wifi_id
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
     base, states, buf, descriptors = 0x04000000, 0x05000000, 0x06000000, 0x06100000
@@ -59,9 +60,13 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     if peer_self:
         u.mem_write(base+0x68400+2*8,ap+bytes(2));put(base+0xd000+2*32+12,1<<23)
     u.mem_write(base + 0xe410, peer)
+    if duplicate_peer:
+        u.mem_write(base+0xe408,peer);u.mem_write(base+0x68408,bytes.fromhex('020000bad001')+bytes(2))
+        put(base+0xd000+32+12,1<<23);put(base+0x11a04,1);put(states+0x10004,1<<31|63<<8)
+        put(states+512,1<<31|0x123)
     put(base + 0x11a08, 1)
     put(base + 0xd000 + 2 * 32 + 16, (1 << 23) if client else 0)
-    put(states + 0x10008, 1 << 31 | (slot + 1) << 8 | (1<<24 if gcmp else 0) | (1<<25 if opened else 0))
+    put(states + 0x10008, 1 << 31 | wifi_id << 8 | (1<<24 if gcmp else 0) | (1<<25 if opened else 0))
     put(states + 2 * 512, 1 << 31 | 0x123)
     for index, value in [(88, vp | 0xa0000000), (89, descriptors), (93, 1), (106, states), (187, base)]:
         put(mb + index * 4, value)
@@ -84,7 +89,7 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     raw = bytearray(36) + frame
     struct.pack_into('<II', raw, 0, len(raw) | 0xc000 | 1 << 16, len(frame) | 1 << 31)
     struct.pack_into('<I', raw, 16, 0 if opened else 4)  # Successful hardware decrypt, no errors.
-    struct.pack_into('<I', raw, 24, 1 << 28 | 2 << 16)
+    struct.pack_into('<I', raw, 24, (1 << 28 | 2 << 16) if cam_valid else 0)
     if corrupt == 'receiver': raw[36 + 4] ^= 4
     if corrupt == 'transmitter': raw[36 + 10] ^= 4
     if corrupt == 'decrypt': struct.pack_into('<I', raw, 16, 4 | (1 << 9))
@@ -101,11 +106,13 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     u.emu_start(entry, 0x9fc0fff0, count=100000)
     assert u.reg_read(UC_MIPS_REG_PC) == 0x9fc0fff0
     result = u.reg_read(UC_MIPS_REG_V0)
+    if duplicate_peer:
+        assert get(states+512)==1<<31|0x123 and get(states+512+4)==0
     if result:
         assert result == 0x80000000 | len(expected) and get(vp + 0x18) == len(expected)
         for i, ethernet in enumerate(expected):
             addr, info = get(descriptors + i * 8), get(descriptors + i * 8 + 4)
-            assert info == 0xa5000001 | len(ethernet) << 8 | (slot + 1) << 1
+            assert info == 0xa5000001 | len(ethernet) << 8 | wifi_id << 1
             assert bytes(u.mem_read(addr, len(ethernet))) == ethernet
         assert get(states + 2 * 512) == 1 << 31 | 0x124
         assert get(states + 2 * 512 + 4) == (0 if opened else 2)

@@ -53,7 +53,7 @@ typedef uint32_t u32;
 #define RTL_AX_TX_RINGS 6
 #define TEST_MEMORY_BYTES 128
 struct rtl_ax_tx {void *dma_device,*rx;unsigned producer[6];struct {void *memory;}pe;
- struct {void *route_dev;bool active,vp_active;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
+ struct {void *route_dev,*peer_dev[128];bool active,vp_active;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
  unsigned cpu,eq,registers[14],saved[14],arb[8],attrs[2][2],epp_bases[8],epp_eq[8],vp_saved[5],vp_index;}ni;};
 static u32 mmio[0x10000/4],dma[0x1000/4],arb[512],attr[64][2];static unsigned char memory[0x80000];
 static unsigned accesses,fail_at,polls,mmio_writes,opens,released,paused;
@@ -95,7 +95,7 @@ static void dev_put(void *p){(void)p;assert(0);}
 static void *phys_to_virt(u32 a){(void)a;assert(0);return NULL;}
 static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dir){(void)dev;(void)a;(void)bytes;(void)dir;assert(0);}
 '''
-code+=fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
+code+=fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));

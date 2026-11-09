@@ -13,6 +13,7 @@ def function(source,name):
  return source[a:b]+'\n'
 code=r'''
 #include <assert.h>
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -66,7 +67,7 @@ static void accepted(struct ieee80211_rx_data *rx){
 ''' + source[mark_start:mark_end] + '}\n'
 code+=function(source,'ieee80211_rx_shortcut_snapshot')+function(source,'ieee80211_rx_shortcut_sync')
 code+=r'''
-struct rtl_ax_rx {u8 *uplink_states,*rpq_memory;int uplink_lock;unsigned uplink_wifi_id;
+struct rtl_ax_rx {u32 uplink_states_dma;u8 *uplink_states,*rpq_memory;int uplink_lock;unsigned uplink_started;
  bool uplink_open[128];struct ieee80211_key_conf *keys[128];u8 uplink_trigger_tids[128];u16 uplink_pending_tids[128];
  unsigned uplink_seen[128][16];struct {u8 *memory;}pe;struct ieee80211_hw *hw;};
 static void mutex_lock(int *p){assert(!*p);*p=1;}
@@ -76,7 +77,7 @@ static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 #define dma_wmb() ((void)0)
 '''
 radio=(overlay/'drivers/net/wireless/realtek/rtl_ax_ap/rx-offload-state.h').read_text()
-code+=function(radio,'rtl_ax_rx_key')+function(radio,'rtl_ax_rx_open_peer')+function(radio,'rtl_ax_rx_uplink_enable')
+code+=function(radio,'rtl_ax_rx_key')+function(radio,'rtl_ax_rx_open_peer')+function(radio,'rtl_ax_rx_uplink_enable')+function(radio,'rtl_ax_rx_uplink_start')
 code+=r'''
 int main(void){
  struct ieee80211_local l={};struct ieee80211_sub_if_data s={.local=&l};struct sta_info sta={.sdata=&s,.authorized=true};
@@ -124,17 +125,33 @@ int main(void){
    assert(sta.last_seq_ctrl[tid]==65520&&sta.rtl9617c_open_next[tid]==0);
   }
  }
- static u8 states[0x10200],tx[0x20000];struct rtl_ax_rx rx={.uplink_states=states,.rpq_memory=tx,.uplink_wifi_id=7};
+ static u8 states[0x10200],tx[0x20000];struct rtl_ax_rx rx={.uplink_states=states,.rpq_memory=tx,.uplink_started=7};
  struct ieee80211_key_conf key={4,2};
  for(unsigned i=0;i<4;i++) {
   key.cipher=(unsigned[]){4,8,9,10}[i];rtl_ax_rx_key(&rx,7,&key);
   assert(!get_unaligned_le32(states+0x1001c));
-  rx.uplink_trigger_tids[7]=0xa5;rtl_ax_rx_uplink_enable(&rx,7);
+  rx.uplink_trigger_tids[7]=0xa5;rtl_ax_rx_uplink_enable(&rx,7,7);
   assert(get_unaligned_le32(states+0x1001c)==(BIT(31)|7<<8|2|0xa5<<16|(i?BIT(24):0)));
  }
- rtl_ax_rx_key(&rx,7,NULL);rtl_ax_rx_open_peer(&rx,7,true);rtl_ax_rx_uplink_enable(&rx,7);
+ rtl_ax_rx_key(&rx,7,NULL);rtl_ax_rx_open_peer(&rx,7,true);rtl_ax_rx_uplink_enable(&rx,7,7);
  assert(get_unaligned_le32(states+0x1001c)==(BIT(31)|BIT(25)|7<<8|0xa5<<16));
  rtl_ax_rx_key(&rx,7,&key);assert(!rx.uplink_open[7]&&!get_unaligned_le32(states+0x1001c));
+ /* Each peer selects its own source interface; retry preserves accepted PN/SN. */
+ rtl_ax_rx_open_peer(&rx,8,true);rtl_ax_rx_open_peer(&rx,9,true);
+ assert(!rtl_ax_rx_uplink_enable(&rx,8,3)&&!rtl_ax_rx_uplink_enable(&rx,9,17));
+ assert(((get_unaligned_le32(states+0x10020)>>8)&63)==3&&((get_unaligned_le32(states+0x10024)>>8)&63)==17);
+ put_unaligned_le32(0x80000123,states+8*512);
+ assert(!rtl_ax_rx_uplink_enable(&rx,8,3)&&get_unaligned_le32(states+8*512)==0x80000123);
+ unsigned before=get_unaligned_le32(states+0x10020);
+ assert(rtl_ax_rx_uplink_enable(&rx,8,17)==-ESTALE&&get_unaligned_le32(states+0x10020)==before);
+ assert(rtl_ax_rx_uplink_enable(&rx,8,0)==-EINVAL&&rtl_ax_rx_uplink_enable(&rx,8,64)==-EINVAL);
+ assert(rtl_ax_rx_uplink_enable(&rx,128,3)==-EINVAL);
+ static u8 rx_memory[0x3000];rx.pe.memory=rx_memory;rx.uplink_states_dma=0x123400;
+ rtl_ax_rx_uplink_start(&rx,NULL);
+ assert(rx.uplink_started&&get_unaligned_le32(rx_memory+0x21a8)==0x123400);
+ assert(!get_unaligned_le32(states+0x10020)&&!get_unaligned_le32(states+0x10024));
+ assert(!rtl_ax_rx_uplink_enable(&rx,8,3));
+ assert(!get_unaligned_le32(states+0x10024));
  printf("RX cipher state: %u actual Linux PN/BA/authorization cases and four native cipher transitions passed\n",cases);
 }
 '''

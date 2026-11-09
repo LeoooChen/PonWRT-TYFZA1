@@ -44,7 +44,7 @@ struct rtl_ax_shortcut_seen {u32 frames,bytes,msdus;};
 struct rtl_ax_rx {
     struct {u8 *memory;} pe;u8 *uplink_states,*rpq_memory;void *hw;
     bool uplink_open[128];struct ieee80211_key_conf *keys[128];int uplink_lock,irq_lock,work;
-    unsigned uplink_wifi_id;u16 uplink_pending_tids[128];
+    unsigned uplink_started;u16 uplink_pending_tids[128];
     struct rtl_ax_shortcut_seen uplink_seen[128][16];u32 uplink_forwarded_seen;
     bool running,rpq_transfer;
 };
@@ -143,7 +143,7 @@ int main(void){
     static u8 memory[0x2200],rpq[0x80000],states[0x10200];
     struct ieee80211_key_conf key={0},other={0};
     struct rtl_ax_rx rx={.pe={memory},.uplink_states=states,.rpq_memory=rpq,
-        .uplink_wifi_id=1,.running=true,.uplink_forwarded_seen=9};
+        .uplink_started=1,.running=true,.uplink_forwarded_seen=9};
     active=&rx;rx.keys[7]=&key;rx.keys[8]=&other;stations[7].macid=7;stations[8].macid=8;
     rpq[0xe400+7*8]=7;rpq[0xe400+8*8]=8;
     u8 *state=states+(7*16+3)*32,*second=states+(8*16+4)*32;

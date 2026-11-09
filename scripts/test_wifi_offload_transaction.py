@@ -94,7 +94,7 @@ static void rtl_ax_store32(u8 *,u32);static u32 rtl_ax_ap_read32(const u8 *);
 struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];struct wireless_dev wdev;int type;u8 addr[6];};
 struct rtl_ax_tx {struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
- struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev,*peer_dev[128];u8 peer_address[128][6];struct work_struct ps_work;}ni;};
 struct rtl_ax_ap {u8 role_owner[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;bool detected,in_cac;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
@@ -145,8 +145,8 @@ static int rtl_fe_main_age(struct rtl_dq_io *io,unsigned i,unsigned age){
 static int rtl_fe_cache_command(struct rtl_dq_io *io,unsigned i,unsigned crc,unsigned op){
  assert(io->fe->lock&&crc==i+100&&op==1);return i==fail_index&&fail_stage==2?-ETIMEDOUT:0;}
 static int rtl9617c_wifi_id(struct net_device *dev){(void)dev;return 1;}
-static int ni_uplink_start(struct rtl_ax_tx *tx,int id){assert(tx==active_tx&&id==1);return 0;}
-static void rtl_ax_rx_uplink_enable(void *rx,unsigned id){(void)rx;assert(id==1);}
+static int ni_uplink_start(struct rtl_ax_tx *tx){assert(tx==active_tx);return 0;}
+static int rtl_ax_rx_uplink_enable(void *rx,unsigned id,unsigned wifi){(void)rx;assert(id==1&&wifi==1);return 0;}
 static void rtl_ax_rx_uplink_disable(void *rx,unsigned id){(void)rx;assert(id==1);}
 static void rtl_ax_rx_uplink_retire(void *rx,unsigned id){(void)rx;assert(id==1);}
 static bool rtl_ax_rx_uplink_active(void *rx,unsigned id){(void)rx;(void)id;return false;}
@@ -214,7 +214,7 @@ int main(void){
   assert(radio.offload_result==-ETIMEDOUT && radio.offload_retry && timers==1);
   assert(tx.ni.route_peers[1] && !tx.peer_offloaded[1] && get_unaligned_le32(memory+0x11a04)==1);
   assert(!tx.ni.route_peers[2]&&!get_unaligned_le32(memory+0x11a08));
-  assert(fe_wifi_peer(&fe,&port,mac)->destination==19 && dev.references==1);
+  assert(fe_wifi_peer(&fe,&port,mac)->destination==19 && dev.references==2);
   if(failure==3)assert(ages[0]==1 && ((actions[0][0]>>8)&1023)==19);
   if(cancel==2){
    struct ieee80211_sta sta={.drv_priv={{1}}};struct ieee80211_ampdu_params params={.sta=&sta,.tid=1,.action=IEEE80211_AMPDU_TX_STOP_CONT};
@@ -309,6 +309,7 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigne
  if(route)assert(active_tx->ni.route_peers[1]);
  return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
+code += ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw'))
 code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'rtl_ax_tx_ni_cleanup') + function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_ba')
 code += function(tx, 'rtl_ax_tx_peer_authorized') + function(tx, 'rtl_ax_tx_key_changed') + function(tx, 'rtl_ax_tx_key_refresh')
 if 'bool rtl_ax_tx_peer_security(' in tx:

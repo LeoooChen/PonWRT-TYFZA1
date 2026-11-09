@@ -26,7 +26,7 @@ typedef uint8_t u8; typedef uint32_t u32;
 #define read_poll_timeout(op,val,cond,delay,timeout,sleep,args...) ({(void)(delay);(void)(timeout);(void)(sleep);(val)=op(args);(cond)?0:-ETIMEDOUT;})
 #define readl_poll_timeout(address,val,cond,delay,timeout) ({(void)(address);(void)(delay);(void)(timeout);(val)=0;(cond)?0:-ETIMEDOUT;})
 struct rx_state {bool active[128];};
-struct rtl_ax_tx {struct rx_state *rx;struct {void *memory;}pe;struct {bool retire_quiescing,route_peers[128];u8 retire_macid;void *route_dev,*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128],bcmc_enabled;void *pdev;};
+struct rtl_ax_tx {struct rx_state *rx;struct {void *memory;}pe;struct {bool retire_quiescing,route_peers[128];u8 retire_macid;void *route_dev,*peer_dev[128],*vp;unsigned route_tim[128];}ni;bool peer_offloaded[128],bcmc_enabled;void *pdev;};
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 
 static bool rtl_ax_rx_uplink_active(struct rx_state *rx,unsigned id){return rx->active[id];}
@@ -51,9 +51,10 @@ static int rtl_ax_mac_drop_peer(void *pdev,unsigned id) {(void)pdev;(void)id;ass
 static bool ni_peer_idle(struct rtl_ax_tx *tx,unsigned id) {(void)tx;(void)id;return true;}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,bool set) {(void)tx;(void)id;(void)set;}
 '''
+common+='static int ni_peer_withdraw(struct rtl_ax_tx *tx,unsigned id){return rtl9617c_wifi_peer_route(tx->ni.peer_dev[id],tx->pe.memory+0xe400+id*8,false); }\nstatic void ni_peer_put(struct rtl_ax_tx *tx,unsigned id){(void)tx;(void)id;assert(0); }\n'
 test = r'''
 int main(void) {
- unsigned char memory[131072]={};struct rx_state rx={0};struct rtl_ax_tx tx={.rx=&rx,.pe={memory}};tx.ni.route_dev=&tx;
+ unsigned char memory[131072]={};struct rx_state rx={0};struct rtl_ax_tx tx={.rx=&rx,.pe={memory}};tx.ni.route_dev=&tx;tx.ni.peer_dev[1]=&tx;
  for(unsigned other=0;other<2;other++){
   tx.ni.route_peers[1]=tx.peer_offloaded[1]=true;rx.active[1]=rx.active[2]=true;
   tx.ni.route_peers[2]=other;

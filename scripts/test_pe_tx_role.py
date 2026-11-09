@@ -59,3 +59,12 @@ for client in (False,True):
     result=receive(sys.argv[1],slot,False,100,client=client,amsdu=amsdu,corrupt=corrupt,peer_self=True)
     assert result['PE_to_NI']==(corrupt is None);rx_cases+=1
 print(f'Linked PE RX identity: {rx_cases} per-peer address and foreign-receiver/admission cases passed')
+
+for slot in range(2):
+ for client in (False,True):
+  for cam in (False,True):
+   for opened in (False,True):
+    for wifi_id in (1,17,63):
+     result=receive(sys.argv[1],slot,False,100,client=client,opened=opened,peer_self=True,duplicate_peer=True,cam_valid=cam,wifi_id=wifi_id)
+     assert result['PE_to_NI'];rx_cases+=1
+print(f'Linked RX identity includes duplicate TA with/without CAM and per-peer NI source IDs: {rx_cases} cases passed')

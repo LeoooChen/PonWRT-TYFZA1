@@ -66,14 +66,19 @@ u16 rtl_ax_rx_ba_size(struct rtl_ax_rx *rx, unsigned int macid, unsigned int tid
 
 bool rtl_ax_rx_uplink_active(struct rtl_ax_rx *rx, unsigned int macid)
 {
-	return rx->uplink_wifi_id &&
+	return rx->uplink_started &&
 		(get_unaligned_le32(rx->uplink_states + 0x10000 + macid * 4) & BIT(31));
 }
 
-void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid)
+int rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid, unsigned int wifi_id)
 {
-	mutex_lock(&rx->uplink_lock);
-	if ((rx->keys[macid] || rx->uplink_open[macid]) && rx->uplink_wifi_id) {
+	int ret=0;
+ if(!macid || macid>=128 || !wifi_id || wifi_id>63)return -EINVAL;
+ mutex_lock(&rx->uplink_lock);
+ u32 config=get_unaligned_le32(rx->uplink_states+0x10000+macid*4);
+ if((config&BIT(31)) && ((config>>8)&63)!=wifi_id){ret=-ESTALE;goto out;}
+ if(!rx->uplink_started){ret=-ENETDOWN;goto out;}
+	if (rx->keys[macid] || rx->uplink_open[macid]) {
 		/* A withdrawn peer may have changed its BA window while ARM owned RX. */
 		if (!(get_unaligned_le32(rx->uplink_states + 0x10000 + macid * 4) & BIT(31))) {
 			for (unsigned int tid = 0; tid < 16; tid++)
@@ -81,12 +86,14 @@ void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid)
 			rx->uplink_pending_tids[macid] = 0;
 		}
 		dma_wmb();
-		put_unaligned_le32(BIT(31) | rx->uplink_wifi_id << 8 | (rx->keys[macid]?rx->keys[macid]->keyidx:0) |
+		put_unaligned_le32(BIT(31) | wifi_id << 8 | (rx->keys[macid]?rx->keys[macid]->keyidx:0) |
 			(u32)rx->uplink_trigger_tids[macid] << 16 |
 			(rx->keys[macid]?(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0):BIT(25)),
 			rx->uplink_states + 0x10000 + macid * 4);
 	}
+out:
 	mutex_unlock(&rx->uplink_lock);
+ return ret;
 }
 
 void rtl_ax_rx_uplink_disable(struct rtl_ax_rx *rx, unsigned int macid)
@@ -97,25 +104,18 @@ void rtl_ax_rx_uplink_disable(struct rtl_ax_rx *rx, unsigned int macid)
 	mutex_unlock(&rx->uplink_lock);
 }
 
-void rtl_ax_rx_uplink_peer(struct rtl_ax_rx *rx, unsigned int wifi_id, struct ieee80211_hw *hw)
+void rtl_ax_rx_uplink_start(struct rtl_ax_rx *rx, struct ieee80211_hw *hw)
 {
-	unsigned int macid;
-	mutex_lock(&rx->uplink_lock);
-	rx->uplink_wifi_id = wifi_id;
-	rx->hw = hw;
-	for (macid = 1; macid < 128; macid++) {
-		struct ieee80211_key_conf *key = rx->keys[macid];
-		for (unsigned int tid = 0; tid < 16; tid++)
-			put_unaligned_le32(0, rx->uplink_states + (macid * 16 + tid) * 32);
-		if ((key || rx->uplink_open[macid]) && get_unaligned_le32(rx->rpq_memory + 0x11a00 + macid * 4))
-			put_unaligned_le32(BIT(31) | wifi_id << 8 | (key?key->keyidx:0) |
-			(u32)rx->uplink_trigger_tids[macid] << 16 |
-			(rx->keys[macid]?(rx->keys[macid]->cipher != WLAN_CIPHER_SUITE_CCMP ? BIT(24) : 0):BIT(25)),
-			rx->uplink_states + 0x10000 + macid * 4);
-	}
-	dma_wmb();
-	put_unaligned_le32(rx->uplink_states_dma, rx->pe.memory + 0x21a8);
-	mutex_unlock(&rx->uplink_lock);
+ mutex_lock(&rx->uplink_lock);
+ rx->uplink_started=true;rx->hw=hw;
+ for(unsigned int macid=1;macid<128;macid++) {
+  put_unaligned_le32(0,rx->uplink_states+0x10000+macid*4);
+  for(unsigned int tid=0;tid<16;tid++)put_unaligned_le32(0,rx->uplink_states+(macid*16+tid)*32);
+ }
+ /* Each peer is enabled separately after its own FE publication succeeds. */
+ dma_wmb();
+ put_unaligned_le32(rx->uplink_states_dma,rx->pe.memory+0x21a8);
+ mutex_unlock(&rx->uplink_lock);
 }
 
 static bool rtl_ax_rx_uplink_publish(struct rtl_ax_rx *rx, struct ieee80211_sta *sta,
@@ -141,7 +141,7 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 	u32 forwarded;
 	bool changed, retry = false;
 
-	if (!rx->uplink_wifi_id) return;
+	if (!rx->uplink_started) return;
 	mutex_lock(&rx->uplink_lock);
 	/* PE publishes this count after all per-TID PN/SN records. During
 	 * ARM-only reorder recovery none of those records can have changed. */
@@ -215,7 +215,7 @@ static void rtl_ax_rx_uplink_seed(struct rtl_ax_rx *rx, const struct rtl_ax_rx_p
 	unsigned int macid, tid;
 	u16 fc;
 
-	if (!rx->uplink_wifi_id || packet->type || packet->bytes < 24) return;
+	if (!rx->uplink_started || packet->type || packet->bytes < 24) return;
 	fc = get_unaligned_le16(frame);
 	if ((fc & 0x00fc) == 0x0084) {
 		/* BAR can advance the BA head without accepting a new data frame. */

@@ -88,7 +88,7 @@ struct rtl_ax_rx {
 	struct ieee80211_hw *hw;
 	struct ieee80211_key_conf *keys[128];
 	struct mutex uplink_lock;
-	unsigned int uplink_wifi_id;
+	bool uplink_started;
 	u8 uplink_trigger_tids[128];
 	bool uplink_open[128];
 	u16 uplink_pending_tids[128];
@@ -630,7 +630,7 @@ int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx)
 	ret = pe_probe_stop(&rx->pe);
 	if (ret) return ret;
 	rx->rpq_memory = NULL;
-	rx->uplink_wifi_id = 0;
+	rx->uplink_started = false;
 	put_unaligned_le32(0, mailbox + 424);
 	spin_lock_irqsave(&rx->irq_lock, flags);
 	rx->rpq_owned = false;

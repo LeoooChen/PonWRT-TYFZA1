@@ -35,7 +35,7 @@ static int rtl_ax_tx_pause(struct rtl_ax_tx*t){(void)t;paused=true;return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx*t){(void)t;paused=false;}
 static void *dma_alloc_coherent(void*d,unsigned n,u32*a,int f){(void)d;(void)f;assert(paused&&n==8192);*a=0x5000000;allocations++;return calloc(1,n);}
 static void dma_free_coherent(void*d,unsigned n,void*p,u32 a){(void)d;(void)n;(void)a;assert(paused);releases++;free(p);}
-static void rtl_ax_rx_uplink_peer(void*r,unsigned id,void*h){(void)r;(void)h;assert(id==3&&paused);}
+static void rtl_ax_rx_uplink_start(void*r,void*h){(void)r;(void)h;assert(paused);}
 '''
 code+=source[a:b]
 code+=r'''
@@ -45,7 +45,7 @@ int main(void){
  struct rtl_ax_tx t={.rx=memory,.ni={.vp=regs+0x100,.dma=regs,.vp_index=vp}};
  u32 saved=0xa5555555,mask=3U<<(vp*2);saved=(saved&~mask)|(original<<(vp*2));writel(saved,regs+0x14);
  writel(7,regs+0x108);writel(0x1234,regs+0x10c);
- assert(!ni_uplink_start(&t,3)&&!paused);
+ assert(!ni_uplink_start(&t)&&!paused);
  u32 selected=readl(regs+0x14);assert((selected&~mask)==(saved&~mask));
  assert((selected&mask)==0);
  /* ARM may retain an old prefix while PE writes the correct one to DDR.

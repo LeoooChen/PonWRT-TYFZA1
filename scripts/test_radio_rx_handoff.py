@@ -32,7 +32,7 @@ struct rtl_ax_rx_buffer {u8 *data;dma_addr_t dma;};
 struct rtl_ax_rx_queue {u32 consumer,tag;dma_addr_t buffer_dma,descriptor_dma,addresses_dma;struct rtl_ax_rx_buffer payloads[RTL_AX_RX_BUFFERS];u16 slot_ids[256];unsigned buffer_bytes;};
 struct rtl_ax_io {void *ctx;u32 (*read32)(void *,u32);void (*write32)(void *,u32,u32);void (*write16)(void *,u32,u16);};
 struct pe_probe {void *memory;dma_addr_t dma;bool attached;};
-struct rtl_ax_rx {struct pe_probe pe;u32 pe_command;struct rtl_ax_rx_queue queues[2];void *pe_device,*rpq_memory;struct rtl_ax_io *io;dma_addr_t pe_forward_dma;bool rpq_transfer,rpq_owned,running,pool_initialized;u32 irq_mask,dfs_epoch[4],pe_rdu_seen[2],uplink_wifi_id;int irq_lock,irq,work;};
+struct rtl_ax_rx {struct pe_probe pe;u32 pe_command;struct rtl_ax_rx_queue queues[2];void *pe_device,*rpq_memory;struct rtl_ax_io *io;dma_addr_t pe_forward_dma;bool rpq_transfer,rpq_owned,running,pool_initialized;u32 irq_mask,dfs_epoch[4],pe_rdu_seen[2],uplink_started;int irq_lock,irq,work;};
 static int pe_probe_start(struct pe_probe *p,const u32 *program,unsigned bytes){assert(program&&bytes==4);p->attached=true;return 0;}
 static int pe_probe_stop(struct pe_probe *p){p->attached=false;return 0;}
 static unsigned syncs,cancels,device_syncs,cpu_syncs,delivered;

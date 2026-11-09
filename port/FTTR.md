@@ -8632,6 +8632,52 @@ incomplete. The software BCMC FIFO and some gates remain shared, so per-domain
 close may temporarily pause unrelated traffic. PE firmware is unchanged; no
 hardware retirement/reuse claim is added and no physical device was accessed.
 
+### NI peer interface ownership and per-peer RX source identity
+
+NI now retains a referenced netdev and peer-address snapshot for each MACID
+before its first FE publication. Partial publication failures retain that exact
+owner. Per-peer and whole-radio withdrawal use those recorded identities instead
+of the first shared `route_dev`. A different device/address cannot silently take
+an existing MACID binding. TX BA withdrawal keeps the reference while RX remains
+active; full retirement releases it after the existing FE/EPP/RPQ fence. Global
+release and forced joined teardown release remaining references only after their
+owned resources are relinquished. Failed uplink preparation without any published
+route is also explicitly retireable.
+
+The shared uplink ring no longer sets one Wi-Fi ID for every peer. Startup clears
+admission and publishes the state-table pointer; only a peer's successful FE
+transaction enables its own six-bit source ID. Re-enabling the same peer preserves
+accepted PN/SN, and replacing a live source identity is rejected. This uses the
+existing per-peer RX descriptor field consumed by PE, without changing its layout.
+PE fallback lookup now compares both receiver and transmitter addresses before
+selecting a MACID, so an earlier peer with the same transmitter MAC cannot hide
+the correct BSS. Hardware CAM hits receive the same full address validation.
+
+`test_ni_peer_owner.py` executes production FE flow mutation, NI publication and
+withdrawal with two devices sharing one peer MAC. It covers partial FE failures,
+precise reference counts, wrong-device/address rejection, failed uplink allocation,
+BA-preserved RX and global teardown. Native RX tests cover separate Wi-Fi IDs,
+repeat admission without PN/SN reset, invalid/replaced IDs and no bulk enable at
+startup. The linked PE tests include80 RX identity vectors with/without CAM and
+49 CPU/NI address snapshot cases, plus AP/STA CCMP/GCMP/open IPv4/IPv6 acceptance
+and rejection. Existing multicast, BCMC, FTTR drain, NI restore and FE failure
+regressions pass. Evidence is `artifacts/fttr/ni-vif-*-20261109.*`.
+
+The generated combined PE is32764 bytes, SHA256
+`70e43f8144dff6fe571a5d185abdab8ffcd1695318d8802ef9e8e139d5af4ca8`.
+It retains the fixed32768-byte IMEM limit; removing duplicate address checks by
+sharing the matcher made the change fit. Conservative stack bound is7360/8192,
+and the configuration without uplink builds to13992 bytes. Actual Image/modules
+builds and six kernel source/header hashes match, including the generated image.
+
+Public multi-interface operation is still disabled. NI downlink packets still
+need an unambiguous BSS identity at PE ingress: ordinary destination-only lookup
+is insufficient when two interfaces share a peer MAC. The first `route_dev` also
+remains as the shared-ring lifetime reference. Full interface allocation,
+shared-policy arbitration and upstream/downstream hardware retirement remain
+open. Existing EPP/packet fences do not establish full MCE/AFT retirement or safe
+hardware-ID reuse. No physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

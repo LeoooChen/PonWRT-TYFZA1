@@ -26,9 +26,9 @@ void rtl_ax_rx_open_peer(struct rtl_ax_rx *rx, unsigned int macid, bool open);
 void rtl_ax_rx_key(struct rtl_ax_rx *rx, unsigned int macid, struct ieee80211_key_conf *key);
 void rtl_ax_rx_ba_window(struct rtl_ax_rx *rx, unsigned int macid,
  unsigned int tid, unsigned int window);
-void rtl_ax_rx_uplink_peer(struct rtl_ax_rx *rx, unsigned int wifi_id, struct ieee80211_hw *hw);
+void rtl_ax_rx_uplink_start(struct rtl_ax_rx *rx, struct ieee80211_hw *hw);
 bool rtl_ax_rx_uplink_active(struct rtl_ax_rx *rx, unsigned int macid);
-void rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid);
+int rtl_ax_rx_uplink_enable(struct rtl_ax_rx *rx, unsigned int macid, unsigned int wifi_id);
 void rtl_ax_rx_uplink_disable(struct rtl_ax_rx *rx, unsigned int macid);
 void rtl_ax_rx_uplink_retire(struct rtl_ax_rx *rx, unsigned int macid);
 void rtl_ax_rx_open(struct rtl_ax_rx *rx);
