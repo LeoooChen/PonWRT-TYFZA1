@@ -8706,6 +8706,24 @@ both8- and16-byte HeaderA forms. The pre-main-alignment image is32704 bytes with
 stack bound7360/8192; artifacts are `artifacts/fttr/downlink-*-20261109.*` and
 `artifacts/fttr/ni-downlink-id-pe-20261109/`.
 
+The subsequent merge includes main `76ad78c` (one NI descriptor publication per
+RX batch). FTTR address matching and the batch publisher are both retained;
+`ni_tsf` was moved between the existing linker-checked code banks to accommodate
+the larger RX wrapper. Combined PE is32764 bytes, SHA256
+`e68c616b56ef35dd0d10d1afdda2af217b27efdd0239a2c56238d4d1eb5d1e08`,
+with conservative stack bound7368/8192; non-uplink remains13992 bytes.
+Image/modules and four source/generated-input hashes match. Eight linked
+identity/STA-RX/multicast/BCMC/drain/withdrawal/batch regressions pass against the
+combined image. Main's full RX-backpressure test reaches its newly added
+pause-ACK case but the simulator raises a CPU exception before any descriptor
+preparation; that whole-suite result is not a pass and the full-main pause-ACK
+claim remains unverified. The actual batch exit publication cases preceding it
+(normal, ARM, NI pressure and reorder) did pass. A scoped run replacing only the
+full-main pause case with direct actual batch execution also passes the remaining
+RX suite and verifies publication after a mid-batch pause request; it does not
+execute or claim the full-main ACK assertion. Reports use
+`artifacts/fttr/downlink-main-*-20261109.*`.
+
 This supplies BSS selection, not an end-to-end generation fence. Wi-Fi ID reuse
 and late packets still depend on incomplete MCE/AFT retirement proof, and actual
 interface allocation/shared policies remain unfinished. The developer-only NI

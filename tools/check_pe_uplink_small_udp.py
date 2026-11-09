@@ -108,6 +108,16 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     result = u.reg_read(UC_MIPS_REG_V0)
     if duplicate_peer:
         assert get(states+512)==1<<31|0x123 and get(states+512+4)==0
+    # Newer PE versions prepare one MPDU here and publish at batch exit.
+    # Retain the older entry contract for the historical before/after oracle.
+    publish = next((int(line.split()[0], 16) for line in symbols.splitlines()
+                    if line.endswith(' rx_ni_publish')), None)
+    if result and publish is not None:
+        assert get(vp + 0x18) == 0
+        u.reg_write(UC_MIPS_REG_A0, mb | 0xa0000000)
+        u.reg_write(UC_MIPS_REG_RA, 0x9fc0fff0)
+        u.emu_start(publish, 0x9fc0fff0, count=10000)
+        assert u.reg_read(UC_MIPS_REG_PC) == 0x9fc0fff0
     if result:
         assert result == 0x80000000 | len(expected) and get(vp + 0x18) == len(expected)
         for i, ethernet in enumerate(expected):

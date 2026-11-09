@@ -16,7 +16,8 @@
 /* Actual os_tx_enqueue_for_sleeping_sta and mib_table txq_limit=2048. */
 #define NI_PS_TOTAL_LIMIT 2048
 
-static u64 ni_tsf(volatile u32 *mailbox)
+/* Balance the fixed code banks after batched RX publication grew its wrapper. */
+static u64 __attribute__((section(".rxq"), noinline)) ni_tsf(volatile u32 *mailbox)
 {
 	volatile u32 *bar = (void *)mailbox[2];
 	u32 high, low;
