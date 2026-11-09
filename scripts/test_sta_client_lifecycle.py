@@ -115,7 +115,7 @@ static void rtl_ax_tx_dfs_block(int tx,bool block){(void)tx;assert(block);blocke
 static int rtl_ax_tx_pause(int tx){(void)tx;assert(blocked);paused++;return -ETIMEDOUT;}
 static int rtl_ax_port0_beacon(struct rtl_ax_io *io,unsigned id,bool en){assert(!id);rtl_ax_port0_field(io,0xc400,BIT(12),en?BIT(12):0);return 0;}
 static int rtl_ax_port0_drop_mbid(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
-static void rtl_ax_tx_bcmc_close(int tx){(void)tx;}
+static void rtl_ax_tx_bcmc_close_vif(int tx,struct ieee80211_vif *v){(void)tx;(void)v;}
 static void wiphy_work_queue(void *w,int *work){(void)w;(void)work;}
 
 static int rtl_ax_ap_start(struct ieee80211_hw*h,struct ieee80211_vif*v,struct ieee80211_bss_conf*c){(void)h;(void)v;(void)c;assert(0);return 0;}

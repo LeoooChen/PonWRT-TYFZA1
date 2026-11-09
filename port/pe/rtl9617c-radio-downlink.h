@@ -230,6 +230,10 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 		u32 *waiting = uncached(buffer);
 		u32 role = macid ? (*(u32 *)(memory + 0xd000 + macid * 32 + 12) >> 24) & 127 : 0;
 		waiting[7] = rtl_seq_token(memory, role);
+  if(!macid && cookie>256) {
+   const volatile struct rtl_mc_pe_table *table=uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
+   waiting[7]=table->record[cookie&255].bcmc.sequence;
+  }
 		/* The queue link becomes the MPDU ownership chain when selected. */
 		waiting[1] = length | header << 16 | (macid && length > 1000 ? NI_PREFIX_READY : 0);
 		waiting[2] = now; waiting[3] = now >> 32;
@@ -343,7 +347,7 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 			discard |= ni_fttr_stale(mailbox, waiting);
 			if (!macid || ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 24) {
 				u32 role = macid ? (*(u32 *)(memory + 0xd000 + macid * 32 + 12) >> 24) & 127 : 0;
-				discard |= !waiting[7] || waiting[7] != rtl_seq_token(memory, role);
+				discard |= !waiting[7] || (bcmc ? !rtl_seq_current(memory,waiting[7]) : waiting[7] != rtl_seq_token(memory, role));
 			}
 			if (discard && mailbox[47]) continue;
 			if (!discard && (!ni_owner_available(memory) ||
@@ -378,11 +382,14 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
     const volatile struct rtl_mc_pe_table *table=uncached(mailbox[RTL_MC_PE_TABLE_MAILBOX]);
     const volatile struct rtl_mc_pe_record *record=&table->record[waiting[4]&255];
     bcmc_peer[0]=bcmc_peer[1]=bcmc_peer[6]=bcmc_peer[7]=0;
-    bcmc_peer[2]=24U<<16;bcmc_peer[3]=record->bcmc.rate;bcmc_peer[4]=record->flags;bcmc_peer[5]=record->key;
+    bcmc_peer[2]=24U<<16;bcmc_peer[3]=record->bcmc.rate|RTL_AX_TX_SELF_VALID;bcmc_peer[4]=record->flags;bcmc_peer[5]=record->key;
     key_generation=record->bcmc.key_generation;peer=bcmc_peer;
+    /* Preserve the immutable VIF address in the staged request. */
+    request[28]=*(const volatile u32 *)record->peer;
+    request[29]=*(const volatile u32 *)(record->peer+4);
    }
 			u32 key = peer[5];
-			u32 details = macid << 8 | ((key >> 16) & 127) << 17 |
+			u32 details = (bcmc ? RTL_MC_PE_OWNER_BCMC | (peer[4] >> 24) << 8 : macid << 8) | ((key >> 16) & 127) << 17 |
 				(peer[4] & (BIT(15) | BIT(16)) ? BIT(15) : 0);
 			owners[id * 2] = buffer;
 			owners[id * 2 + 1] = details;

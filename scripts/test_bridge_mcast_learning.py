@@ -834,7 +834,7 @@ int main(void){
  for(unsigned r=0;r<2;r++){ether_addr_copy(skb.frame.destination,recipients[r]);fe_mcast_capture_output(&bridge,&skb);}
  fe_mcast_capture_end(&bridge,ticket,true);fe_mcast_process(&bridge);
  assert(fe.indexed&&fe.indexed->replica_count==2&&pe_table.epoch==fe.mc_gate.epoch);
- unsigned copied=0;
+ unsigned copied=0;struct rtl_mc_pe_record dual[2];
  for(unsigned c=1;c<256;c++)if(fe.mc_directs[c]&&fe.mc_directs[c]->flow==fe.indexed){
   assert(copied<2&&fe.mc_directs[c]->pe_destination==19);
   assert(!memcmp(pe_table.record[c].destination,recipients[copied],6));
@@ -890,8 +890,8 @@ int main(void){
  fe.mc_pe[1].vif[1].netdev=&wifi2;
  for(unsigned i=0;i<2;i++){
   fe.mc_pe[1].vif[i].bcmc_policy_generation=test_policy_generation;
-  fe.mc_pe[1].vif[i].bcmc=(struct rtl9617c_wifi_policy){.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),
-   .key=(63-i)<<16|2<<24,.bcmc_generation=29+i,.sequence=23+i,.key_generation=11+i,.rate=4};
+  fe.mc_pe[1].vif[i].bcmc=(struct rtl9617c_wifi_policy){.flags=(41+i)<<24|BIT(18)|BIT(13)|BIT(14)|BIT(15),
+   .key=(63-i)<<16|2<<24,.bcmc_generation=29+i,.sequence=(23+i)|((i+1)<<27),.key_generation=11+i,.rate=4|((i+1)<<24)};
  }
  memcpy(wifi2.dev_addr,"\2\0\0\0\0\2",6);
  fe.event_count=0;fdb_source=&lan;skb.dev=&lan;skb.saved=wireless;skb.priority=0;
@@ -906,9 +906,12 @@ int main(void){
   unsigned which=fe.mc_directs[c]->physical==wifi.ifindex?0:1;struct net_device *dev=which?&wifi2:&wifi;
   assert(fe.mc_directs[c]->pe_destination==19&&pe_table.record[c].bcmc.generation==29+which);
   assert(pe_table.record[c].key==((63-which)<<16|2<<24));
+  dual[which]=pe_table.record[c];
   assert(fe.mc_pe[1].owner[c]==(which?wp2.wifi_id:wp.wifi_id)&&!memcmp(pe_table.record[c].peer,dev->dev_addr,6));copied++;
  }
- assert(copied==2);fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
+ assert(copied==2);
+ if(getenv("RTL_TEST_DUAL_RECORD")){FILE *f=fopen(getenv("RTL_TEST_DUAL_RECORD"),"wb");assert(f&&fwrite(dual,sizeof(dual),1,f)==1);assert(!fclose(f));}
+ fe_mcast_invalidate(&fe);assert(!fe_delete(&fe,fe.indexed));
  memset(&fe.mc_pe[1].vif[1],0,sizeof(fe.mc_pe[1].vif[1]));
  goto finished;
  }

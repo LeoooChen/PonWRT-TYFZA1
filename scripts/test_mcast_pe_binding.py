@@ -30,6 +30,7 @@ common = r'''
 #include <string.h>
 #include <errno.h>
 #include "linux/rtl9617c-mcast-pe.h"
+#include "linux/rtl9617c-seq.h"
 typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #include "linux/rtl9617c-wifi-policy.h"
 #define READ_ONCE(v) (v)
@@ -125,6 +126,9 @@ int main(void){
  struct rtl9617c_wifi_policy group={.flags=BIT(18)|BIT(13)|BIT(14)|BIT(15),.key=63<<16|2<<24,.bcmc_generation=29,.sequence=23,.key_generation=11,.rate=4};
  assert(!rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2));
  assert(f.mc_pe[0].vif[0].bcmc_policy_generation==2&&!memcmp(&f.mc_pe[0].vif[0].bcmc,&group,sizeof(group)));
+ group.sequence=12U<<27;group.rate=0x11000004;
+ assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2)==-EINVAL);
+ group.rate=4;
  group.sequence=0;assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,2)==-EINVAL);group.sequence=23;
  assert(rtl_fe_wifi_mcast_policy(&f,&b,mac,18,0,&group,2)==-ENOLINK);
  assert(rtl_fe_wifi_mcast_policy(&f,&a,mac,18,0,&group,1)==-ESTALE);
@@ -163,7 +167,7 @@ tx = common + r'''
 #define RTL_AX_TX_RINGS 2
 struct ieee80211_hw {int unused;};
 struct pe_probe {void *memory;};
-struct rtl_ax_tx {struct pe_probe pe;struct {unsigned cpu;int ps_work;bool route_peers[128];}ni;
+struct rtl_ax_tx {struct net_device *bcmc_dev[12];struct pe_probe pe;struct {unsigned cpu;int ps_work;bool route_peers[128];}ni;
  int lock,fttr_work;bool fttr_registered,mcast_cpu_registered,pe_active,peer_authorized[128];u64 mcast_policy_attempt[128];
  struct rtl_mc_pe_table *mcast_table;struct net_device *mcast_dev[12];void *dma_device;
  uintptr_t mcast_dma,headers_dma,pages_dma,ring_dma;void *headers,*pages,*ring;

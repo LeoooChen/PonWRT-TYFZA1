@@ -45,8 +45,8 @@ typedef uint32_t u32;
 static void rtl_ax_store32(void *p,u32 v) {memcpy(p,&v,4);}
 struct net_device {int unused;};
 struct pci_dev {void *radio;};
-struct rtl_ax_tx {
- bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
+struct rtl_ax_tx {struct net_device *bcmc_dev[12];
+ unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;bool pe_active,paused,peer_authorized[128],peer_offloaded[128];
  unsigned occupied,ni_reports,ni_failed;
  struct pci_dev *pdev;
  void *rx;
@@ -140,6 +140,7 @@ static int ni_test_release(struct rtl_ax_tx *tx) {
 static int rtl_ax_tx_rx_retire(struct rtl_ax_tx *tx,unsigned id) {
  assert(!rx_active[id]);rtl_ax_tx_pause(tx);rtl_ax_rx_uplink_retire(tx->rx,id);rtl_ax_tx_open(tx);return 0;
 }
+static int rtl_ax_tx_bcmc_drop_all(struct rtl_ax_tx *tx){(void)tx;assert(!current->bcmc_enabled);bcmc_drops++;return fail_drop?-EIO:0;}
 static int rtl_ax_mac_drop_bcmc(struct pci_dev *p){(void)p;assert(!current->bcmc_enabled);bcmc_drops++;return fail_drop?-EIO:0;}
 int rtl_ax_mac_drop_peer(struct pci_dev *pdev,unsigned macid);
 '''

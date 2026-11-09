@@ -36,7 +36,10 @@ int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx,struct net_device *netdev)
  for(unsigned int i=0;i<12;i++)if(tx->mcast_dev[i]==netdev) {
   WRITE_ONCE(tx->mcast_table->epoch,0);dma_wmb();
   ret=rtl9617c_wifi_mcast_table(netdev,16+tx->ni.cpu,tx->mcast_table,false);
-  if(!ret){dev_put(netdev);tx->mcast_dev[i]=NULL;}
+  if(!ret){
+   for(unsigned int j=0;j<RTL_MC_PE_BCMC_COUNT;j++)if(tx->bcmc_dev[j]==netdev)tx->bcmc_dev[j]=NULL;
+   dev_put(netdev);tx->mcast_dev[i]=NULL;
+  }
   break;
  }
  mutex_unlock(&ni_test_lock);
@@ -52,6 +55,7 @@ static int ni_mcast_unbind(struct rtl_ax_tx *tx)
  for(unsigned int i=0;i<12;i++)if(tx->mcast_dev[i]) {
   ret=rtl9617c_wifi_mcast_table(tx->mcast_dev[i],16+tx->ni.cpu,tx->mcast_table,false);
   if(ret)return ret;
+  for(unsigned int j=0;j<RTL_MC_PE_BCMC_COUNT;j++)if(tx->bcmc_dev[j]==tx->mcast_dev[i])tx->bcmc_dev[j]=NULL;
   dev_put(tx->mcast_dev[i]);tx->mcast_dev[i]=NULL;
  }
  return 0;

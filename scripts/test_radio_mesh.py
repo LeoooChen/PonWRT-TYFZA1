@@ -173,9 +173,9 @@ struct ieee80211_link_sta {unsigned bandwidth,rx_nss,smps_mode,supp_rates[2];
 struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_len;}*cur;};
 """
 code += r"""
-static void rtl_ax_tx_bcmc_close(struct tx *tx){(void)tx;}
+static void rtl_ax_tx_bcmc_close_vif(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;}
 static int bcmc_stop_error;static unsigned bcmc_stops;
-static int rtl_ax_tx_bcmc_stop(struct tx *tx){(void)tx;bcmc_stops++;return bcmc_stop_error;}
+static int rtl_ax_tx_group_stop(struct tx *tx,unsigned id,unsigned port,unsigned mbid){(void)tx;(void)id;(void)port;(void)mbid;bcmc_stops++;return bcmc_stop_error;}
 static int rtl_ax_tx_sequence_bind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
 static int rtl_ax_tx_sequence_unbind(struct tx *tx,struct ieee80211_vif *v){(void)tx;(void)v;return 0;}
 static int rtl_ax_client_prepare(struct rtl_ax_ap*r,struct ieee80211_vif*v){(void)v;r->sta_role=true;return 0;}

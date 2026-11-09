@@ -37,6 +37,7 @@
 #include "rtl9617c-pon-path.h"
 #include <linux/rtl9617c-bridge.h>
 #include <linux/rtl9617c-mcast-pe.h>
+#include <linux/rtl9617c-seq.h>
 #include <linux/rtl9617c-wifi-policy.h>
 #include "rtl9617c-epon-path.h"
 

@@ -80,6 +80,8 @@ struct rtl_ax_tx {
 	u32 key_pn_generation;
 	u32 sequence_generation;
  u32 bcmc_generation;
+ unsigned int bcmc_live, bcmc_domains, bcmc_domain_retiring;
+ struct net_device *bcmc_dev[12];
  bool bcmc_owned,bcmc_enabled,bcmc_prepare_failed,bcmc_retiring;
 	bool pe_active;
 	u32 pe_command;
@@ -499,13 +501,38 @@ int rtl_ax_tx_key_refresh(struct rtl_ax_tx *tx)
 	if (!ret) WRITE_ONCE(tx->key_refresh_pending,false);
 	return ret;
 }
+static void rtl_ax_tx_bcmc_close_domain(struct rtl_ax_tx *tx,unsigned int domain)
+{
+ if(!tx->pe_active || domain>=RTL_MC_PE_BCMC_COUNT)return;
+ WRITE_ONCE(((struct rtl_mc_pe_bcmc *)(tx->pe.memory+rtl_mc_bcmc_offset(domain)))->generation,0);
+ tx->bcmc_live&=~BIT(domain);WRITE_ONCE(tx->bcmc_enabled,tx->bcmc_live!=0);
+ dma_wmb();rtl_ax_tx_mcast_revoke(tx);
+}
+void rtl_ax_tx_bcmc_close_vif(struct rtl_ax_tx *tx,struct ieee80211_vif *vif)
+{
+ const struct rtl_ax_role_identity *id=&((struct rtl_ax_vif *)vif->drv_priv)->identity;
+ unsigned int domain=rtl_seq_domain(id->port<<4|id->mbid);
+ if(domain<RTL_MC_PE_BCMC_COUNT && tx->bcmc_dev[domain]==ieee80211_vif_to_wdev(vif)->netdev)
+  rtl_ax_tx_bcmc_close_domain(tx,domain);
+}
 void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *tx)
 {
  if(!tx->pe_active)return;
- WRITE_ONCE(tx->bcmc_enabled,false);
- WRITE_ONCE(((struct rtl_mc_pe_bcmc *)(tx->pe.memory+RTL_MC_PE_BCMC_BASE))->generation,0);
- dma_wmb();
- rtl_ax_tx_mcast_revoke(tx);
+ for(unsigned int domain=0;domain<RTL_MC_PE_BCMC_COUNT;domain++)
+  WRITE_ONCE(((struct rtl_mc_pe_bcmc *)(tx->pe.memory+rtl_mc_bcmc_offset(domain)))->generation,0);
+ tx->bcmc_live=0;WRITE_ONCE(tx->bcmc_enabled,false);
+ dma_wmb();rtl_ax_tx_mcast_revoke(tx);
+}
+static int rtl_ax_tx_bcmc_drop_all(struct rtl_ax_tx *tx)
+{
+ int ret;
+ for(unsigned int domain=0;domain<RTL_MC_PE_BCMC_COUNT;domain++)if(tx->bcmc_domains&BIT(domain)) {
+  struct rtl_mc_pe_bcmc *b=tx->pe.memory+rtl_mc_bcmc_offset(domain);
+  unsigned int role=b->rate>>24;
+  ret=rtl_ax_mac_drop_group(tx->pdev,role>>4,role&15);
+  if(ret)return ret;
+ }
+ return 0;
 }
 int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx)
 {
@@ -514,29 +541,38 @@ int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx)
  if(!tx->pe_active || (!tx->bcmc_owned && !tx->bcmc_retiring &&
     !rtl_ax_tx_station_pending(tx,0,IEEE80211_NUM_TIDS)))return 0;
  tx->bcmc_retiring=true;
- /* Join any final publisher before PKT_DROP, then allow stale BIDs to recycle. */
  ret=rtl_ax_tx_pause(tx);if(ret)return ret;
- ret=rtl_ax_mac_drop_bcmc(tx->pdev);
+ ret=rtl_ax_tx_bcmc_drop_all(tx);
+ if(!ret && !tx->bcmc_domains)ret=rtl_ax_mac_drop_bcmc(tx->pdev);
  rtl_ax_tx_open(tx);
  if(!ret)ret=rtl_ax_tx_wait_station(tx,0,IEEE80211_NUM_TIDS);
- if(!ret)tx->bcmc_retiring=false;
+ if(!ret) {
+  for(unsigned int domain=0;domain<RTL_MC_PE_BCMC_COUNT;domain++)if(tx->bcmc_domains&BIT(domain)) {
+   struct rtl_mc_pe_bcmc *b=tx->pe.memory+rtl_mc_bcmc_offset(domain);
+   ret=rtl_ax_tx_wait_station(tx,b->reserved[0],IEEE80211_NUM_TIDS);if(ret)break;
+  }
+ }
+ if(!ret){tx->bcmc_retiring=false;tx->bcmc_domain_retiring=0;}
  return ret;
 }
 int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx, unsigned int macid,
-	unsigned int port, unsigned int mbid)
+ unsigned int port, unsigned int mbid)
 {
-	int ret;
-
-	if (macid >= 128 || port > 4 || mbid > 7 || (port && mbid)) return -EINVAL;
-	if (!macid && !port && !mbid) return rtl_ax_tx_bcmc_stop(tx);
-	/* NI BCMC is currently root-only. Non-root CPU GTK traffic still needs
-	 * the correct HIQ selector and the owning self-MACID's RPQ completion. */
-	ret = rtl_ax_tx_pause(tx);
-	if (ret) return ret;
-	ret = rtl_ax_mac_drop_group(tx->pdev, port, mbid);
-	rtl_ax_tx_open(tx);
-	if (!ret) ret = rtl_ax_tx_wait_station(tx, macid, IEEE80211_NUM_TIDS);
-	return ret;
+ unsigned int domain=rtl_seq_domain(port<<4|mbid);
+ int ret;
+ if(macid>=128 || port>4 || mbid>7 || (port&&mbid) || domain>=RTL_MC_PE_BCMC_COUNT)return -EINVAL;
+ if(!(tx->bcmc_domains&BIT(domain)) && !rtl_ax_tx_station_pending(tx,macid,IEEE80211_NUM_TIDS))return 0;
+ rtl_ax_tx_bcmc_close_domain(tx,domain);
+ tx->bcmc_domain_retiring|=BIT(domain);
+ ret=rtl_ax_tx_pause(tx);if(ret)return ret;
+ ret=rtl_ax_mac_drop_group(tx->pdev,port,mbid);
+ rtl_ax_tx_open(tx);
+ /* All direct BCMC queues share software MACID0 until selected. The
+  * table epoch was closed above; drain that finite prefix before key reuse. */
+ if(!ret)ret=rtl_ax_tx_wait_station(tx,0,IEEE80211_NUM_TIDS);
+ if(!ret && macid)ret=rtl_ax_tx_wait_station(tx,macid,IEEE80211_NUM_TIDS);
+ if(!ret)tx->bcmc_domain_retiring&=~BIT(domain);
+ return ret;
 }
 
 /* Called while the station route is closed. Existing requests retain their
@@ -1175,7 +1211,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	}
 	spin_unlock_irqrestore(&tx->lock, flags);
 	if (READ_ONCE(tx->peer_asleep[macid])) ni_route_sleep(tx, macid);
-	if (((encap || template_ready) || (!macid && tx->bcmc_enabled &&
+	if (((encap || template_ready) || (ring==5 && tx->bcmc_enabled &&
       tx->bcmc_policy_attempt!=rtl9617c_bridge_wifi_policy_generation())) && tx->pe_active && tx->peer_ready &&
 	    (!READ_ONCE(tx->peer_offloaded[macid]) ||
 	     READ_ONCE(tx->mcast_policy_attempt[macid]) != rtl9617c_bridge_wifi_policy_generation()))

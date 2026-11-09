@@ -41,7 +41,7 @@ static unsigned rtl_ax_security_type(unsigned c){return c==9?9:c==10?7:c==8?8:6;
 #define IEEE80211_NUM_TIDS 16
 #define PE_PROBE_MAILBOX 0x2000
 struct net_device {unsigned refs;};
-struct rtl_ax_role_identity {unsigned port,mbid;};
+struct rtl_ax_role_identity {unsigned port,mbid,macid;};
 struct rtl_ax_vif {struct rtl_ax_role_identity identity;};
 struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];unsigned type;bool mld;u8 addr[6];struct {struct net_device *netdev;}wdev;};
 struct ieee80211_key_conf {unsigned cipher,flags,hw_key_idx;int keyidx;unsigned rtl9617c_pn;};
@@ -54,7 +54,7 @@ static bool ieee80211_vif_is_mld(struct ieee80211_vif *v){return v->mld;}
 static unsigned rtl9617c_key_pn_token(unsigned *p){return *p;}
 static void ether_addr_copy(u8 *a,const u8 *b){memcpy(a,b,6);}
 #define ieee80211_vif_to_wdev(v) (&(v)->wdev)
-struct rtl_ax_tx {u64 bcmc_policy_attempt;bool pe_active,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;unsigned bcmc_generation;
+struct rtl_ax_tx {struct net_device *bcmc_dev[12];u64 bcmc_policy_attempt;bool pe_active,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;unsigned bcmc_generation,bcmc_live,bcmc_domains,bcmc_domain_retiring;
  struct {void *memory;}pe;struct {bool active,retire_quiescing;unsigned cpu;struct net_device *route_dev;}ni;void *pdev;};
 static bool cpu_pending;
 static int ni_test_lock,fail_bind,fail_pause,fail_prepare,fail_release,fail_publish,fail_drop,fail_wait;
@@ -71,8 +71,9 @@ static void rtl_ax_tx_open(struct rtl_ax_tx *t){(void)t;opens++;}
 static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *t){(void)t;revokes++;policy_epoch++;}
 static u64 rtl9617c_bridge_wifi_policy_generation(void){return policy_epoch;}
 static int rtl_ax_mac_drop_bcmc(void *p){(void)p;assert(pauses);drops++;return fail_drop;}
+static int rtl_ax_mac_drop_group(void *p,unsigned port,unsigned mbid){assert(port<=4&&mbid<=7);return rtl_ax_mac_drop_bcmc(p);}
 static bool rtl_ax_tx_station_pending(struct rtl_ax_tx *t,unsigned id,unsigned tid){(void)t;assert(!id&&tid==16);return cpu_pending;}
-static int rtl_ax_tx_wait_station(struct rtl_ax_tx *t,unsigned id,unsigned tid){assert(t&&id==0&&tid==16&&drops);return fail_wait;}
+static int rtl_ax_tx_wait_station(struct rtl_ax_tx *t,unsigned id,unsigned tid){assert(t&&id<128&&tid==16&&drops);return fail_wait;}
 static int ni_mcast_bind(struct rtl_ax_tx *t,struct net_device *n){assert(ni_test_lock&&n&&t);return fail_bind;}
 static int ni_test_prepare(struct rtl_ax_tx *t,unsigned id){assert(ni_test_lock&&!id&&pauses);prepares++;t->ni.active=true;return fail_prepare;}
 static int ni_test_release(struct rtl_ax_tx *t){assert(ni_test_lock);releases++;if(!fail_release)t->ni.active=false;return fail_release;}
@@ -80,7 +81,7 @@ int rtl9617c_wifi_mcast_policy(struct net_device *n,const u8 *a,unsigned dest,un
  assert(ni_test_lock&&n&&a[0]==2&&dest==19&&!macid&&epoch==policy_epoch);last=*p;publishes++;return fail_publish;}
 '''
 code+=function((o/'net/mac80211/rtl9617c-mcast.h').read_text(),'ieee80211_rtl9617c_bcmc_key')
-for f,n in (('tx.c','rtl_ax_tx_bcmc_close'),('tx.c','rtl_ax_tx_bcmc_stop'),('ni-test.h','rtl_ax_tx_bcmc')):code+=function((d/f).read_text(),n)
+for f,n in (('tx.c','rtl_ax_tx_bcmc_close_domain'),('tx.c','rtl_ax_tx_bcmc_close_vif'),('tx.c','rtl_ax_tx_bcmc_drop_all'),('tx.c','rtl_ax_tx_group_stop'),('tx.c','rtl_ax_tx_bcmc_close'),('tx.c','rtl_ax_tx_bcmc_stop'),('ni-test.h','rtl_ax_tx_bcmc')):code+=function((d/f).read_text(),n)
 code+=r'''
 int main(void){
  struct wiphy w={.frag_threshold=~0U};struct ieee80211_local l={.hw={&w}};struct net_device dev={},other={};
@@ -113,10 +114,39 @@ int main(void){
  assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN&&!b->generation);
  fail_wait=0;assert(!rtl_ax_tx_bcmc_stop(&t)&&!t.bcmc_retiring);
  t.bcmc_generation=~0U;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EOVERFLOW&&!b->generation);
- s.vif.drv_priv[0].identity.mbid=1;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EOPNOTSUPP);
+ s.vif.drv_priv[0].identity.mbid=1;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-ESTALE);
  s.vif.drv_priv[0].identity.mbid=0;
  t.bcmc_generation=90;t.ni.retire_quiescing=true;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN);t.ni.retire_quiescing=false;
- s.vif.wdev.netdev=&other;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EAGAIN&&!other.refs);s.vif.wdev.netdev=&dev;
+ s.vif.wdev.netdev=&other;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EBUSY&&!other.refs);s.vif.wdev.netdev=&dev;
+ assert(!rtl_ax_tx_bcmc(&t,&s.vif,key,4));
+ /* Independent active VIF templates survive another VIF closure/failure. */
+ struct ieee80211_sub_if_data second=s;
+ second.vif.wdev.netdev=&other;second.vif.drv_priv[0].identity=(struct rtl_ax_role_identity){.macid=41,.mbid=3};
+ second.vif.addr[5]=2;
+ struct rtl_seq_shared *seq2=(void *)(memory+rtl_seq_offset(3));seq2->generation=27;
+ struct rtl_mc_pe_bcmc *b2=(void *)(memory+rtl_mc_bcmc_offset(3));
+ unsigned first=b->generation;
+ assert(!rtl_ax_tx_bcmc(&t,&second.vif,&keys[0].conf,4));
+ assert(b2->generation&&b2->reserved[0]==41&&b2->sequence==(27|3U<<27)&&b->generation==first);
+ assert(last.flags>>24==41&&last.rate==(4|3U<<24));
+ assert(t.bcmc_dev[3]==&other);
+ struct ieee80211_sub_if_data conflict=second;conflict.vif.wdev.netdev=&dev;
+ assert(rtl_ax_tx_bcmc(&t,&conflict.vif,&keys[0].conf,4)==-EBUSY);
+ conflict.vif.drv_priv[0].identity.mbid=4;
+ ((struct rtl_seq_shared *)(memory+rtl_seq_offset(4)))->generation=28;
+ assert(rtl_ax_tx_bcmc(&t,&conflict.vif,&keys[0].conf,4)==-EBUSY);
+ rtl_ax_tx_bcmc_close_vif(&t,&conflict.vif);assert(b2->generation);
+
+ rtl_ax_tx_bcmc_close_vif(&t,&second.vif);
+ assert(!b2->generation&&b->generation==first&&t.bcmc_enabled);
+ assert(!rtl_ax_tx_bcmc(&t,&second.vif,&keys[0].conf,4));
+ fail_publish=-ESTALE;assert(rtl_ax_tx_bcmc(&t,&second.vif,&keys[1].conf,4)==-ESTALE);
+ assert(!b2->generation&&b->generation==first);fail_publish=0;
+ assert(!rtl_ax_tx_bcmc(&t,&second.vif,&keys[0].conf,4));
+ fail_drop=-EIO;assert(rtl_ax_tx_group_stop(&t,41,0,3)==-EIO&&!b2->generation&&b->generation==first);
+ assert(t.bcmc_domain_retiring&8);assert(rtl_ax_tx_bcmc(&t,&second.vif,&keys[0].conf,4)==-EAGAIN);
+ fail_drop=0;assert(!rtl_ax_tx_group_stop(&t,41,0,3)&&!(t.bcmc_domain_retiring&8));
+ t.bcmc_domains&=~8U; /* End isolated fixture's second-interface lifetime. */
  /* Partial NI preparation retains its netdev and retries cleanup first. */
  t.ni.active=false;dev_put(t.ni.route_dev);t.ni.route_dev=NULL;
  fail_prepare=-EIO;assert(rtl_ax_tx_bcmc(&t,&s.vif,key,4)==-EIO&&t.bcmc_prepare_failed&&dev.refs==1);

@@ -310,7 +310,8 @@ static int rtl_ax_ap_start(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	    (radio->dfs.error || !radio->dfs.enabled || radio->dfs.detected))
 		return radio->dfs.error ? radio->dfs.error : -EBUSY;
  if(vif->type==NL80211_IFTYPE_AP) {
-  ret=rtl_ax_tx_bcmc_stop(radio->tx);
+  ret=rtl_ax_tx_group_stop(radio->tx,((struct rtl_ax_vif *)vif->drv_priv)->identity.macid,
+   ((struct rtl_ax_vif *)vif->drv_priv)->identity.port,((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid);
   if(ret)return ret;
  }
 	radio->bss_color = conf->he_bss_color.enabled ? conf->he_bss_color.color : 0;
@@ -443,9 +444,9 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
  if(vif->type==NL80211_IFTYPE_AP) {
   /* Failed GTK unlink may have left the old CAM map in hardware. */
   for(index=0;index<RTL_AX_SECURITY_ENTRIES;index++)
-   if(radio->security_unlink[index]==1)break;
+   if(radio->security_unlink[index]==((struct rtl_ax_vif *)vif->drv_priv)->identity.macid+1U)break;
   if(index!=RTL_AX_SECURITY_ENTRIES) {
-   rtl_ax_tx_bcmc_close(radio->tx);radio->offload_retry=true;
+   rtl_ax_tx_bcmc_close_vif(radio->tx,vif);radio->offload_retry=true;
    wiphy_delayed_work_queue(wiphy,&radio->cleanup_work,HZ);return;
   }
  }
@@ -455,7 +456,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
   int ret=ieee80211_rtl9617c_bcmc_key(vif,&key);
   if(!ret)ret=rtl_ax_tx_bcmc(radio->tx,vif,key,rtl_ax_tx_basic_rate(radio,NULL,&info));
   if(ret) {
-   rtl_ax_tx_bcmc_close(radio->tx);
+   rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
    if(ret!=-EOPNOTSUPP && ret!=-EOVERFLOW)radio->offload_retry=true;
   }
  }
@@ -526,7 +527,8 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	unsigned int mbid = ((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid;
 
  if(vif->type==NL80211_IFTYPE_AP) {
-  int ret=rtl_ax_tx_bcmc_stop(radio->tx);
+  int ret=rtl_ax_tx_group_stop(radio->tx,((struct rtl_ax_vif *)vif->drv_priv)->identity.macid,
+   ((struct rtl_ax_vif *)vif->drv_priv)->identity.port,((struct rtl_ax_vif *)vif->drv_priv)->identity.mbid);
   if(ret)dev_err(&radio->pdev->dev,"BCMC retirement failed: %d\n",ret);
  }
 	spin_lock_irqsave(&radio->command_lock, flags);
@@ -558,6 +560,7 @@ static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret = rtl_ax_tx_sequence_unbind(radio->tx, vif);
+	rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
 	if (ret) dev_err(&radio->pdev->dev, "sequence withdrawal failed: %d\n", ret);
 	ret = rtl_ax_tx_mcast_unbind_vif(radio->tx, ieee80211_vif_to_wdev(vif)->netdev);
 	if (ret) dev_err(&radio->pdev->dev, "multicast VIF detach failed: %d\n", ret);
@@ -608,7 +611,7 @@ static void rtl_ax_ap_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	unsigned int ac;
  if(vif->type==NL80211_IFTYPE_AP && (changed&(BSS_CHANGED_BASIC_RATES|BSS_CHANGED_BEACON|BSS_CHANGED_BEACON_ENABLED|BSS_CHANGED_BEACON_INT))) {
-  rtl_ax_tx_bcmc_close(radio->tx);
+  rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
   wiphy_work_queue(hw->wiphy,&radio->offload_work);
  }
 

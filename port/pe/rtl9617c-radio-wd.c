@@ -675,7 +675,7 @@ static void __attribute__((section(".rxq"), noinline)) pe_tx_publish(volatile u3
 			 * BCMC has MACID0 and its own immutable admission contract.
 			 */
 			u32 fence = mailbox[62];
-			revoked |= fence == 128 || (macid && (fence == macid ||
+			revoked |= fence == 128 || (macid && !(owners[id * 2 + 1] & RTL_MC_PE_OWNER_BCMC) && (fence == macid ||
 				!*(volatile u32 *)(memory + 0x11a00 + macid * 4)));
 			if (((request[2] >> 16) & 63) == 24) {
 				const u32 *waiting = uncached(owners[id * 2]);
@@ -835,7 +835,7 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		owners[id * 2] = buffer;
 		recycled += returned;
 #ifdef PE_UPLINK
-		u32 macid = (owners[id * 2 + 1] >> 8) & 127;
+		u32 macid = owners[id * 2 + 1] & RTL_MC_PE_OWNER_BCMC ? 0 : (owners[id * 2 + 1] >> 8) & 127;
 		if (macid) {
 			u32 tid = *(u32 *)(memory + RTL_AX_NI_TIDS + id * 4) & 7;
 			*(u32 *)(memory + NI_TID_PENDING + (macid * 8 + tid) * 4) -= returned;
@@ -1111,7 +1111,8 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];
 				if (ni_packet && (out[3] & RTL_AX_TX_SELF_VALID)) {
-					const u32 *self = (void *)(memory + RTL_AX_TX_PEER_SELF + (out[4] >> 24) * 8);
+					const u32 *self = (out[1]&7)==5 ? request+28 :
+      (void *)(memory + RTL_AX_TX_PEER_SELF + (out[4] >> 24) * 8);
 					out[28] = self[0]; out[29] = self[1];
 				}
 				if (!ni_packet) {

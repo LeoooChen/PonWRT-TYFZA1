@@ -89,12 +89,12 @@ struct ieee80211_hw {struct wiphy *wiphy;};
 struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 enum {IEEE80211_AMPDU_TX_STOP_CONT,IEEE80211_AMPDU_TX_STOP_FLUSH,IEEE80211_AMPDU_TX_STOP_FLUSH_CONT};
 struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
-struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct wireless_dev wdev;int type;u8 addr[6];};
-struct rtl_ax_tx {bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
- struct {void *memory;}pe;void *rx,*pdev;
- struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
 static void rtl_ax_store32(u8 *,u32);static u32 rtl_ax_ap_read32(const u8 *);
 #include "'''+str(root/base/'wireless/realtek/rtl_ax_ap/role-identity.h')+r'''"
+struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];struct wireless_dev wdev;int type;u8 addr[6];};
+struct rtl_ax_tx {struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
+ struct {void *memory;}pe;void *rx,*pdev;
+ struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
 struct rtl_ax_ap {u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
@@ -111,6 +111,8 @@ static int ieee80211_rtl9617c_unicast_key(struct ieee80211_vif *v,const u8 *a,st
 struct ieee80211_tx_info {struct {struct ieee80211_vif *vif;}control;};
 static unsigned bcmc_calls,bcmc_closes;static int bcmc_error;static struct ieee80211_key_conf gtk;
 static void rtl_ax_tx_bcmc_close(struct rtl_ax_tx *t){t->bcmc_enabled=false;bcmc_closes++;}
+static void rtl_ax_tx_bcmc_close_vif(struct rtl_ax_tx *t,struct ieee80211_vif *v){(void)v;rtl_ax_tx_bcmc_close(t);}
+static int rtl_ax_tx_bcmc_drop_all(struct rtl_ax_tx *t){(void)t;return 0;}
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *t){rtl_ax_tx_bcmc_close(t);return bcmc_error;}
 static int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *v,struct ieee80211_key_conf **key){assert(v->type==3);*key=&gtk;return 0;}
 static unsigned rtl_ax_tx_basic_rate(struct rtl_ax_ap *r,struct ieee80211_sta *sta,struct ieee80211_tx_info *i){assert(r&&!sta&&i->control.vif);return 4;}

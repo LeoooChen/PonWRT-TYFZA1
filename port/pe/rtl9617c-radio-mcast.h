@@ -25,20 +25,20 @@ static u32 ni_mcast_current(volatile u32 *mailbox, u32 cookie)
 static u32 ni_bcmc_current(volatile u32 *mailbox,const volatile struct rtl_mc_pe_record *record)
 {
  u8 *memory=(u8 *)mailbox-MAILBOX_OFFSET;
- const volatile struct rtl_mc_pe_bcmc *b=(void *)(memory+RTL_MC_PE_BCMC_BASE);
- const volatile struct rtl_seq_shared *sequence=(void *)(memory+RTL_SEQ_BASE);
+ u32 domain=record->bcmc.sequence>>RTL_SEQ_DOMAIN_SHIFT;
+ if(domain>=RTL_MC_PE_BCMC_COUNT)return 0;
+ const volatile struct rtl_mc_pe_bcmc *b=(void *)(memory+rtl_mc_bcmc_offset(domain));
  u32 generation=b->generation;
  sync();
- if(!generation || record->bcmc.generation!=generation || !sequence->generation ||
-    record->bcmc.sequence!=sequence->generation || record->bcmc.sequence!=b->sequence ||
+ if(!generation || record->bcmc.generation!=generation || record->bcmc.sequence!=rtl_seq_token(memory,(b->rate>>24)&127) || record->bcmc.sequence!=b->sequence ||
     record->bcmc.key_generation!=b->key_generation || record->bcmc.rate!=b->rate || record->key!=b->key ||
     record->qos || record->noack_map || (record->control&~(RTL_MC_PE_BCMC|0x3f0000U)) ||
-    !(record->destination[0]&1) || record->flags!=(BIT(18)|BIT(13)|BIT(14)|(b->key_generation?BIT(15):0)))return 0;
+    !(record->destination[0]&1) || record->flags!=((u32)b->reserved[0]<<24|BIT(18)|BIT(13)|BIT(14)|(b->key_generation?BIT(15):0)))return 0;
  if(b->key_generation) {
   const volatile struct rtl_key_pn_shared *key=(void *)(memory+RTL_KEY_PN_BASE+((b->key>>16)&127)*sizeof(*key));
   if(key->generation!=b->key_generation)return 0;
  }
- for(u32 i=0;i<6;i++)if(record->peer[i]!=b->address[i] || record->peer[i]!=((volatile u8 *)mailbox)[64+i])return 0;
+ for(u32 i=0;i<6;i++)if(record->peer[i]!=b->address[i])return 0;
  sync();return b->generation==generation;
 }
 

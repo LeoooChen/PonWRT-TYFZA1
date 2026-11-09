@@ -580,7 +580,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		dma_wmb();
 		rtl_ax_tx_open(tx);
 		/* Sleeping MAC queues retain submitted WPs until PKT_DROP releases them. */
-  if(tx->bcmc_owned) {ret=rtl_ax_mac_drop_bcmc(tx->pdev);if(ret)goto unlock;}
+  if(tx->bcmc_owned) {ret=rtl_ax_tx_bcmc_drop_all(tx);if(ret)goto unlock;}
 		for (i = 1; i < 128; i++) {
 			if (!tx->ni.route_peers[i]) continue;
 			ret = rtl_ax_mac_drop_peer(tx->pdev, i);
@@ -604,7 +604,8 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			put_unaligned_le32(0, tx->pe.memory + 0x11a00 + i * 4);
 		}
 		WRITE_ONCE(tx->ni.route_macid, 0);
-  tx->bcmc_owned=tx->bcmc_retiring=false;
+  tx->bcmc_owned=tx->bcmc_retiring=false;tx->bcmc_domains=tx->bcmc_domain_retiring=0;
+  memset(tx->bcmc_dev,0,sizeof(tx->bcmc_dev));
 		dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL;
 		WRITE_ONCE(tx->ni.retire_quiescing, false);
 		goto unlock;
@@ -971,8 +972,9 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
  int ret=0;
  if(vif->type!=NL80211_IFTYPE_AP || !tx->pe_active || rate>11)return -EOPNOTSUPP;
  const struct rtl_ax_role_identity *identity=&((struct rtl_ax_vif *)vif->drv_priv)->identity;
- if(identity->port || identity->mbid)return -EOPNOTSUPP;
- next.sequence=rtl_seq_token(tx->pe.memory,0);
+ unsigned int role=identity->port<<4|identity->mbid,domain=rtl_seq_domain(role);
+ if(identity->port>4 || identity->mbid>7 || (identity->port&&identity->mbid) || domain>=RTL_MC_PE_BCMC_COUNT || identity->macid>127)return -EINVAL;
+ next.sequence=rtl_seq_token(tx->pe.memory,role);
  if(!next.sequence)return -ESTALE;
  if(key) {
   if((key->cipher!=WLAN_CIPHER_SUITE_CCMP && key->cipher!=WLAN_CIPHER_SUITE_GCMP &&
@@ -984,15 +986,21 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
    ((rtl_ax_security_type(key->cipher)>=8?RTL_MC_PE_KEY_GCMP:0) |
    (rtl_ax_security_type(key->cipher)&1?RTL_MC_PE_KEY_256:0));
  }
- next.rate=rate;ether_addr_copy(next.address,vif->addr);
+ next.rate=rate|role<<24;next.reserved[0]=identity->macid;ether_addr_copy(next.address,vif->addr);
  mutex_lock(&ni_test_lock);
  if(tx->bcmc_prepare_failed) {
   ret=ni_test_release(tx);if(ret)goto out;
   tx->bcmc_prepare_failed=false;
   dev_put(tx->ni.route_dev);tx->ni.route_dev=NULL;
  }
- if(tx->bcmc_retiring || tx->ni.retire_quiescing || (tx->ni.route_dev && tx->ni.route_dev!=dev)){ret=-EAGAIN;goto out;}
+ if(tx->bcmc_retiring || (tx->bcmc_domain_retiring&BIT(domain)) || tx->ni.retire_quiescing){ret=-EAGAIN;goto out;}
+ if((tx->bcmc_domains&BIT(domain)) && tx->bcmc_dev[domain]!=dev){ret=-EBUSY;goto out;}
+ for(unsigned int i=0;i<RTL_MC_PE_BCMC_COUNT;i++)if(i!=domain && (tx->bcmc_domains&BIT(i))) {
+  const struct rtl_mc_pe_bcmc *old=tx->pe.memory+rtl_mc_bcmc_offset(i);
+  if(old->reserved[0]==identity->macid){ret=-EBUSY;goto out;}
+ }
  ret=ni_mcast_bind(tx,dev);if(ret)goto out;
+ tx->bcmc_dev[domain]=dev; /* borrowed from ni_mcast_bind until detach */
  if(!tx->ni.active) {
   ret=rtl_ax_tx_pause(tx);if(ret)goto out;
   dev_hold(dev);tx->ni.route_dev=dev;
@@ -1001,21 +1009,22 @@ int rtl_ax_tx_bcmc(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,
   put_unaligned_le32(0,tx->pe.memory+PE_PROBE_MAILBOX+248);
   rtl_ax_tx_open(tx);
  }
- shared=tx->pe.memory+RTL_MC_PE_BCMC_BASE;
+ shared=tx->pe.memory+rtl_mc_bcmc_offset(domain);
+ if((tx->bcmc_domains&BIT(domain)) && shared->reserved[0]!=identity->macid){ret=-EBUSY;goto out;}
  if(!shared->generation || memcmp((u8 *)shared+4,(u8 *)&next+4,sizeof(next)-4)) {
-  rtl_ax_tx_bcmc_close(tx);
+  rtl_ax_tx_bcmc_close_domain(tx,domain);
   if(tx->bcmc_generation==~0U){ret=-EOVERFLOW;goto out;}
   next.generation=++tx->bcmc_generation;
   memcpy((u8 *)shared+4,(u8 *)&next+4,sizeof(next)-4);
   dma_wmb();WRITE_ONCE(shared->generation,next.generation);dma_wmb();
  }
- tx->bcmc_owned=true;WRITE_ONCE(tx->bcmc_enabled,true);
- policy.flags=BIT(18)|BIT(13)|BIT(14)|(key?BIT(15):0);policy.key=next.key;
+ tx->bcmc_domains|=BIT(domain);tx->bcmc_live|=BIT(domain);tx->bcmc_owned=true;WRITE_ONCE(tx->bcmc_enabled,true);
+ policy.flags=(u32)identity->macid<<24|BIT(18)|BIT(13)|BIT(14)|(key?BIT(15):0);policy.key=next.key;
  policy.bcmc_generation=shared->generation;policy.sequence=next.sequence;
- policy.key_generation=next.key_generation;policy.rate=rate;
+ policy.key_generation=next.key_generation;policy.rate=next.rate;
  generation=rtl9617c_bridge_wifi_policy_generation();
  ret=rtl9617c_wifi_mcast_policy(dev,vif->addr,16+tx->ni.cpu,0,&policy,generation);
- if(ret)rtl_ax_tx_bcmc_close(tx);
+ if(ret)rtl_ax_tx_bcmc_close_domain(tx,domain);
  else WRITE_ONCE(tx->bcmc_policy_attempt,generation);
 out:
  mutex_unlock(&ni_test_lock);

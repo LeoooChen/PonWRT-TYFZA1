@@ -8441,6 +8441,58 @@ conservative stack7296/8192. Repeat build is identical; non-uplink13992 bytes.
 The combined Image/modules build passes with eight source/generated inputs
 identical to the worktree. No physical device was accessed.
 
+### Per-interface direct BCMC templates and PE ownership
+
+Direct BCMC now has twelve templates matching the sequence domains (port0
+MBID0..7, ports1..4). Root storage remains0x1fd40; eleven additional28-byte
+records start at0x69000. Each template carries its immutable GTK/key generation,
+sequence-domain token, port/MBID, self-MACID and transmitter address. Radio
+publication and FE policy validation preserve those fields; generation closes
+before changing a template and publishes last. A conflicting netdev in a
+reserved domain, shared self-MACID across domains, or changed self-MACID in an
+owned domain returns EBUSY. Interface close checks the bound netdev before
+invalidating a domain; failed teardown retains reservation until full NI drain.
+
+The existing software BCMC FIFO remains shared at MACID0. Each queued BID keeps
+its cookie and domain token; selection builds from that cookie's VIF template,
+not the global root template. The final request includes the VIF's WD MACID and
+MBID and snapshots its address in words28/29. The full PE main-loop staging path
+preserves these words instead of fetching the unicast address table. Final
+publication verifies template/key/sequence ownership again. A distinct BCMC bit
+in NI ownership metadata permits matching nonzero self-MACID RPQ reports while
+excluding these requests from ordinary station PS and AC accounting. EQ return
+still follows RPQ/software completion, with no premature BID reuse.
+
+Closing or failing one template leaves other VIF templates and sequence counters
+intact. Group cleanup closes the table epoch through the existing global policy
+gate, pauses the final publisher, drops the selected hardware HIQ and waits for
+the shared software BCMC prefix and owning self-MACID's WPs. Whole-radio stop
+iterates all reserved domains. Because the FIFO and policy gate remain shared,
+this can temporarily delay or invalidate other interfaces' traffic; it is not
+per-VIF scheduling isolation or a complete upstream/downstream retirement fence.
+Domain/ID reuse after detached ownership remains restricted. The public interface
+allocator still permits one data VIF until its full multi-interface lifecycle
+is implemented.
+
+`test_pe_bcmc.py` passes245 existing root cases and72 complete multi-domain,
+self-MACID0/41/127, open/GTK EPP→HIQ→RPQ→EQ cases. A shared two-VIF ingress batch
+selectively rejects one closed template and publishes the other. Two binary
+records from the actual complete bridge/FE learner reach the linked PE and
+complete RPQ/EQ. Three full PE main-loop runs verify snapshot staging with
+poisoned global/unicast addresses. Native template tests cover independent
+close, publication failure, key change, domain/MACID conflicts and retry. FE,
+GTK, group-stop, NI retirement,771 CPU completion batches, ordinary multicast,
+per-VIF sequences, FTTR drain, TX/RX identity, RXQ and publication regressions pass.
+
+The multicast PE capability advances to MCP: (`0x4d43503a`). Production firmware
+is32680 bytes, sha256
+`53e5c1689e6bea4aaaad53da6837eb954261bd90562faedd6e0326b09db57651`; conservative
+stack is7336/8192. Repeat build is identical, non-uplink builds at13992 bytes.
+Image/modules build and nine source/generated-input identities pass. Local
+reports are `artifacts/fttr/bcmc-vif-*-20261109.*`. No physical device was accessed;
+DTIM timing, actual wireless encryption/airtime, full VIF operation and safe
+hardware-ID reuse remain unverified or incomplete.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

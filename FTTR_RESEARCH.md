@@ -274,6 +274,8 @@
 
 128. 接入同物理无线的多VIF PE表绑定：FE每槽支持12个netdev，各自BCMC策略/代际，单播策略也按VIF校验；cookie保存FE无线ID，解绑只永久撤销该VIF记录并保留tombstone，最后引用才退役全表。无线持有逐VIF引用，接口删除单独解绑，整机退出按项重试失败后缀，避免重复释放。双VIF不同GTK/同ifindex、容量、冲突、重绑不复活、部分失败及实际完整learner双副本入同表通过，原有learner/AP-mesh/NI退场/FE事务和Image/模块检查通过。双VIF学习独立运行以保留生产cookie隔离限制。收尾对齐main b28f290，保留逐站点地址后应用RX对齐优化；RX/身份/序列/BCMC/发布回归及组合Image/模块、八输入一致通过，PE32440字节、栈7296、重复一致、非uplink13992。直接BCMC的每VIF模板/队列/密钥序列仍未拆分，接口上限未解除，未实机。详见[多VIF绑定](port/FTTR.md#multiple-vif-bindings-to-one-pe-multicast-table)。
 
+129. 接入直接BCMC每接口模板：12序列域分别保存GTK/PN代际/序列token/port-MBID/self-MACID/发射地址，FE配方贯通，PE选择与最终发布核对；私有请求保留地址快照，NI owner增加BCMC标识，非零self的RPQ正确匹配且不扣普通站点PS/AC计数。同域netdev冲突/跨域self冲突/已占域改self拒绝，单域关闭保留其他模板。245原有+72完整多域RPQ/EQ、同批双VIF选择性撤销、2个真实learner二进制配方到PE、3次完整main暂存、模板/绑定/GTK/NI退场/771 CPU回收/序列/FTTR/收发/发布回归通过；MCP:能力，PE32680字节/栈7336/重复一致/非uplink13992，Image/模块和九输入一致通过。未实机；软件BCMC FIFO与策略门仍共享，接口分配/完整多VIF生命周期及全链路退场、安全ID复用继续待补。详见[BCMC接口模板](port/FTTR.md#per-interface-direct-bcmc-templates-and-pe-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

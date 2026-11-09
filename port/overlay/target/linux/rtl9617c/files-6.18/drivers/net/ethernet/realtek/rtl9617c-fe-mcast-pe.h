@@ -130,8 +130,10 @@ int rtl_fe_wifi_mcast_policy(struct rtl_fe *fe,struct net_device *netdev,const u
  if(fe && policy && !macid && destination>=18 && destination<=19 && generation) {
   struct rtl_fe_mc_binding *binding;
   if(!policy->bcmc_generation || !policy->sequence || policy->qos || policy->reserved ||
-     policy->flags!=(BIT(18)|BIT(13)|BIT(14)|(policy->key_generation?BIT(15):0)) ||
-     (policy->key&~(0x037f0000U|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256)) || (!policy->key_generation && policy->key) || policy->rate>11)return -EINVAL;
+     (policy->flags&0xffffffU)!=(BIT(18)|BIT(13)|BIT(14)|(policy->key_generation?BIT(15):0)) || (policy->flags&BIT(31)) ||
+     (policy->key&~(0x037f0000U|RTL_MC_PE_KEY_GCMP|RTL_MC_PE_KEY_256)) || (!policy->key_generation && policy->key) || (policy->rate&~0x7f00000fU) || (policy->rate&15)>11 ||
+     !(policy->sequence&RTL_SEQ_GENERATION_MASK) || (policy->sequence>>RTL_SEQ_DOMAIN_SHIFT)>=RTL_SEQ_DOMAINS ||
+     rtl_seq_domain(policy->rate>>24)!=(policy->sequence>>RTL_SEQ_DOMAIN_SHIFT))return -EINVAL;
   mutex_lock(&fe->lock);
   port=fe_port(fe,netdev);
   binding=fe_mcast_pe_binding(fe,netdev,destination);
