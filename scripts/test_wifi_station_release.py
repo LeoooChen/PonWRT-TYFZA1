@@ -10,8 +10,8 @@ driver = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wirel
 source = (driver / 'monitor.h').read_text()
 
 def function(name):
-    prefix = 'static void ' if name == 'rtl_ax_cleanup_work' else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
-    start = re.search(r'^' + prefix + name + r'\([^;]*?\)\s*\{', source, re.M).start()
+    prefix = 'static struct ieee80211_vif *' if name == 'rtl_ax_peer_vif' else 'static void ' if name == 'rtl_ax_cleanup_work' else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
+    start = re.search(r'^' + re.escape(prefix) + name + r'\([^;]*?\)\s*\{', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
     while depth:
@@ -77,7 +77,7 @@ struct ieee80211_key_conf;
 static int rtl_ax_tx_bcmc_stop(struct rtl_ax_tx *tx){(void)tx;return 0;}
 static int rtl_ax_tx_group_stop(struct rtl_ax_tx *tx,unsigned id,unsigned port,unsigned mbid){(void)id;(void)port;(void)mbid;return rtl_ax_tx_bcmc_stop(tx);}
 static int rtl_ax_tx_key_pn_unbind(struct rtl_ax_tx *tx,struct ieee80211_key_conf *key){(void)tx;(void)key;return 0;}
-struct rtl_ax_ap {struct rtl_ax_key_owner security_owner[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct rtl_ax_self_role self_roles[128];u8 role_owner[128];unsigned traffic_peer;u8 bss_color;
+struct rtl_ax_ap {u32 vif_generation,peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_key_owner security_owner[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;struct rtl_ax_self_role self_roles[128];u8 role_owner[128];unsigned traffic_peer;u8 bss_color;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128],security_ext[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
@@ -181,6 +181,7 @@ int main(void){
  assert(!r.mbid_drop_pending&&mbid_retries==4);
  struct ieee80211_sta *sta=calloc(1,sizeof(*sta));assert(sta);
  r.identities[0].type=2;r.identities[7]=(struct rtl_ax_role_identity){.macid=7,.type=3,.mbid=5};
+ vif.drv_priv[0].identity=r.identities[7];vif.drv_priv[0].identity.macid=0;vif.drv_priv[0].generation=1;r.peer_vif_generation[7]=1;r.vif_owner[0]=&vif;
  sta->drv_priv[0].macid=7;sta->addr[0]=2;sta->addr[5]=77;sta->aid=27;set_bit(7,r.station_ids);
  memcpy(r.tx_ba[7].address,sta->addr,6);
  /* Real non-MACID address slots and shared BSSID references survive RPQ/ACK failure. */
@@ -249,19 +250,20 @@ int main(void){
  }
  /* Bind failure must not create a role; a later role failure must detach
   * the borrowed sequence before mac80211 can destroy its interface. */
- r.ap_vif=r.sta_vif=NULL;r.sta_role=false;vif.type=NL80211_IFTYPE_STATION;
+ r.ap_vif=r.sta_vif=NULL;r.vif_owner[0]=NULL;r.sta_role=false;vif.type=NL80211_IFTYPE_STATION;
  sequence_error=-ETIMEDOUT;unsigned binds=sequence_binds,unbinds=sequence_unbinds;int tries=prepared;
  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
  assert(sequence_binds==binds+1&&sequence_unbinds==unbinds&&prepared==tries&&!r.sta_vif);
  sequence_error=0;prepare_error=-ETIMEDOUT;
  assert(rtl_ax_monitor_add_interface(&hw,&vif)==-ETIMEDOUT);
- assert(sequence_unbinds==unbinds+1&&!r.sta_vif);
+ assert(sequence_unbinds==unbinds+1&&!r.sta_vif&&!r.vif_owner[0]);
  prepare_error=0;
+ r.vif_generation=~0U;assert(rtl_ax_monitor_add_interface(&hw,&vif)==-EOVERFLOW&&!r.vif_owner[0]);
  assert(r.retired_stations[7].peer[5]==77 && r.retired_stations[7].aid==27);
  puts("STA/BA lifetime: delayed RPQ gates completion and MACID reuse; firmware failures retry after STA free; 100 RX BA restarts reuse one slot");
 }
 '''
-names = ('rtl_ax_security_clear', 'rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
+names = ('rtl_ax_peer_vif', 'rtl_ax_security_clear', 'rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
          'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
 with tempfile.TemporaryDirectory(prefix='wifi-sta-release-', dir=root / 'artifacts') as directory:
     p = Path(directory)

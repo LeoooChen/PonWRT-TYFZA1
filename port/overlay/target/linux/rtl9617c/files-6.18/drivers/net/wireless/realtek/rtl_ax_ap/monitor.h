@@ -182,6 +182,35 @@ static void rtl_ax_update_vif_offload(struct ieee80211_hw *hw, struct ieee80211_
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 }
 
+/* Wiphy serialization spans lookup and each firmware command. A re-created
+ * interface at the same self-MACID must never receive an older peer's work. */
+static struct ieee80211_vif *rtl_ax_peer_vif(struct rtl_ax_ap *radio,unsigned int macid)
+{
+ struct ieee80211_vif *vif;
+ struct rtl_ax_vif *native;
+ if(macid>=128 || radio->role_owner[macid]>=128)return NULL;
+ vif=radio->vif_owner[radio->role_owner[macid]];
+ if(!vif)return NULL;
+ native=(void *)vif->drv_priv;
+ if(!radio->peer_vif_generation[macid] || native->generation!=radio->peer_vif_generation[macid] ||
+    native->identity.macid!=radio->role_owner[macid] ||
+    native->identity.port!=radio->identities[macid].port ||
+    native->identity.mbid!=radio->identities[macid].mbid ||
+    native->identity.type!=radio->identities[macid].type)return NULL;
+ return vif;
+}
+
+/* RCU also protects mac80211's station lookup; VIF lifetime belongs to wiphy. */
+static struct ieee80211_sta *rtl_ax_find_peer(struct rtl_ax_ap *radio,unsigned int macid)
+{
+ struct ieee80211_vif *vif=rtl_ax_peer_vif(radio,macid);
+ struct ieee80211_sta *sta;
+ if(!vif)return NULL;
+ sta=ieee80211_find_sta_by_ifaddr(radio->hw,radio->tx_ba[macid].address,vif->addr);
+ if(sta && ((struct rtl_ax_station *)sta->drv_priv)->macid==macid)return sta;
+ return NULL;
+}
+
 static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
@@ -194,6 +223,7 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 		return -EOPNOTSUPP;
 	if (radio->ap_vif || radio->sta_vif)
 		return -EBUSY;
+	if(radio->vif_generation==~0U)return -EOVERFLOW;
 	/* .stop cancels deferred cleanup after a failed .add_interface. RX is
 	 * running again here; finish the retired role before accepting a new vif. */
 	if (radio->sta_role) {
@@ -211,6 +241,7 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 		.type = vif->type == NL80211_IFTYPE_STATION ? 1 :
 			vif->type == NL80211_IFTYPE_MESH_POINT ? 6 : 2,
 	};
+	native->generation=++radio->vif_generation;
 	ret = rtl_ax_tx_sequence_bind(radio->tx, vif);
 	if (ret) return ret;
 	if (vif->type == NL80211_IFTYPE_STATION) {
@@ -228,6 +259,7 @@ static int rtl_ax_monitor_add_interface(struct ieee80211_hw *hw, struct ieee8021
 			return ret;
 		}
 	} else radio->ap_vif = vif;
+	radio->vif_owner[native->identity.macid]=vif;
 	rtl_ax_tx_ap_address(radio->tx, vif->addr);
 	return 0;
 }
@@ -368,7 +400,7 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 	struct ieee80211_vif *vif = radio->sta_vif ? radio->sta_vif : radio->ap_vif;
 	radio->offload_retry = false;
 	if (radio->scanning || (!radio->ap_started && !radio->sta_associated)) return;
-	if (vif->type == NL80211_IFTYPE_MESH_POINT) return;
+	if (!vif || vif->type == NL80211_IFTYPE_MESH_POINT) return;
 	if (radio->sta_vif && (radio->sta_4addr || ieee80211_vif_to_wdev(vif)->use_4addr)) return;
 	radio->offload_result=rtl_ax_tx_key_refresh(radio->tx);
 	if (radio->offload_result) {
@@ -394,13 +426,15 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 		int ret;
 		struct rtl_ax_security_role *role = &radio->security_roles[macid];
 		struct ieee80211_key_conf *key;
+		struct ieee80211_vif *vif=rtl_ax_peer_vif(radio,macid);
+		if(!vif || vif->type==NL80211_IFTYPE_MESH_POINT)continue;
 		/* NI bypasses wake_tx_queue; its active TIDs need the same BA
 		 * request policy while data transmission continues normally. */
 		if (radio->peer_authorized[macid]) {
 			u8 tids = rtl_ax_tx_active_tids(radio->tx, macid);
 			struct ieee80211_sta *sta;
 			rcu_read_lock();
-			sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[macid].address, vif->addr);
+			sta = rtl_ax_find_peer(radio,macid);
 			if (sta && sta->wme && (sta->deflink.ht_cap.ht_supported ||
 			    sta->deflink.vht_cap.vht_supported || sta->deflink.he_cap.has_he)) {
 				struct rtl_ax_station *station = (void *)sta->drv_priv;
@@ -564,7 +598,10 @@ static void rtl_ax_ap_stop(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 static void rtl_ax_monitor_remove_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
-	int ret = rtl_ax_tx_sequence_unbind(radio->tx, vif);
+	int ret;
+	unsigned int self=((struct rtl_ax_vif *)vif->drv_priv)->identity.macid;
+	if(self<128 && radio->vif_owner[self]==vif)radio->vif_owner[self]=NULL;
+	ret = rtl_ax_tx_sequence_unbind(radio->tx, vif);
 	rtl_ax_tx_bcmc_close_vif(radio->tx,vif);
 	if (ret) dev_err(&radio->pdev->dev, "sequence withdrawal failed: %d\n", ret);
 	ret = rtl_ax_tx_mcast_unbind_vif(radio->tx, ieee80211_vif_to_wdev(vif)->netdev);
@@ -853,6 +890,7 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	ret = rtl_ax_cam_write(radio, cam);
 	if (!ret) {
 		radio->ra_registered[macid] = false;
+		WRITE_ONCE(radio->peer_vif_generation[macid],0);
 		if (radio->traffic_peer == macid) radio->traffic_peer = 0;
 		clear_bit(macid, radio->ra_pending);
 		rtl_ax_tx_peer_qos(radio->tx, macid, false, 0);
@@ -886,6 +924,7 @@ static void rtl_ax_client_release(struct rtl_ax_ap *radio)
 static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsigned int tid)
 {
 	u8 cmac[68];
+	struct ieee80211_vif *vif;
 	unsigned int i, aggregate = 0;
 	bool flush = radio->tx_ba[macid].flushing & BIT(tid);
 	int ret;
@@ -912,8 +951,9 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 		return ret;
 	radio->tx_ba[macid].stopping &= ~BIT(tid);
 	radio->tx_ba[macid].flushing &= ~BIT(tid);
-	if (!flush)
-		ieee80211_stop_tx_ba_cb_irqsafe(radio->sta_vif ? radio->sta_vif : radio->ap_vif, radio->tx_ba[macid].address, tid);
+	vif=rtl_ax_peer_vif(radio,macid);
+	if (!flush && vif)
+		ieee80211_stop_tx_ba_cb_irqsafe(vif, radio->tx_ba[macid].address, tid);
 	rtl_ax_offload_ready(radio);
 	return 0;
 }
@@ -1010,6 +1050,7 @@ static int rtl_ax_station_remove(struct ieee80211_hw *hw, struct ieee80211_vif *
 	radio->peer_authorized[macid] = false;
 	rtl_ax_tx_peer_authorized(radio->tx, macid, false);
 	radio->retired_stations[macid].pending = true;
+	WRITE_ONCE(radio->peer_vif_generation[macid],0);
 	radio->retired_stations[macid].mesh = vif->type == NL80211_IFTYPE_MESH_POINT;
 	radio->tx_ba[macid].stopping = radio->tx_ba[macid].flushing = 0;
 	station->macid = 0;
@@ -1107,6 +1148,7 @@ static int rtl_ax_station_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif
 connected:
 	station->macid = id;
 	station->mesh = vif->type == NL80211_IFTYPE_MESH_POINT;
+	WRITE_ONCE(radio->peer_vif_generation[id],((struct rtl_ax_vif *)vif->drv_priv)->generation);
 	__set_bit(id, radio->station_ids);
 	memset(&radio->tx_ba[id], 0, sizeof(radio->tx_ba[id]));
 	ether_addr_copy(radio->tx_ba[id].address, sta->addr);
@@ -1768,13 +1810,13 @@ static void rtl_ax_ra_update_work(struct wiphy *wiphy, struct wiphy_work *work)
 
 		if (!test_and_clear_bit(id, radio->ra_pending) || !radio->ra_registered[id]) continue;
 		rcu_read_lock();
-		sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[id].address, radio->sta_vif ? radio->sta_vif->addr : radio->ap_vif->addr);
+		sta = rtl_ax_find_peer(radio,id);
 		configured = sta && rtl_ax_ra_peer(radio, sta, id, command, &rate, &caps, true);
 		he = configured && sta->deflink.he_cap.has_he;
 		if (configured)
 			rtl_ax_station_join(join, id, min_t(unsigned int, radio->channel.bandwidth,
 				sta->deflink.bandwidth), &sta->deflink.he_cap, (command[3] & 7) + 1,
-				radio->ap_vif && radio->ap_vif->type == NL80211_IFTYPE_MESH_POINT, radio->sta_vif != NULL);
+				radio->identities[id].type==6, radio->identities[id].type==1);
 		if (he) {
 			rtl_ax_store32(cmac, id | 0x80);
 			rtl_ax_store32(cmac + 28, rtl_ax_he_padding(sta->deflink.he_cap.he_cap_elem.phy_cap_info,
@@ -1791,7 +1833,7 @@ static void rtl_ax_ra_update_work(struct wiphy *wiphy, struct wiphy_work *work)
 		spin_lock_irqsave(&radio->command_lock, flags);
 		radio->ra_update_error[id] = ret;
 		if (!ret) {
-			if (radio->sta_vif) radio->sta_join = rtl_ax_ap_read32(join);
+			if (radio->identities[id].type==1) radio->sta_join = rtl_ax_ap_read32(join);
 			memcpy(radio->ra_config[id], command, sizeof(command));
 			radio->ra_updates[id]++;
 		}
@@ -1808,7 +1850,10 @@ static void rtl_ax_link_sta_rc_update(struct ieee80211_hw *hw, struct ieee80211_
 	unsigned int id = ((struct rtl_ax_station *)link->sta->drv_priv)->macid;
 	if (!(changed & (IEEE80211_RC_BW_CHANGED | IEEE80211_RC_NSS_CHANGED |
 	    IEEE80211_RC_SMPS_CHANGED | IEEE80211_RC_SUPP_RATES_CHANGED))) return;
-	if (!id || !radio->ra_registered[id]) return;
+	/* Atomic callback: the supplied VIF is live, but the wiphy-owned
+	 * pointer registry must only be read by the deferred worker. */
+	if (!id || id>=128 || !((struct rtl_ax_vif *)vif->drv_priv)->generation || !READ_ONCE(radio->ra_registered[id]) ||
+	    READ_ONCE(radio->peer_vif_generation[id])!=((struct rtl_ax_vif *)vif->drv_priv)->generation) return;
 	set_bit(id, radio->ra_pending);
 	wiphy_work_queue(hw->wiphy, &radio->ra_update_work);
 }
@@ -1833,7 +1878,7 @@ static void rtl_ax_traffic_update(struct rtl_ax_ap *radio)
 		total_tx += p->tx_kbits; total_rx += p->rx_kbits;
 		p->rate = (feedback[5] & 3) << 7 | (feedback[4] & 127);
 		rcu_read_lock();
-		sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[id].address, radio->ap_vif->addr);
+		sta = rtl_ax_find_peer(radio,id);
 		if (sta) {
 			p->bandwidth = min_t(u8, radio->channel.bandwidth, sta->deflink.bandwidth);
 			p->nss = sta->deflink.smps_mode == IEEE80211_SMPS_STATIC ? 1 : sta->deflink.rx_nss;

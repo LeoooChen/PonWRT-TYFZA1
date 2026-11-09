@@ -237,6 +237,9 @@ struct rtl_ax_ap {
 	u32 ra_last_ppdu_bytes;
 	struct rtl_ax_self_role self_roles[128];
 	u8 role_owner[128];
+	/* Only wiphy-serialized callbacks/work may dereference these VIFs. */
+	struct ieee80211_vif *vif_owner[128];
+	u32 vif_generation, peer_vif_generation[128];
 	struct rtl_ax_cam_owners cam_owners;
 	struct rtl_ax_role_identity identities[128];
 	struct rtl_ax_port0 port0;

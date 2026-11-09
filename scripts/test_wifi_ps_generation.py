@@ -58,7 +58,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define rcu_read_lock() ((void)0)
 #define rcu_read_unlock() ((void)0)
 #define atomic_inc_return(p) (atomic_fetch_add(p,1)+1)
-struct ieee80211_sta {unsigned id;};
+struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {union {unsigned id;struct rtl_ax_station drv_priv[1];};};
 struct ieee80211_local {_Atomic u32 ps_generation;};
 struct sta_info {struct ieee80211_sta sta;struct ieee80211_local *local;pthread_mutex_t ps_lock;_Atomic u32 ps_generation;bool service_period;};
 struct rtl_ax_tx {bool pe_active;pthread_mutex_t lock;void *hw;unsigned ps_releases,ps_eosp;
@@ -72,11 +72,14 @@ static void rtl_ax_tx_mcast_revoke(struct rtl_ax_tx *tx){(void)tx;}
 static void ni_route_sleep(struct rtl_ax_tx *tx,unsigned macid){(void)tx;(void)macid;}
 static struct sta_info *lookup[128];
 static unsigned lookup_calls;
-static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,void *vif){
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,const void *vif){
  (void)hw;(void)vif;lookup_calls++;return lookup[mac[0]]?&lookup[mac[0]]->sta:NULL;}
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 '''
+
+common += '\n#define RTL_AX_AP_ROLE_H\nstruct ieee80211_hw;\n#include "' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/peer-lookup.h') + '"\n#define RTL_AX_TX_PEER_SELF 0x68400\n'
+
 # Execute the exact MAC start/wakeup publication blocks, not a separate
 # implementation of their epoch or lock protocol.
 response = function(mac, 'ieee80211_sta_ps_deliver_response')
@@ -98,7 +101,7 @@ static void *old_release(void *p){(void)p;pthread_barrier_wait(&barrier);
 static void *wake_sleep(void *p){(void)p;pthread_barrier_wait(&barrier);wake(racing);
  rtl_ax_tx_peer_sleep(transition_tx,1,false);rtl_ax_tx_peer_sleep(transition_tx,1,true);return NULL;}
 int main(void){
- struct ieee80211_local local={};struct sta_info sta={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
+ struct ieee80211_local local={};struct sta_info sta={.sta={.id=1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
  static u8 memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
  lookup[1]=&sta;memory[0xe408]=1;put_unaligned_le32(1,memory+0x2060);
  /* Empty slots and unchanged records must not hash PE-memory MAC addresses. */
@@ -152,7 +155,7 @@ int main(void){
  put_unaligned_le32(zero,memory+RTL_AX_NI_PS_DONE+8);put_unaligned_le32(0,memory+RTL_AX_NI_PS_DONE+12);
  ni_ps_done(&tx,1);assert(!sta.service_period && !tx.ni.ps_issued[1]);
  /* MACID reuse gets a different hardware-local epoch, even with the same address. */
- struct sta_info next={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
+ struct sta_info next={.sta={.id=1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
  rtl_ax_tx_peer_qos(&tx,1,true,10);memory[0xe408]=1;
  lookup[1]=&next;u32 fresh=start(&next);assert(fresh!=zero);
  put_unaligned_le32(zero,memory+RTL_AX_NI_PS_CANCEL+8);

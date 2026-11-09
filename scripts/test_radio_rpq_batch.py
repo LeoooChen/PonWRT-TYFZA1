@@ -47,9 +47,9 @@ struct ieee80211_tx_info {unsigned flags,band; struct {struct rate rates[4];unsi
 struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;u64 rtl9617c_fttr_generation;};
 #define IEEE80211_SKB_CB(s) (&(s)->cb)
 struct ieee80211_hdr {__le16 fc,duration;u8 addresses[18];__le16 seq_ctrl;};
-struct ieee80211_sta {int unused;};struct ieee80211_hw {int unused;};
+struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {union {unsigned id;struct rtl_ax_station drv_priv[1];};};struct ieee80211_hw {int unused;};
 struct ieee80211_tx_status {struct sk_buff *skb;struct ieee80211_tx_info *info;struct ieee80211_sta *sta;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;unsigned ring,macid;bool pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted,pe_interface;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;unsigned ring,macid;u8 self[6],peer[6];bool pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted,pe_interface;};
 struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed,pe_discarded;};
 /* The EWMA arithmetic is covered by test_radio_mesh_metric; record each
  * update here to compare RPQ dispatch ordering and ownership. */
@@ -85,11 +85,11 @@ static void ni_route_sleep(struct rtl_ax_tx*t,unsigned id){assert(t==active&&id<
 static void ni_ps_complete(struct rtl_ax_tx*t,struct ieee80211_sta*s,unsigned id,u32 generation){assert(t==active&&s&&id<128&&generation==77&&bh&&rcu);ps_done++;}
 static void rtl_ax_tx_pe_complete(struct rtl_ax_tx*t,unsigned id,unsigned status){assert(t==active&&id>=256&&id<384&&status<8);pe_done++;}
 static u64 ktime_get_ns(void){return 1;}
-static struct ieee80211_sta*ieee80211_find_sta_by_ifaddr(struct ieee80211_hw*h,const u8*a,const void*b){assert(h&&a&&!b&&bh&&rcu);lookups++;return &sta;}
+static struct ieee80211_sta*ieee80211_find_sta_by_ifaddr(struct ieee80211_hw*h,const u8*a,const void*b){assert(h&&a&&a[0]==2&&b&&bh&&rcu);lookups++;sta.drv_priv[0].macid=*(const u8*)b;return &sta;}
 static void ieee80211_wake_queues(struct ieee80211_hw*h){assert(h&&locks);wakes++;runnable=true;}
 static void rtl_ax_tx_unmap(struct rtl_ax_tx*t,struct rtl_ax_tx_slot*s){assert(t==active&&!locks);if(batch)assert(bh==1);unsigned id=s->skb->data[0];assert(!t->pending[id]&&!t->slots[id].skb);unmaps++;}
 static void ieee80211_tx_info_clear_status(struct ieee80211_tx_info*i){memset(&i->status,0,sizeof(i->status));}
-static void ieee80211_tx_status_ext(struct ieee80211_hw*h,struct ieee80211_tx_status*s){assert(h&&s->info&&s->sta&&bh&&rcu);if(s->skb){returns++;runnable=true;}}
+static void ieee80211_tx_status_ext(struct ieee80211_hw*h,struct ieee80211_tx_status*s){assert(h&&s->info&&bh&&rcu);if(s->skb){returns++;runnable=true;}}
 static void ieee80211_tx_status_skb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);raws++;returns++;runnable=true;}
 static void ieee80211_tx_status_ni(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s);local_bh_disable();ieee80211_tx_status_skb(h,s);local_bh_enable();}
 static unsigned sw_freed,fttr_puts,mcast_puts;
@@ -97,6 +97,25 @@ static void rtl9617c_bridge_mcast_tx_put(bool held){if(held){assert(unmaps==retu
 static void rtl9617c_fttr_tx_put(u64 generation){if(generation){assert(unmaps==returns+sw_freed&&unmaps>fttr_puts);fttr_puts++;}}
 static void ieee80211_free_txskb(struct ieee80211_hw*h,struct sk_buff*s){assert(h&&s&&bh&&!locks);sw_freed++;}
 '''
+
+snapshot_start = source.index('\tif (encap) {', source.index('\tslot.macid = macid;'))
+snapshot_end = source.index('\n\tslot.tid =', snapshot_start)
+code += 'static void snapshot_case(void){\n' + r'''
+ u8 memory[0x80000]={};struct {bool peer_client[128];struct {u8 *memory;}pe;} object={.pe.memory=memory},*tx=&object;
+ struct {u8 addr[6];} vif={.addr={2,4,5,6,7,8}};
+ struct {struct {typeof(&vif) vif;}control;} information={.control.vif=&vif},*info=&information;
+ struct sk_buff packet={.data={2,9,8,7,6,5}},*skb=&packet;unsigned macid=3;bool encap=true;
+ memcpy(memory+0xe400+macid*8,(u8[]){2,1,2,3,4,5},6);
+ for(unsigned client=0;client<2;client++){
+  struct rtl_ax_tx_slot slot={};tx->peer_client[macid]=client;
+#define ether_addr_copy(a,b) memcpy(a,b,6)
+''' + source[snapshot_start:snapshot_end] + r'''
+  assert(!memcmp(slot.self,vif.addr,6));
+  assert(!memcmp(slot.peer,client?memory+0xe400+macid*8:skb->data,6));
+ }
+}
+'''
+code += '\n#define RTL_AX_AP_ROLE_H\nstruct ieee80211_hw;\n#include "' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/peer-lookup.h') + '"\n#define RTL_AX_TX_PEER_SELF 0x68400\n'
 code+=(path.parent/'tx-ownership.h').read_text()
 code+=before.replace('int rtl_ax_tx_report(', 'static int old_report(')+'\n'
 code+=after.replace('int rtl_ax_tx_report(', 'static int new_report(')+'\n'
@@ -119,12 +138,13 @@ static struct result run(bool batching,unsigned count,unsigned mode){
   put_unaligned_le32(n+1,mem+RTL_AX_WP_TAG_MAP+(ring*4096+n)*4);
   skbs[n].data[0]=n;
   skbs[n].cb.flags=((mode&32)&&n%2?0:IEEE80211_TX_CTL_HW_80211_ENCAP)|((n%3)?IEEE80211_TX_CTL_AMPDU:0)|((n%5)?0:IEEE80211_TX_CTL_NO_ACK);
-  t.slots[n]=(struct rtl_ax_tx_slot){.skb=&skbs[n],.fttr_generation=2,.ring=ring,.macid=n%128,.pe_sequence=(n%2)==1,.pe_mcast=!!(mode&1)};t.pending[n]=true;
+  t.slots[n]=(struct rtl_ax_tx_slot){.skb=&skbs[n],.fttr_generation=2,.ring=ring,.macid=n%128,.self={n%128},.peer={2},.pe_sequence=(n%2)==1,.pe_mcast=!!(mode&1)};t.pending[n]=true;
   t.peer_asleep[n%128]=!!(n%3);__le16 seq=0xabc0+n;memcpy(headers+n*128+22,&seq,2);
   u32 ra=BIT(17);memcpy(mem+0xe200+(n%128)*4,&ra,4);
  }
  reports[count]=1|400<<16;reports[count+1]=1|7<<8|254<<16;
  reports[count+2]=count?reports[0]:1; // duplicate or empty pending ID
+ mem[0xe400+3*8]=2;mem[RTL_AX_TX_PEER_SELF+3*8]=3;
  unsigned member=127,meta=(3<<8)|BIT(16),generation=77,rate=BIT(20)|0x80;
  memcpy(mem+RTL_AX_NI_OWNERS+member*8+4,&meta,4);memcpy(mem+RTL_AX_NI_GENERATIONS+member*4,&generation,4);memcpy(mem+RTL_AX_NI_RATES+member*4,&rate,4);
  reports[count+3]=1|383<<16;
@@ -143,7 +163,7 @@ static struct result run(bool batching,unsigned count,unsigned mode){
  for(unsigned n=0;n<count;n++){r.flags[n]=skbs[n].cb.flags;r.seq[n]=((struct ieee80211_hdr*)skbs[n].data)->seq_ctrl;}
  return r;
 }
-int main(void){unsigned cases=0;for(unsigned n=0;n<=256;n++)for(unsigned mode=0;mode<64;mode++){
+int main(void){snapshot_case();unsigned cases=0;for(unsigned n=0;n<=256;n++)for(unsigned mode=0;mode<64;mode++){
  struct result a=run(false,n,mode),b=run(true,n,mode);assert(!memcmp(&a,&b,sizeof(a)));cases++;}
  printf("Actual RPQ function: %u before/after vectors; ownership/status/NI/PS identical; batch dispatch only after full report PASS\n",cases);}
 '''

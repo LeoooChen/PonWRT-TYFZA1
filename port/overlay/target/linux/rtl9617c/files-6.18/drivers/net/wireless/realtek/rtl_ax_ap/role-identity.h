@@ -16,6 +16,7 @@ struct rtl_ax_self_role {
 };
 struct rtl_ax_vif {
 	struct rtl_ax_role_identity identity;
+ u32 generation;
 };
 
 static inline void rtl_ax_identity_maintain(u8 out[4], const struct rtl_ax_role_identity *identity)

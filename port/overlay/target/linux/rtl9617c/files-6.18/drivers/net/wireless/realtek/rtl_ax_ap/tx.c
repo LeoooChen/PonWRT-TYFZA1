@@ -22,6 +22,7 @@
 #include "traffic-flow.h"
 #include "security.h"
 #include "role-identity.h"
+#include "peer-lookup.h"
 #include "tx.h"
 #include "rx.h"
 #include "pe_probe.h"
@@ -57,7 +58,7 @@ struct rtl_ax_tx_slot {
 	unsigned int bytes;
 	u8 ring;
 	u8 key_index;
-	u8 macid, tid;
+	u8 macid, tid, self[ETH_ALEN], peer[ETH_ALEN];
 	bool encrypted, pe_sequence, firmware_rate, pe_key_pn, quota_counted, pe_mcast, pe_interface;
 	struct rtl_ax_tx_mapping *mapping;
 };
@@ -1149,6 +1150,13 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	slot.ring = ring;
 	slot.pe_sequence = pe_sequence;
 	slot.macid = macid;
+	if (encap) {
+		/* A STA-mode Ethernet DA can be beyond the AP. Keep the wireless
+		 * peer plus local interface until RPQ, without a borrowed VIF. */
+		ether_addr_copy(slot.self, info->control.vif->addr);
+		ether_addr_copy(slot.peer, tx->peer_client[macid] ?
+			tx->pe.memory + 0xe400 + macid * 8 : skb->data);
+	}
 	slot.tid = encap ? tid : ieee80211_is_data_qos(header->frame_control) ? tid : IEEE80211_NUM_TIDS;
 	slot.encrypted = !!info->control.hw_key;
 	slot.key_index = info->control.hw_key ? info->control.hw_key->hw_key_idx : 0;
@@ -1301,7 +1309,8 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 			feedback.flags = (!status ? IEEE80211_TX_STAT_ACK : 0) |
 				(rate & BIT(19) ? IEEE80211_TX_CTL_RATE_CTRL_PROBE : 0);
 			local_bh_disable(); rcu_read_lock();
-			feedback_status.sta = ieee80211_find_sta_by_ifaddr(hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+			feedback_status.sta = meta & BIT(24) ? NULL : rtl_ax_lookup_peer(hw,
+				tx->pe.memory + 0xe400 + macid * 8, tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 			if (feedback_status.sta) ieee80211_tx_status_ext(hw, &feedback_status);
 			rcu_read_unlock(); local_bh_enable();
 			if (!tx->ni_reports) tx->ni_first_report_ns = ktime_get_ns();
@@ -1312,7 +1321,8 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 				struct ieee80211_sta *sta;
 				unsigned int macid = (meta >> 8) & 127;
 				local_bh_disable(); rcu_read_lock();
-				sta = ieee80211_find_sta_by_ifaddr(hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+				sta = rtl_ax_lookup_peer(hw, tx->pe.memory + 0xe400 + macid * 8,
+					tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 				if (sta) ni_ps_complete(tx, sta, macid, generation);
 				rcu_read_unlock(); local_bh_enable();
 			}
@@ -1399,7 +1409,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
 			struct ieee80211_tx_status status = {.skb = slot.skb, .info = info};
 			local_bh_disable(); rcu_read_lock();
-			status.sta = ieee80211_find_sta_by_ifaddr(hw, slot.skb->data, NULL);
+			status.sta = rtl_ax_lookup_peer(hw, slot.peer, slot.self, slot.macid);
 			ieee80211_tx_status_ext(hw, &status);
 			rcu_read_unlock(); local_bh_enable();
 		} else ieee80211_tx_status_ni(hw, slot.skb);

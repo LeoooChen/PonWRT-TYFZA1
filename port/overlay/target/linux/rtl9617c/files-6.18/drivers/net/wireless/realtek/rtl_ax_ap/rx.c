@@ -16,6 +16,8 @@
 #include "receive.h"
 #include "rx.h"
 #include "role.h"
+#include "peer-lookup.h"
+#include "tx-ownership.h"
 #include "pe_probe.h"
 
 extern bool rtl_ax_datapath_profile;

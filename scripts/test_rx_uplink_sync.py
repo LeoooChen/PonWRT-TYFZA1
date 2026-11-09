@@ -39,7 +39,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 struct rtl_ax_rx_packet {const u8 *payload;unsigned type,bytes;};
 static u16 get_unaligned_le16(const void *p){u16 v;memcpy(&v,p,2);return v;}
 struct ieee80211_key_conf {u16 next;u8 pn[6];};
-struct ieee80211_sta {unsigned macid;};
+struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {union {unsigned macid;struct rtl_ax_station drv_priv[1];};};
 struct rtl_ax_shortcut_seen {u32 frames,bytes,msdus;};
 struct rtl_ax_rx {
     struct {u8 *memory;} pe;u8 *uplink_states,*rpq_memory;void *hw;
@@ -98,9 +98,10 @@ static void queue_delayed_work(void *queue,int *work,unsigned delay){
     if(work_pending)return;
     work_pending=true;work_delay=delay;queued++;
 }
-static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *address,void *unused){
+static bool duplicate_peer, wrong_macid;
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *address,const void *unused){
     (void)hw;(void)unused;assert(bh&&rcu&&active->uplink_lock);
-    return &stations[*address];
+    return &stations[wrong_macid ? 9 : duplicate_peer ? *(const u8 *)unused : *address];
 }
 static bool ieee80211_rx_shortcut_snapshot(struct ieee80211_sta *sta,
         struct ieee80211_key_conf *key,unsigned tid,u16 *next,u8 pn[6]){
@@ -127,6 +128,9 @@ static void ieee80211_rx_shortcut_account(struct ieee80211_sta *sta,unsigned tid
 }
 '''
 
+
+common += '\n#define RTL_AX_AP_ROLE_H\nstruct ieee80211_hw;\n#include "' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/peer-lookup.h') + '"\n#define RTL_AX_TX_PEER_SELF 0x68400\n'
+
 case = r'''
 static void record(u8 *state,u32 frames,u32 bytes,u32 msdus){
     put_unaligned_le32(BIT(31)|4094,state);put_unaligned_le32(0x33445566,state+4);
@@ -136,7 +140,7 @@ static void record(u8 *state,u32 frames,u32 bytes,u32 msdus){
 }
 int main(void){
     (void)system_wq;(void)mod_delayed_work;(void)queue_delayed_work;
-    static u8 memory[0x2200],rpq[0xe800],states[0x10200];
+    static u8 memory[0x2200],rpq[0x80000],states[0x10200];
     struct ieee80211_key_conf key={0},other={0};
     struct rtl_ax_rx rx={.pe={memory},.uplink_states=states,.rpq_memory=rpq,
         .uplink_wifi_id=1,.running=true,.uplink_forwarded_seen=9};
@@ -222,6 +226,18 @@ int main(void){
     snapshot_blocked=false;open_next=22;frame[0]=0x84;frame[1]=0;frame[17]=3<<4;
     rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|22));
     rx.uplink_open[7]=false;open_next=23;rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|22));
+    /* Identical TA on two BSSes must select by RA before copying PN/SN. */
+    duplicate_peer=true;rpq[0xe400+8*8]=7;
+    rpq[RTL_AX_TX_PEER_SELF+7*8]=7;rpq[RTL_AX_TX_PEER_SELF+8*8]=8;
+    rx.uplink_open[7]=true;frame[4]=8;frame[10]=7;frame[17]=4<<4;
+    other.next=57;unsigned before_snapshots=snapshots;
+    rtl_ax_rx_uplink_seed(&rx,&packet);
+    assert(raw(second)==(BIT(31)|57)&&raw(state)==(BIT(31)|22)&&snapshots==before_snapshots+1);
+    wrong_macid=true;other.next=58;rtl_ax_rx_uplink_seed(&rx,&packet);
+    assert(!raw(second)&&snapshots==before_snapshots+1);
+    wrong_macid=false;frame[4]=7;frame[17]=3<<4;open_next=33;
+    rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|33)&&!raw(second));
+    frame[4]=9;open_next=34;rtl_ax_rx_uplink_seed(&rx,&packet);assert(raw(state)==(BIT(31)|33));
     puts("Uplink sync: stalled/torn records, deferred retry, independent TIDs, PN/SN, BA window, counter wrap and shutdown passed");
 }
 '''

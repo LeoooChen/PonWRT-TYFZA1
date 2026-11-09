@@ -8536,6 +8536,53 @@ This change implements independent firmware-role ownership, not a claim of
 complete multi-SSID operation or physical packet retirement. No physical device
 was accessed.
 
+### Peer work and completion ownership across interfaces
+
+The target `rtw_get_stainfo@0xccae8` searches and caches inside the supplied
+adapter's `sta_priv`. Executing its actual hash and cache paths against two
+constructed adapters with the same peer MAC returns distinct station objects;
+an inactive entry never falls back to the other adapter. The native driver now
+preserves that interface boundary in asynchronous unicast offload, BA completion,
+rate updates and traffic policy. A wiphy-owned self-MACID-to-VIF table is published
+only after successful interface creation and cleared before removal. Each peer
+retains the nonwrapping interface instance number and full role identity. Workers
+reject removed/recreated owners, mismatched identities and mac80211 stations with
+a different MACID. Hardware cleanup still runs when no live VIF remains, while
+its BA callback is suppressed. The atomic rate-change callback uses only its
+supplied live VIF and the published instance number; it never dereferences the
+wiphy-owned registry.
+
+Non-wiphy NI activity, TIM/PS completion, RPQ feedback and RX PN/SN synchronization
+now match both local and peer MAC addresses and verify the returned MACID. RX
+accepted-frame/BAR reseeding also checks the receiver address before choosing a
+peer, so two BSSes with the same transmitter cannot copy one another's sequence
+or replay state. CPU Ethernet requests retain local and wireless-peer address
+snapshots until completion, with no borrowed VIF pointer. In STA mode that peer
+is the associated AP, not an Ethernet destination beyond it, consistent with the
+original `update_attrib`/`rtw_make_wlanhdr` execution. Direct BCMC RPQ feedback is
+excluded from ordinary station rate reporting.
+
+`test_wifi_peer_vif.py` exercises the actual offload/lookup/BA/atomic-RC functions
+with the same station MAC on root0 and self41, different keys and devices, removed
+and recreated VIFs, wrong returned MACIDs and role mutations. RX synchronization
+tests include equal transmitter addresses, distinct receivers/keys and stale
+MACID reseeding. Interface startup failure and generation overflow do not publish
+an owner. Existing TIM, PS generation, BA/key teardown, AP/mesh/STA lifecycle,
+FE failure/retry, 16448 RPQ completion vectors, 67584 PE request vectors and the
+factory RA comparisons pass. Actual Image/modules builds and eight input hashes
+match; evidence is `artifacts/fttr/vif-*-20261109.*`, with the original lookup
+oracle in `tools/trace_stock_peer_lookup.py`. The old standalone
+`test_wifi_cleanup_nonblocking.py` fixture currently fails to load its updated
+key-test setup; delayed RPQ/nonblocking station cleanup is covered by the actual
+station-release and key-cleanup tests, not claimed from that broken fixture.
+
+The branch includes local main `b28f290`; PE firmware/ABI are unchanged. Public
+interface count remains one: AP/beacon lifecycle, BCMC scheduling, global policy
+and interface allocation still require integration before enabling multiple
+SSIDs. This work fixes peer task/completion ownership and does not establish a
+full hardware retirement barrier or safe resource reuse. No physical device was
+accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

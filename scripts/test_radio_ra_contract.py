@@ -83,7 +83,7 @@ struct ieee80211_link_sta {unsigned bandwidth,rx_nss,smps_mode,supp_rates[2];
  struct {bool vht_supported;u32 cap;struct {u16 rx_mcs_map;}vht_mcs;}vht_cap;
  struct ieee80211_sta_he_cap he_cap;};
 struct ieee80211_sta {struct ieee80211_link_sta deflink;struct {u32 max_amsdu_len;}*cur;};
-struct rtl_ax_ap {unsigned chip;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;};
+struct rtl_ax_ap {struct {unsigned nhm_noise_ratio;}environment;unsigned chip;struct {unsigned bandwidth;}channel;struct {unsigned band;}band;};
 ''' + monitor[a:b] + r'''
 int native_peer(u8 *out,unsigned five,unsigned rates,unsigned update){
  struct rtl_ax_ap radio={.chip=five?RTL_AX_8852C:0x53,.channel={3},.band={five}};

@@ -277,6 +277,7 @@
 129. 接入直接BCMC每接口模板：12序列域分别保存GTK/PN代际/序列token/port-MBID/self-MACID/发射地址，FE配方贯通，PE选择与最终发布核对；私有请求保留地址快照，NI owner增加BCMC标识，非零self的RPQ正确匹配且不扣普通站点PS/AC计数。同域netdev冲突/跨域self冲突/已占域改self拒绝，单域关闭保留其他模板。245原有+72完整多域RPQ/EQ、同批双VIF选择性撤销、2个真实learner二进制配方到PE、3次完整main暂存、模板/绑定/GTK/NI退场/771 CPU回收/序列/FTTR/收发/发布回归通过；MCP:能力，PE32680字节/栈7336/重复一致/非uplink13992，Image/模块和九输入一致通过。未实机；软件BCMC FIFO与策略门仍共享，接口分配/完整多VIF生命周期及全链路退场、安全ID复用继续待补。详见[BCMC接口模板](port/FTTR.md#per-interface-direct-bcmc-templates-and-pe-ownership)。
 
 130. 接入按self-MACID保留的角色生命周期：CREATE/JOIN/CAM/站点表统一使用显式身份，阶段/类型/颜色/确认快照独立保存，peer记录其self owner；修复非零self仍创建CAM/表0的遗漏。self与peer共用预留，CREATE超时保留并先清理再重建，移除等待子站点/密钥/组播WP，固件删除与CAM擦除分阶段重试，首次CAM超时无快照也按原索引清理；接口释放后的worker不持有旧VIF指针，新接口先完成旧清理。root0/VAP41/63并存、两芯片/创建失败/独立删除/peer-key持有/无快照/颜色继承及STA-BA/密钥/AP-mesh/FE/DFS回归通过，Image/模块和四输入一致通过。PE未变、未实机；全局AP/信标/异步工作和实际多接口分配仍未完全拆分，接口数量限制保留。详见[self角色生命周期](port/FTTR.md#retained-self-role-state-by-macid)。
+131. 修复跨接口异步peer归属：目标ELF `rtw_get_stainfo` 的独立adapter哈希/缓存实执行确认同MAC站点隔离；原生wiphy任务按self-MACID、接口实例号与身份定位VIF，BA/FE/速率/流量路径拒绝旧接口和错误MACID。原子速率回调不读取VIF指针表；NI的TIM/PS/活动、RPQ反馈、RX PN/SN与BAR重播按本地/对端地址和MACID核对。CPU请求保存完成所需地址，STA使用无线AP地址；BCMC不提交普通peer速率反馈。实际双BSS同MAC不同密钥/设备/回调、移除重建、RX不同RA和错误MACID用例及16448 RPQ、67584请求、密钥/BA/STA/AP-mesh/FE/原厂RA回归通过；Image/模块及8个输入一致。main已含b28f290，PE未变、未实机；公开单接口限制、全局AP/信标/BCMC调度和硬件完整退役缺口保留。详见[异步peer与完成归属](port/FTTR.md#peer-work-and-completion-ownership-across-interfaces)。
 
 ## 建议接着做的工作
 

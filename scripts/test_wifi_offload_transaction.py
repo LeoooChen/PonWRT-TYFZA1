@@ -95,7 +95,7 @@ struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struc
 struct rtl_ax_tx {struct net_device *bcmc_dev[12];unsigned bcmc_domains,bcmc_domain_retiring;bool key_refresh_pending,bcmc_enabled,bcmc_owned,bcmc_prepare_failed,bcmc_retiring;int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
-struct rtl_ax_ap {struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
+struct rtl_ax_ap {u8 role_owner[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];void *rx;bool beacon_enabled;int ap_result;struct {int error;}dfs;struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
  struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6],keyid[7];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
  struct ieee80211_key_conf *security_keys[128];unsigned security_unlink[128];bool ra_registered[128];
@@ -193,6 +193,7 @@ int main(void){
   struct wiphy wiphy={};struct ieee80211_hw hw={&wiphy};struct ieee80211_vif vif={.wdev={.netdev=&dev}};
   struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.monitor_started=true};
   if(client){vif.wdev.iftype=2;dev.ieee80211_ptr=&vif.wdev;radio.sta_vif=&vif;radio.ap_vif=NULL;radio.ap_started=false;radio.sta_associated=true;}
+  vif.drv_priv[0].generation=1;radio.peer_vif_generation[1]=1;radio.vif_owner[0]=&vif;
   const u8 mac[6]={2,1,2,3,4,5};active_radio=&radio;active_fe=&fe;active_tx=&tx;timers=ba_callbacks=0;queued=NULL;key_error=0;open_key=opened;
   init(&fe.ports);init(&fe.flows);init(&fe.wifi_peers);fe.memory=actions;list_add_tail(&port.list,&fe.ports);
   if(initial){dev_hold(&dev);tx.ni.route_dev=&dev;}
@@ -311,6 +312,7 @@ code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') +
 code += function(tx, 'rtl_ax_tx_peer_authorized') + function(tx, 'rtl_ax_tx_key_changed') + function(tx, 'rtl_ax_tx_key_refresh')
 if 'bool rtl_ax_tx_peer_security(' in tx:
     code += function(tx, 'rtl_ax_tx_peer_security')
+code += function(monitor, 'rtl_ax_peer_vif') + function(monitor, 'rtl_ax_find_peer')
 code += function(monitor, 'rtl_ax_offload_ready') + function(monitor, 'rtl_ax_tx_ba_finish')
 action = function(monitor, 'rtl_ax_ampdu_action')
 prefix = action[:action.index('\tswitch (params->action)')]

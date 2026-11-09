@@ -40,7 +40,8 @@ static void ni_test_buffered(struct rtl_ax_tx *tx, unsigned int macid, u16 tids)
 	struct ieee80211_sta *sta;
 	unsigned int tid;
 	local_bh_disable(); rcu_read_lock();
-	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+	sta = rtl_ax_lookup_peer(tx->hw, tx->pe.memory + 0xe400 + macid * 8,
+		tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 	for (tid = 0; sta && tid < 8; tid++)
 		ieee80211_sta_set_buffered(sta, tid, tids & BIT(tid));
 	rcu_read_unlock(); local_bh_enable();
@@ -58,7 +59,8 @@ static void ni_ps_done(struct rtl_ax_tx *tx, unsigned int macid)
 	    get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_DONE + macid * 8 + 4) == tx->ni.ps_seen[1][macid])
 		return;
 	local_bh_disable(); rcu_read_lock();
-	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+	sta = rtl_ax_lookup_peer(tx->hw, tx->pe.memory + 0xe400 + macid * 8,
+		tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 	for (i = 0; sta && i < 2; i++) {
 		u8 *record = tx->pe.memory + tables[i] + macid * 8;
 		u32 producer = get_unaligned_le32(record + 4);
@@ -80,8 +82,8 @@ static void ni_ps_retire(struct rtl_ax_tx *tx)
 	local_bh_disable(); rcu_read_lock();
 	for (macid = 1; macid < 128; macid++) {
 		if (!tx->ni.ps_issued[macid]) continue;
-		struct ieee80211_sta *sta = ieee80211_find_sta_by_ifaddr(tx->hw,
-			tx->pe.memory + 0xe400 + macid * 8, NULL);
+		struct ieee80211_sta *sta = rtl_ax_lookup_peer(tx->hw, tx->pe.memory + 0xe400 + macid * 8,
+			tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 		if (sta) ni_ps_complete(tx, sta, macid,
 			get_unaligned_le32(tx->pe.memory + 0xe800 + macid * 16 + 4));
 		tx->ni.ps_issued[macid] = false;
@@ -109,7 +111,8 @@ static void ni_tx_activity(struct rtl_ax_tx *tx, unsigned int macid)
 	if (!changed) return;
 	/* NI traffic bypasses mac80211's TX preparation and its last_tx update. */
 	local_bh_disable(); rcu_read_lock();
-	sta = ieee80211_find_sta_by_ifaddr(tx->hw, tx->pe.memory + 0xe400 + macid * 8, NULL);
+	sta = rtl_ax_lookup_peer(tx->hw, tx->pe.memory + 0xe400 + macid * 8,
+		tx->pe.memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 	for (tid = 0; sta && tid < 8; tid++)
 		if (changed & BIT(tid)) {
 			ieee80211_refresh_tx_agg_session_timer(sta, tid);

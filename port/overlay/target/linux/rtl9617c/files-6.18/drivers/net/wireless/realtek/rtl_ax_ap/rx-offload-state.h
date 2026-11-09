@@ -153,7 +153,8 @@ static void rtl_ax_rx_uplink_sync(struct rtl_ax_rx *rx)
 		struct ieee80211_key_conf *key = rx->keys[macid];
 		struct ieee80211_sta *sta;
 		if (!key && !rx->uplink_open[macid]) continue;
-		sta = ieee80211_find_sta_by_ifaddr(rx->hw, rx->rpq_memory + 0xe400 + macid * 8, NULL);
+		sta = rtl_ax_lookup_peer(rx->hw, rx->rpq_memory + 0xe400 + macid * 8,
+			rx->rpq_memory + RTL_AX_TX_PEER_SELF + macid * 8, macid);
 		for (tid = 0; sta && tid < 16; tid++) {
 			u8 *state = rx->uplink_states + (macid * 16 + tid) * 32;
 			struct rtl_ax_shortcut_seen *seen = &rx->uplink_seen[macid][tid];
@@ -225,11 +226,12 @@ static void rtl_ax_rx_uplink_seed(struct rtl_ax_rx *rx, const struct rtl_ax_rx_p
 	}
 	mutex_lock(&rx->uplink_lock);
 	for (macid = 1; macid < 128; macid++)
-		if ((rx->keys[macid] || rx->uplink_open[macid]) && !memcmp(frame + 10, memory + 0xe400 + macid * 8, 6)) break;
+		if ((rx->keys[macid] || rx->uplink_open[macid]) && !memcmp(frame + 10, memory + 0xe400 + macid * 8, 6) &&
+		    !memcmp(frame + 4, memory + RTL_AX_TX_PEER_SELF + macid * 8, 6)) break;
 	if (macid == 128) goto unlock;
 	rx->uplink_pending_tids[macid] |= BIT(tid);
 	local_bh_disable(); rcu_read_lock();
-	sta = ieee80211_find_sta_by_ifaddr(rx->hw, frame + 10, NULL);
+	sta = rtl_ax_lookup_peer(rx->hw, frame + 10, frame + 4, macid);
 	if (!sta || !rtl_ax_rx_uplink_publish(rx, sta, rx->keys[macid], macid, tid))
 		put_unaligned_le32(0, rx->uplink_states + (macid * 16 + tid) * 32);
 	rcu_read_unlock(); local_bh_enable();

@@ -27,6 +27,7 @@ common = r"""
 #include <stddef.h>
 #include <stdio.h>
 #include <errno.h>
+#include <string.h>
 typedef uint8_t u8;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
@@ -36,7 +37,8 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define IEEE80211_NUM_TIDS 16
 #define RTL_AX_CLIENT_MACID 1
 #define NL80211_IFTYPE_MESH_POINT 7
-struct ieee80211_vif {int type;u8 addr[6];};
+struct rtl_ax_role_identity {u8 port,mbid,macid,type;};struct rtl_ax_vif {struct rtl_ax_role_identity identity;u32 generation;};
+struct ieee80211_vif {struct rtl_ax_vif drv_priv[1];int type;u8 addr[6];};
 #define NL80211_IFTYPE_AP 3
 #define min(a,b) ((a)<(b)?(a):(b))
 #define dev_info(...) ((void)0)
@@ -46,7 +48,7 @@ struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2],keyid[7];};
 struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
-struct rtl_ax_ap {
+struct rtl_ax_ap {u8 mbid_drop_pending,role_owner[128];struct {bool retiring;}self_roles[128];struct rtl_ax_role_identity identities[128];u32 peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];
  struct ieee80211_hw *hw;bool beacon_enabled;int ap_result;struct {int error;}dfs;
  struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];
  unsigned rx_ba_stopped;int rx_ba_result,tx,rx;
@@ -87,7 +89,9 @@ static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(struct ieee80211_hw *h
 static int ieee80211_start_tx_ba_session(struct ieee80211_sta *s,unsigned tid,unsigned t){(void)s;(void)tid;(void)t;assert(0);return 0;}
 struct ieee80211_tx_info {struct {struct ieee80211_vif *vif;}control;};
 static int rtl_ax_tx_bcmc_stop(int t){(void)t;assert(0);return 0;}
-static void rtl_ax_tx_bcmc_close(int t){(void)t;assert(0);}
+static void rtl_ax_tx_bcmc_close_vif(int t,struct ieee80211_vif *v){(void)t;(void)v;assert(0);}
+static int rtl_ax_self_role_release(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
+static int rtl_ax_port0_drop_mbid(struct rtl_ax_ap *r,unsigned id){(void)r;(void)id;assert(0);return 0;}
 static int ieee80211_rtl9617c_bcmc_key(struct ieee80211_vif *v,struct ieee80211_key_conf **k){(void)v;(void)k;assert(0);return 0;}
 static unsigned rtl_ax_tx_basic_rate(struct rtl_ax_ap *r,struct ieee80211_sta *s,struct ieee80211_tx_info *i){(void)r;(void)s;(void)i;return 0;}
 static int rtl_ax_tx_bcmc(int t,struct ieee80211_vif *v,struct ieee80211_key_conf *k,unsigned r){(void)t;(void)v;(void)k;(void)r;assert(0);return 0;}
@@ -104,12 +108,14 @@ static int rtl_ax_tx_mcast_policy(int tx,struct ieee80211_vif *v,unsigned id){(v
 stop = source.split("case IEEE80211_AMPDU_RX_STOP:\n", 1)[1].split("\n\t}\n", 1)[0]
 common += function("rtl_ax_rx_ba_remove")
 common += "\nstatic int stop(struct rtl_ax_ap *radio,struct ieee80211_hw *hw,struct rtl_ax_station *station,struct params *params){unsigned i;int ret;\n" + stop + "\n}\n"
+common += function("rtl_ax_peer_vif") + function("rtl_ax_find_peer")
 common += function("rtl_ax_cleanup_work") + function("rtl_ax_offload_work")
 common += r"""
 int main(void){
  struct wiphy w={0};struct ieee80211_hw hw={&w};struct rtl_ax_station sta={.macid=7};struct params p={3};
  struct ieee80211_vif vif={};
  struct rtl_ax_ap r={.ap_vif=&vif,.ap_started=true,.monitor_started=true};
+ r.vif_owner[0]=&vif;r.peer_vif_generation[7]=vif.drv_priv[0].generation=1;
  r.rx_ba[0].valid=true;r.rx_ba[0].macid=7;r.rx_ba[0].tid=3;window=64;
  r.peer_authorized[7]=true;r.tx_ba[7].aggregation[0]=64;r.security_roles[7].valid=1;r.security_keys[0]=&active_key;
  retire_error=-ETIMEDOUT;

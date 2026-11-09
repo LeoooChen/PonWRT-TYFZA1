@@ -70,7 +70,7 @@ struct ieee80211_vif {void *netdev;struct rtl_ax_vif drv_priv[1];int type;bool u
 struct port {int result;};
 struct io {int unused;}; struct tx {bool blocked;};
 #include "cam-owner.h"
-struct rtl_ax_ap {struct rtl_ax_self_role self_roles[128];u8 role_owner[128];bool station_ids[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;
+struct rtl_ax_ap {u32 vif_generation,peer_vif_generation[128];struct ieee80211_vif *vif_owner[128];struct rtl_ax_self_role self_roles[128];u8 role_owner[128];bool station_ids[128];u8 mbid_drop_pending;struct rtl_ax_role_identity identities[128];struct rtl_ax_cam_owners cam_owners;
  struct {u8 nhm_noise_ratio;} environment;s64 mesh_tsf_remainder;struct {bool queued;}mesh_sync_work,cleanup_work;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_role,sta_4addr,sta_associated;u8 sta_bssid[6];struct {bool pending;}retired_stations[128]; struct io io; struct tx *tx; void *pdev,*rx;
  bool monitor_started,ap_started,mesh_started,beacon_enabled,radar_required;
  struct {int error;bool enabled,detected,in_cac;}dfs;

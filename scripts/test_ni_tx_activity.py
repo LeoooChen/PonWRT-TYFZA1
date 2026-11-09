@@ -18,10 +18,10 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define READ_ONCE(x) (x)
 #define dma_rmb() ((void)0)
 #define RTL_AX_NI_TX_ACTIVITY 0x1c000
-struct ieee80211_sta {unsigned id;};
-struct rtl_ax_tx {bool peer_authorized[128];void *hw;
+struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {union {unsigned id;struct rtl_ax_station drv_priv[1];};};
+struct rtl_ax_tx {void (*peer_ready)(void *);void *peer_ready_context;bool peer_authorized[128];void *hw;
  struct {u8 *memory;} pe;struct {u32 tx_activity_seen[128][8];u64 ba_refreshes;} ni;};
-static struct ieee80211_sta stations[3]={{0},{1},{2}};
+static struct ieee80211_sta stations[3]={{.id=0},{.id=1},{.id=2}};
 static unsigned refreshed[3][8],locked,bh_disabled;
 static bool absent;
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
@@ -29,16 +29,19 @@ static void local_bh_disable(void){assert(!bh_disabled++);}
 static void local_bh_enable(void){assert(bh_disabled--==1);}
 static void rcu_read_lock(void){assert(!locked++);}
 static void rcu_read_unlock(void){assert(locked--==1);}
-static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,void *bssid){
- assert(locked&&bh_disabled&&hw&&!bssid&&mac[0]<3);return absent?0:&stations[mac[0]];
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,const void *bssid){
+ assert(locked&&bh_disabled&&hw&&bssid&&mac[0]<3);return absent?0:&stations[mac[0]];
 }
 static void ieee80211_refresh_tx_agg_session_timer(struct ieee80211_sta *sta,unsigned tid){
  assert(locked&&bh_disabled&&tid<8);refreshed[sta->id][tid]++;
 }
 '''
+
+fixture += '\n#define RTL_AX_AP_ROLE_H\nstruct ieee80211_hw;\n#include "' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/peer-lookup.h') + '"\n#define RTL_AX_TX_PEER_SELF 0x68400\n'
+
 checks = r'''
 int main(void){
- u32 memory[0x20000/4]={0};struct rtl_ax_tx tx={.hw=&tx,.pe.memory=(void *)memory};
+ u32 memory[0x80000/4]={0};struct rtl_ax_tx tx={.hw=&tx,.pe.memory=(void *)memory};
  tx.peer_authorized[1]=tx.peer_authorized[2]=true;
  tx.pe.memory[0xe408]=1;tx.pe.memory[0xe410]=2;
  u32 *counts=memory+RTL_AX_NI_TX_ACTIVITY/4;

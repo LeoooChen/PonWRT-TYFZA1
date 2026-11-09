@@ -21,6 +21,7 @@ common = r'''
 #include <stdio.h>
 #include <string.h>
 typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
+#define WRITE_ONCE(x,v) ((x)=(v))
 #define BIT(n) (1U<<(n))
 #define RTL_AX_BIT(n) BIT(n)
 #define RTL_AX_AP_TRANSPORT_H
@@ -55,7 +56,7 @@ struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
 #define RTL_AX_CLIENT_MACID 1
 #include "''' + str(driver / 'role-identity.h') + r'''"
 struct ieee80211_vif {int type;struct rtl_ax_vif drv_priv[1];};
-struct rtl_ax_ap {struct rtl_ax_key_owner security_owner[128];struct rtl_ax_role_identity identities[128];u8 security_ext[128];unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
+struct rtl_ax_ap {u32 peer_vif_generation[128];struct rtl_ax_key_owner security_owner[128];struct rtl_ax_role_identity identities[128];u8 security_ext[128];unsigned traffic_peer;struct rtl_ax_security_role security_roles[128];
  struct ieee80211_key_conf *security_keys[128];
  bool sta_role,sta_associated;int io;
  bool security_ids[128],security_deleting[128],security_aborting[128];u8 security_unlink[128];

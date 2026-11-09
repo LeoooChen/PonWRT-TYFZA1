@@ -38,6 +38,7 @@ code = r'''
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define ether_addr_copy(a,b) memcpy(a,b,6)
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u64;
 typedef u16 __le16;typedef u32 dma_addr_t;
 #define WLAN_CIPHER_SUITE_GCMP 8
@@ -123,7 +124,7 @@ struct ieee80211_sta {void *drv_priv;struct {struct {unsigned ampdu_density;}ht_
 struct ieee80211_tx_control {struct ieee80211_sta *sta;};
 struct scatterlist {u32 dma,len;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[10];unsigned count,dma_count;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted,pe_interface;struct rtl_ax_tx_mapping *mapping;};
+struct rtl_ax_tx_slot {u8 self[6],peer[6];struct sk_buff *skb;u64 fttr_generation;dma_addr_t dma;unsigned bytes,ring,key_index,macid,tid;bool encrypted,pe_sequence,firmware_rate,pe_key_pn,pe_mcast,quota_counted,pe_interface;struct rtl_ax_tx_mapping *mapping;};
 struct rtl_ax_io {void *ctx;void (*write16)(void *,unsigned,unsigned);};
 struct rtl_ax_tx {u64 bcmc_policy_attempt;bool bcmc_enabled;bool running,dfs_blocked,pe_active,checksum_enabled,queues_stopped;
  unsigned wmm_quota,ac_pending[128][4],wmm_dropped,peer_bytes[128],peer_packets[128],ac_packets[4];unsigned peer_flows[128][64];

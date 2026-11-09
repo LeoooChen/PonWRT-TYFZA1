@@ -48,14 +48,14 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 struct work_struct {int value;};
-struct ieee80211_sta {unsigned id;};
+struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {union {unsigned id;struct rtl_ax_station drv_priv[1];};};
 struct rtl_ax_tx;
 struct rtl_ax_ni_state {struct rtl_ax_tx *tx;bool route_peers[128];u32 route_tim[128];u32 ps_seen[2][128];bool ps_issued[128];struct work_struct ps_work;u32 tx_activity_seen[128][8];unsigned ba_refreshes;};
 struct rtl_ax_tx {int lock;void *hw;void (*peer_ready)(void *);void *peer_ready_context;unsigned ps_releases,ps_eosp;bool pe_active;struct {void *memory;}pe;struct rtl_ax_ni_state ni;
  bool peer_asleep[128],peer_authorized[128],pending[256];struct {unsigned macid,tid;}slots[256];};
 static struct ieee80211_sta stations[128];static u16 masks[128];
 static void ieee80211_sta_eosp(struct ieee80211_sta *sta){(void)sta;}
-static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *addr,void *unused){
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *addr,const void *unused){
  (void)hw;(void)unused;return &stations[addr[0]];
 }
 static void ieee80211_sta_set_buffered(struct ieee80211_sta *sta,unsigned tid,bool value){
@@ -65,9 +65,12 @@ static u32 ieee80211_sta_ps_generation(struct ieee80211_sta *sta){(void)sta;retu
 static bool ieee80211_sta_eosp_generation(struct ieee80211_sta *sta,u32 generation){(void)generation;ieee80211_sta_eosp(sta);return true;}
 static void ieee80211_refresh_tx_agg_session_timer(struct ieee80211_sta *sta,unsigned tid){(void)sta;(void)tid;}
 '''
+
+common += '\n#define RTL_AX_AP_ROLE_H\nstruct ieee80211_hw;\n#include "' + str(root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/peer-lookup.h') + '"\n#define RTL_AX_TX_PEER_SELF 0x68400\n'
+
 cases = r'''
 int main(void){
- unsigned char memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
+ unsigned char memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
  tx.ni.tx=&tx;for(unsigned i=0;i<128;i++){stations[i].id=i;memory[0xe400+i*8]=i;}
  tx.peer_authorized[2]=true;tx.peer_asleep[2]=true;tx.ni.route_peers[2]=true;
  /* No software queue remains; one submitted NI frame still owns its BID. */
