@@ -170,6 +170,74 @@ int fttr_sync_wan_address(const char *text)
 	return inet_pton(AF_INET6, text, address) == 1 ? AF_INET6 : -EINVAL;
 }
 
+/* Raw factory NTP configuration. TimeZone is the signed32 JSON encoding
+ * of the MIB word, not an IANA zone or a guessed UTC offset. */
+int fttr_sync_time_validate(struct json_object *value)
+{
+ struct json_object *field;
+ if(!value || !json_object_is_type(value,json_type_object) || json_object_object_length(value)!=4)return -EINVAL;
+ if(!json_object_object_get_ex(value,"TimeEnable",&field) || !json_object_is_type(field,json_type_int) ||
+    (json_object_get_int64(field)!=0 && json_object_get_int64(field)!=1))return -EINVAL;
+ if(!json_object_object_get_ex(value,"TimeZone",&field) || !json_object_is_type(field,json_type_int) ||
+    json_object_get_int64(field)<INT32_MIN || json_object_get_int64(field)>INT32_MAX)return -EINVAL;
+ const char *servers[]={"NTPServer1","NTPServer2"};
+ for(unsigned int i=0;i<2;i++) {
+  if(!json_object_object_get_ex(value,servers[i],&field) || !json_object_is_type(field,json_type_string) ||
+     json_object_get_string_len(field)>45 ||
+     (size_t)json_object_get_string_len(field)!=strlen(json_object_get_string(field)))return -EINVAL;
+ }
+ return 0;
+}
+
+int fttr_sync_time_check(struct json_object *observed,struct json_object *desired,bool compare)
+{
+ if(fttr_sync_time_validate(desired))return -EINVAL;
+ if(fttr_sync_time_validate(observed))return -EBADMSG;
+ return compare && !json_object_equal(observed,desired)?-EUCLEAN:0;
+}
+
+static int time_reply(struct json_object *value,const uint8_t peer[6],bool writing,
+ bool *ack_seen,struct json_object **summary,struct json_object **observed)
+{
+ struct json_object *field,*result=NULL,*fields=NULL;
+ const char *expected=writing?"SetTimeSetting":"GetTimeSetting";
+ int ret=-EBADMSG;
+ if(json_object_object_get_ex(value,"RPCMethod",&field)) {
+  if(!json_object_is_type(field,json_type_string) || (size_t)json_object_get_string_len(field)!=strlen(json_object_get_string(field)))return ret;
+  const char *method=json_object_get_string(field);
+  if(!strcmp(method,"Register"))return -ESTALE;
+  if(strcmp(method,expected))return -EAGAIN;
+ }
+ if(!json_object_object_get_ex(value,"Result",&field))return -EAGAIN;
+ if(!json_object_is_type(field,json_type_int))return ret;
+ if(json_object_get_int64(field)!=1)return -EREMOTEIO;
+ *ack_seen=true;
+ if(writing)return 0;
+ /* The factory accepts bare ACKs. Native reads require this reply's data
+  * and peer identity; a previous ACK cannot complete a later partial row. */
+ if(!json_object_object_get_ex(value,"MAC",&field))return -EAGAIN;
+ if(!json_object_is_type(field,json_type_string) || json_object_get_string_len(field)!=12)return ret;
+ char mac[18];uint8_t decoded[6];const char *text=json_object_get_string(field);
+ for(unsigned int i=0;i<6;i++){mac[i*3]=text[i*2];mac[i*3+1]=text[i*2+1];mac[i*3+2]=i==5?0:':';}
+ if(fttr_sync_mac_parse(mac,decoded) || memcmp(decoded,peer,6))return -ESTALE;
+ fields=json_object_new_object();if(!fields)return -ENOMEM;
+ const char *names[]={"TimeEnable","NTPServer1","NTPServer2","TimeZone"};
+ for(unsigned int i=0;i<4;i++) {
+  if(!json_object_object_get_ex(value,names[i],&field)){ret=-EAGAIN;goto out;}
+  json_object_object_add(fields,names[i],json_object_get(field));
+ }
+ if(fttr_sync_time_validate(fields))goto out;
+ result=json_object_new_object();if(!result){ret=-ENOMEM;goto out;}
+ json_object_object_add(result,"event",json_object_new_string("sync_time_settings"));
+ json_object_object_add(result,"reported",json_object_get(fields));
+ json_object_object_add(result,"clock_synchronized",json_object_new_boolean(0));
+ json_object_object_add(result,"identity_authenticated",json_object_new_boolean(0));
+ if(observed)*observed=json_object_get(fields);
+ *summary=result;ret=0;
+out:
+ json_object_put(fields);return ret;
+}
+
 int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_t peer[6],
 			unsigned int settings, bool writing, bool *ack_seen,
 			struct json_object **summary, struct json_object **observed)
@@ -191,6 +259,7 @@ int fttr_sync_reply_decode(const struct fttr_sync_message *message, const uint8_
 	    json_tokener_get_parse_end(parser) != message->length ||
 	    !json_object_is_type(value, json_type_object))
 		goto out;
+	if(settings==7 || settings==8) {ret=time_reply(value,peer,settings==8,ack_seen,summary,observed);goto out;}
 	if (settings == 6) {
 		ret = wan_reply(value, ack_seen);
 		goto out;
@@ -396,11 +465,22 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 	char payload[FTTR_SYNC_FRAME_MAX];
 	const char *content = configuration ? json_object_to_json_string_ext(configuration, JSON_C_TO_STRING_PLAIN) : "{\"act\":\"get\"}";
 	int ret, length;
-	if (settings > 6 || ((settings == 2 || settings == 5 || settings == 6) && !configuration)) return -EINVAL;
+	if (settings > 8 || ((settings == 2 || settings == 5 || settings == 6 || settings == 8) && !configuration)) return -EINVAL;
 
 	length = snprintf(payload, sizeof(payload), "{\"RPCMethod\":\"GetWifi\",\"MAC\":\"%02X%02X%02X%02X%02X%02X\"}",
 		source[0], source[1], source[2], source[3], source[4], source[5]);
-	if (settings == 6) {
+ if(settings==7 || settings==8) {
+  if(settings==8 && fttr_sync_time_validate(configuration))return -EINVAL;
+  struct json_object *request=json_object_new_object();if(!request)return -ENOMEM;
+  char mac[13];snprintf(mac,sizeof(mac),"%02X%02X%02X%02X%02X%02X",source[0],source[1],source[2],source[3],source[4],source[5]);
+  json_object_object_add(request,"RPCMethod",json_object_new_string(settings==8?"SetTimeSetting":"GetTimeSetting"));
+  json_object_object_add(request,"MAC",json_object_new_string(mac));
+  if(settings==8) {
+   json_object_object_foreach(configuration,key,field) {json_object_object_add(request,key,json_object_get(field));}
+  }
+  length=snprintf(payload,sizeof(payload),"%s",json_object_to_json_string_ext(request,JSON_C_TO_STRING_PLAIN));
+  json_object_put(request);
+	} else if (settings == 6) {
 		if (!json_object_is_type(configuration, json_type_string) ||
 		    (size_t)json_object_get_string_len(configuration) != strlen(json_object_get_string(configuration)))
 			return -EINVAL;
@@ -430,7 +510,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 			peer[0], peer[1], peer[2], peer[3], peer[4], peer[5], settings, content);
 	if (length < 0 || (size_t)length >= sizeof(payload))
 		return -E2BIG;
-	ret = fttr_sync_pack(source, settings>=4?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
+	ret = fttr_sync_pack(source, settings>=4 && settings<=6?peer:fttr_sync_slave_group, ethertype, slot, FTTR_SYNC_REQUEST,
 		payload, length, frame, sizeof(frame));
 	if (ret < 0)
 		return ret;

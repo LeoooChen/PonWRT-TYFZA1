@@ -8881,6 +8881,58 @@ retirement evidence; no hardware-ID reuse is authorized by this check. Supplier
 removal and failure recovery continue to have the previously documented physical
 acceptance limits. No physical device was accessed.
 
+### Original downstream time settings and durable synchronization
+
+The syncserv client implements the retained `GetTimeSetting` and `SetTimeSetting`
+transactions. `trace_stock_fttr_time.py` executes the actual controller builders,
+Ethernet encoder and pending reply handler. Requests carry the master's `MAC`;
+Set adds integer `TimeEnable`, string `NTPServer1`/`NTPServer2` and integer
+`TimeZone`. These are the original MIB128/133/134/129 fields. Servers fit the
+original46-byte buffers (at most45 bytes plus NUL). `TimeZone` is the raw signed32
+JSON encoding of the MIB word, not an IANA name or an inferred UTC offset.
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa time-settings
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa time-apply /etc/fttr-time.json
+```
+
+The private input file contains exactly four fields, for example the following
+wire-format example; select the actual peer's raw zone code from its reported
+configuration rather than assuming what24 means:
+
+```json
+{"TimeEnable":1,"NTPServer1":"192.0.2.123","NTPServer2":"2001:db8::123","TimeZone":24}
+```
+
+The explicit write first reads and validates a complete peer reply, sends one
+Set request, then independently queries again even after a lost or rejected ACK.
+A positive Result alone is not a completed read: source/JSON MAC and all four
+fields must match the expected peer and schema. Supplied RPCMethod is checked;
+re-registration cancels the transaction. Reports distinguish `write_result`,
+`readback_result` and `readable_fields_match`. `clock_synchronized` and
+`configuration_verified` remain false: field equality is not evidence that NTP
+ran or the clock is synchronized. The original envelope has no transaction ID,
+so late identical same-source replies cannot be fully distinguished.
+
+Resident policy peers accept optional `Time` with the same four fields. Under
+an identity-matched Ready1 registration it runs after WiFi and Radios, before
+EasyMesh. Ready0 observes without writing. With `--state`, record version4 pins
+Time to the Revision and fsyncs attempted bit19 before transmission. Recovery
+queries and compares the recorded target; it does not replay an attempted write.
+A changed Time under the same Revision is refused. Policies without Time retain
+their previous record versions. Automatic UCI extraction of local time settings
+is not part of this change; Time is supplied explicitly in the peer policy.
+
+Validation includes eight original enable/raw-zone encodings and ACK branches,
+27 real AF_PACKET/veth CLI/resident cases,14 schema cases and ASan/UBSan reply
+parsing checks. The network cases cover fragments, bare ACK/partial data, wrong
+source/MAC/method, readback mismatch/timeouts, re-registration, Ready0, fsync
+failure, SIGKILL after send, read-only restart, revision drift and ordered mixed
+WiFi/Radio/Time policies. Existing Wi-Fi CLI, resident/store, Radio and EasyMesh
+regressions pass. Host fttr-sync and aarch64-musl fttr-sync/fttr-sync-policy builds
+pass; evidence is `artifacts/fttr/time-*-20261109.*`. Kernel/PE were unchanged and
+no physical device, real time service or downstream gateway was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
@@ -8933,6 +8985,9 @@ acceptance limits. No physical device was accessed.
    the Software Image download/activation/commit protocol is also implemented.
    Resumable image transfer, image compatibility/boot verification,
    complete gateway/roaming coordination and physical reboot verification remain work.
+   Original downstream NTP/time configuration now has explicit and durable resident
+   Get/Set/readback transactions as described above; physical clock synchronization
+   and automatic local-time policy extraction remain unverified or incomplete.
    Explicit WanIPChange notifications, Radio configuration and EasyMesh
    transactions with independent reported-state readback are implemented. The original ff69/ff6a Wi-Fi update transaction is implemented with
    preflight/readback/restoration, explicit CLI and resident per-ONU policy;
