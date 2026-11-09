@@ -626,6 +626,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		/* A previous withdrawal already stopped admission and sent DROP.
 		 * Do not hold the wiphy lock polling permanently lost completions. */
 		if (tx->ni.retire_quiescing) {
+			if (tx->ni.retire_drop_pending) goto drop_all;
 			if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 120) ||
 			    get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152) ||
 			    !ni_epps_empty(tx)) {
@@ -641,8 +642,12 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 		ret = rtl_ax_tx_pause(tx);
 		if (ret) goto unlock;
 		put_unaligned_le32(128, tx->pe.memory + PE_PROBE_MAILBOX + 248);
+		WRITE_ONCE(tx->ni.retire_macid, 0);
+		WRITE_ONCE(tx->ni.retire_drop_pending, true);
+		WRITE_ONCE(tx->ni.retire_quiescing, true);
 		dma_wmb();
 		rtl_ax_tx_open(tx);
+	drop_all:
 		/* Sleeping MAC queues retain submitted WPs until PKT_DROP releases them. */
   if(tx->bcmc_owned) {ret=rtl_ax_tx_bcmc_drop_all(tx);if(ret)goto unlock;}
 		for (i = 1; i < 128; i++) {
@@ -650,8 +655,7 @@ int rtl_ax_tx_ni_route(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned
 			ret = rtl_ax_mac_drop_peer(tx->pdev, i);
 			if (ret) goto unlock;
 		}
-		WRITE_ONCE(tx->ni.retire_macid, 0);
-		WRITE_ONCE(tx->ni.retire_quiescing, true);
+		WRITE_ONCE(tx->ni.retire_drop_pending, false);
 		ret = read_poll_timeout(get_unaligned_le32, status,
 			!status && !get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152) && ni_epps_empty(tx),
 			100, 2000000, false, tx->pe.memory + PE_PROBE_MAILBOX + 120);
@@ -851,6 +855,16 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 
 		if (!retiring) return rtl_ax_tx_ni_route(tx, tx->ni.route_dev, 0);
 		if (retiring == macid) {
+			if (tx->ni.retire_drop_pending) {
+				mutex_lock(&ni_test_lock);
+				/* Keep this peer's original EPP cutoff while retrying DROP.
+				 * A later full retirement may still need to withdraw RX. */
+				if (!keep_rx) {
+					ret = rtl_ax_tx_rx_retire(tx, macid);
+					if (ret) goto unlock;
+				}
+				goto drop_peer;
+			}
 			if (!ni_peer_idle(tx, macid)) return -EAGAIN;
 			mutex_lock(&ni_test_lock);
 			/* BA retirement can become full key/STA retirement while waiting.
@@ -881,14 +895,16 @@ static int ni_retire_peer(struct rtl_ax_tx *tx, unsigned int macid, bool keep_rx
 	if (!keep_rx) rtl_ax_rx_uplink_retire(tx->rx, macid);
 	ni_peer_fence(tx);
 	put_unaligned_le32(macid, tx->pe.memory + PE_PROBE_MAILBOX + 248);
+	WRITE_ONCE(tx->ni.retire_macid, macid);
+	WRITE_ONCE(tx->ni.retire_drop_pending, true);
+	WRITE_ONCE(tx->ni.retire_quiescing, true);
 	dma_wmb();
 	rtl_ax_tx_open(tx);
-	if (ret) goto unlock;
+	drop_peer:
 	/* PE admission is closed and its last submission has finished; flush before waiting for RPQ. */
 	ret = rtl_ax_mac_drop_peer(tx->pdev, macid);
 	if (ret) goto unlock;
-	WRITE_ONCE(tx->ni.retire_macid, macid);
-	WRITE_ONCE(tx->ni.retire_quiescing, true);
+	WRITE_ONCE(tx->ni.retire_drop_pending, false);
 	ret = read_poll_timeout(ni_peer_idle, status, status, 100, 2000000, false, tx, macid);
 	if (ret) goto unlock;
 complete:

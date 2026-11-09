@@ -9570,6 +9570,45 @@ Evidence is `artifacts/fttr/ni-retire-admission-*-20261109.*`,
 and retry ownership. MCE/AFT upstream delayed packets, full downstream retirement
 and safe reuse after a successful detach remain separate incomplete requirements.
 
+### Preserve the NI fence owner while DROP setup is incomplete
+
+The retirement-request fix above closed admission during setup failures, but
+the established EPP fence still acquired its software owner only after SCC
+DROP succeeded. If peer1 published its cutoff/retirement mailbox and then DROP
+failed, peer2 could overwrite that same cutoff and mailbox. Executing both
+production retire calls from `907e5ed` reproduces this ownership loss in
+`test_radio_ni_retire_flush.py --revision 907e5ed`.
+
+The driver now records the fence owner and `retire_drop_pending` before
+resuming PE after publishing the per-peer/global retirement mailbox. Another
+departing peer may close and withdraw its own route, but it cannot replace
+the retained owner's cutoff. Retrying the owner issues the incomplete DROP
+setup against that same cutoff; it does not capture later EPP producer positions.
+Only successful DROP setup clears `retire_drop_pending` and advances to the
+existing EPP/RPQ/EQ wait. Completed DROP setup is not repeated during subsequent
+completion polls. A BA-only request that escalates to full retirement also
+retires RX before completing the retried DROP stage.
+
+Global teardown uses the same separate DROP stage, retaining the global fence
+through BCMC or per-peer command failures. Existing admission gates stay closed
+throughout. After successful cleanup, explicit re-admission republishes the
+correct Wi-Fi ID and RX route; the new flags do not permanently disable a peer.
+
+Validation covers each of four AC failure positions followed by a second
+peer's retirement, unchanged EPP cutoff bytes despite advancing producers,
+global/multi-peer failures, BA escalation, withheld EPP/RPQ completion, eventual
+cleanup and successful re-admission. Ten regression suites pass. These include
+25 linked PE peer-withdrawal cases and251 linked FTTR EPP/BID/RPQ/EQ cases,
+plus authorization, FE publication, exact device ownership, BCMC, restore,
+key cleanup and RX BA cleanup. Final Image/modules build passes and both
+changed kernel inputs match the compiled tree. PE firmware is unchanged.
+Artifacts are `artifacts/fttr/ni-fence-drop-*-20261109.*`.
+
+No physical device was accessed. This fixes ownership of an already established
+software/hardware queue cutoff through command failures; it does not prove
+complete MCE/AFT upstream or ES/MiniOLT downstream retirement, and does not
+enable hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

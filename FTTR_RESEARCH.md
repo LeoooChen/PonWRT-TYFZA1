@@ -307,6 +307,8 @@
 
 151. 修复无线NI退場请求与已建立屏障混淆：旧代码在FE/暂停/DROP失败后可被重新授权写回PE接口ID，实际生产函数已复现。新增全局/逐peer退场请求，任何可失败全局步骤前关闭全部peer，授权/worker/BCMC禁止重开；后台持有并重试未完成请求，记录BA保留RX模式且升级到密钥/STA后不可降级，授权撤销失败排入cleanup。逐AC/双peer八DROP位置、解绑/暂停/FE失败、RX保留/升级/重试及十项回归通过，原厂Security/TX/SCC782对照、Image/模块/四输入一致通过。原厂虚拟端口关闭只清ES使能且未找到新排空确认，未据此放开ID复用；PE未变、未实机。两旧夹具因过时类型/抽取方式失败，未计为通过。详见[NI退场请求门控](port/FTTR.md#ni-retirement-requests-close-admission-before-fallible-setup)。
 
+152. 修复DROP失败后后续peer覆盖已发布NI屏障：907e5ed生产函数已复现peer1写入EPP截止/退场编号但DROP失败后，peer2覆盖其归属。现在恢复PE前记录屏障owner及独立retire_drop_pending，其他peer只撤自身路由，原owner重试DROP保留同一截止位置，成功后才等待原EPP/RPQ/EQ完成；全局/BCMC失败同样保留阶段，BA升级仍撤RX。四AC位置加第二peer、截止不变/完成阻塞/最终清理及重新准入、十项回归通过，含25链接peer/251链接FTTR回收；Image/模块/两输入一致通过。PE未改、未实机；完整上游/下游排空和ID复用仍未由此证明。详见[DROP失败屏障归属](port/FTTR.md#preserve-the-ni-fence-owner-while-drop-setup-is-incomplete)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
