@@ -409,6 +409,7 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 	}
 	if (tx->ni.vp_active) {
 		writel(0, tx->ni.vp);
+		if (readl(tx->ni.vp) & BIT(0)) return -EIO;
 		ret = readl_poll_timeout(tx->ni.vp + 0x1c, status, readl(tx->ni.vp + 0x18) == status, 1, 100000);
 		if (ret) return ret;
 		ret = readl_poll_timeout(tx->ni.vp + 4, status, !(status & BIT(31)), 1, 100000);
@@ -572,7 +573,7 @@ released:
 	 * pointers. Pending BIDs have not reached PE's owner lists yet. */
 	if (!ni_es_empty(tx)) return -EBUSY;
 	writel(0, tx->ni.vp);
-	readl(tx->ni.vp);
+	if (readl(tx->ni.vp) & BIT(0)) return -EIO;
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) return ret;
 	tx->ni.epp_retiring = true;

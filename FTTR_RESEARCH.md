@@ -329,6 +329,8 @@
 
 162. 修复PE→ARM停止交接重复投递已丢弃重传：PE乱序查找可在连续游标前完成跨TID重复包，原stop只跳过NI owner，现在也跳过精确ARM_DONE，含bit30的普通提示仍交ARM。f0dcea4原生stop及真实链接PE→原生stop均复现第三次多余投递；六组工作环回绕/NI未完成/停止失败重试、514库存与原两描述符延迟归还，ASan/UBSan提示区分、七项回归及Image/模块/输入一致通过。PE未改、未实机；该项修复自创框架归属交接，不作为完整退场或ID复用证明。详见[完成记录交接](port/FTTR.md#preserve-completed-pe-replay-decisions-during-arm-ownership-transfer)。
 
+163. 补齐普通VP释放与强制PCI清理的关闭读回：旧0f16f7d生产函数复现VP关闭写被拒仍改基址/释放；两入口现在核对TXQ0使能bit0，失败EIO并保留原资源，重试成功后才清理。双radio/普通/强制四场景、46恢复场景、16原厂AXI属性对照及六项回归含554 ES，Image/模块/输入一致通过。核对原厂reset实际.text.unlikely段只见DMA/AFT复位及环重建，未据此推断下游空闲；PE未改、未实机，完整退场和ID复用仍待补齐。详见[VP关闭归属](port/FTTR.md#failed-vp-closure-retains-graceful-and-forced-ni-ownership)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

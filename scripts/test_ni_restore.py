@@ -57,12 +57,14 @@ struct rtl_ax_tx {void *dma_device,*rx;unsigned producer[6];struct {void *memory
  unsigned cpu,eq,registers[14],saved[14],arb[8],attrs[2][2],epp_bases[8],epp_eq[8],vp_saved[5],vp_index;}ni;};
 static u32 mmio[0x10000/4],dma[0x1000/4],arb[512],attr[64][2];static unsigned char memory[0x80000];
 static unsigned accesses,fail_at,polls,mmio_writes,opens,released,paused;
-static bool load_fail;static unsigned loading;
+static bool load_fail,disable_fail;static unsigned loading,vp_base_writes,rx_handoffs;
 static u32 get_unaligned_le32(const void *p){u32 x;memcpy(&x,p,4);return x;}
 static void put_unaligned_le32(u32 x,void *p){memcpy(p,&x,4);}
 static u32 readl(const void *p){return get_unaligned_le32(p);}
 static void writel(u32 v,void *p){
  mmio_writes++;
+ if(p==dma+0x100/4 && !v && disable_fail)return;
+ if(p==dma+0x108/4 || p==dma+0x10c/4)vp_base_writes++;
  if(p==mmio+0x1654/4 || p==mmio+0x66a4/4){
  assert((v&0xc0000000U)==0xc0000000U);
  /* Model even a timed-out command as applied: rollback must be idempotent. */
@@ -76,7 +78,7 @@ static void writel(u32 v,void *p){
 static bool ni_epps_empty(struct rtl_ax_tx *t){(void)t;return true;}
 static unsigned uplink_stops;static int ni_uplink_stop(struct rtl_ax_tx *t){(void)t;uplink_stops++;return 0;}
 static int rtl_ax_tx_pause(struct rtl_ax_tx *t){(void)t;paused++;return 0;}
-static int rtl_ax_rx_pe_rpq_stop(void *r){(void)r;return 0;}
+static int rtl_ax_rx_pe_rpq_stop(void *r){(void)r;rx_handoffs++;return 0;}
 static void ni_ps_retire(struct rtl_ax_tx *t){(void)t;}
 static void pe_event_release(struct rtl_ax_tx *t){(void)t;}
 static void cancel_work_sync(void *w){(void)w;}
@@ -105,7 +107,7 @@ code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
  epp_error=0;epp_calls=0;
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));
- accesses=mmio_writes=polls=opens=released=paused=loading=0;load_fail=false;
+ accesses=mmio_writes=polls=opens=released=paused=loading=vp_base_writes=rx_handoffs=0;load_fail=disable_fail=false;
  struct rtl_ax_tx t={.pe={memory},.ni={.active=true,.regs=mmio,.dma=dma,.vp=(u8*)dma+0x100,.cpu=cpu,.eq=cpu==3?6:7}};
  for(unsigned i=0;i<13;i++){t.ni.registers[i]=0x6200+i*4;t.ni.saved[i]=0x123000+i;}
  t.ni.registers[13]=0x6108;t.ni.saved[13]=BIT(cpu)|1;
@@ -116,6 +118,20 @@ static struct rtl_ax_tx setup(unsigned cpu){
  return t;
 }
 int main(void){unsigned cases=0;
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned forced=0;forced<2;forced++){
+  struct rtl_ax_tx t=setup(cpu);fail_at=0;t.ni.vp_active=true;
+  dma[0x100/4]=1;disable_fail=true;
+  if(forced)put_unaligned_le32(1,memory+0x2078);
+  for(unsigned retry=0;retry<2;retry++){
+   assert((forced?ni_test_remove(&t):ni_test_release(&t))==-EIO);
+   assert(t.ni.active&&t.ni.vp_active&&t.ni.regs==mmio&&t.ni.dma==dma);
+   assert(!released&&!vp_base_writes&&!loading&&!rx_handoffs&&!accesses);
+  }
+  disable_fail=false;
+  assert(!(forced?ni_test_remove(&t):ni_test_release(&t)));
+  assert(!t.ni.active&&!t.ni.vp_active&&released==2&&rx_handoffs==1);
+  cases++;
+ }
  for(unsigned cpu=2;cpu<=3;cpu++) {
   struct rtl_ax_tx t=setup(cpu);fail_at=0;epp_error=-EAGAIN;
   put_unaligned_le32(1,memory+0x2078);

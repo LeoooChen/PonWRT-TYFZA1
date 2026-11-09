@@ -10015,6 +10015,32 @@ is inferred from the modeled ARM delivery callback. PE firmware is unchanged,
 no physical device was accessed, and complete upstream/downstream retirement
 and safe ID reuse remain open.
 
+### Failed VP closure retains graceful and forced NI ownership
+
+The ordinary test-VP release and forced PCI teardown paths both wrote zero to
+VP CONTROL without checking that TXQ0 actually disabled. An ignored write could
+therefore be followed by queue-base restoration and release. Both paths now
+read back bit0 and return `EIO` while it remains set, before changing the base,
+transferring RX ownership or releasing allocations. Failed retries preserve
+the original mappings and snapshots. The regular uplink path already performed
+this check; these two additional entry points now enforce it as well.
+
+The reference `DMA_SEC_DMA_LSO_VP_CONTROL` identifies bit0 as `txq0_en`, matching
+the native queue0 setup. Inspection of the target `ca_ni_dma_lso_reset` in its
+actual `.text.unlikely` section shows global DMA/AFT reset toggles followed by
+ring reset/reinitialization, not a separately proven downstream-idle handshake.
+No global reset or additional idle inference is introduced here.
+
+The old `0f16f7d` release functions reproduce continuing after a rejected disable.
+Four both-radio/graceful/forced cases now verify error, unchanged ownership and
+no base programming/PE handoff/free across retries, followed by successful
+cleanup. All46 restore cases,16 original AXI attribute comparisons and six
+related suites pass, including554 ES cases, partial BID returns, NI prepare,
+uplink retries and FE transactions. Image/modules and changed source identity
+pass. Evidence is `artifacts/fttr/vp-close-*-20261109.*`. PE firmware is unchanged;
+no physical device was accessed. Successful enable-bit closure still does not
+prove all in-flight bus accesses finished or permit safe hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
