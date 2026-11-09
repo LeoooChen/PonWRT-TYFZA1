@@ -74,6 +74,15 @@ static u8 *__attribute__((section(".entry"), noinline)) rx_prefix(u32 *out, cons
 	return (u8 *)out + ((u32)data & 3);
 }
 
+/* Admission compares the staged WLAN prefix with eight-byte aligned
+ * address records. Read each reference word once, ignoring record padding.
+ * The staged prefix includes the two bytes after each six-byte address. */
+static inline u32 __attribute__((always_inline)) rx_address_equal(const u8 *frame, const u32 *address)
+{
+	return ((const struct packed_word *)frame)->value == address[0] &&
+		!((((const struct packed_word *)(frame + 4))->value ^ address[1]) & 0xffff);
+}
+
 static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	volatile u32 *mailbox, u8 *buffer, u8 **frame, u32 *length, u32 *station, u32 *prefix)
 {
@@ -98,7 +107,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	else for (u32 id = 1; id < 128; id++) {
 		if (!(*(u32 *)(states + RX_PEER_CONFIG + id * 4) & BIT(31))) continue;
 		u8 *address = memory + 0xe400 + id * 8;
-		if (mac_equal(data + 10, address)) { macid = id; break; }
+		if (rx_address_equal(data + 10, (const u32 *)address)) { macid = id; break; }
 	}
 	if (macid >= 128) return 0;
 	if (!*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
@@ -108,7 +117,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	if ((fc & 0x0300) != (client ? 0x0200 : 0x0100)) return 0;
 	u8 *peer = memory + 0xe400 + macid * 8;
 	u8 *ap = memory + MAILBOX_OFFSET + 64;
-	if (!mac_equal(data + 4, ap) || !mac_equal(data + 10, peer)) return 0;
+	if (!rx_address_equal(data + 4, (const u32 *)ap) ||
+	    !rx_address_equal(data + 10, (const u32 *)peer)) return 0;
 	u32 header = fc & 0x80 ? 26 : 24;
 	if (fc & 0x8000) header += 4;
 	/* mac80211 handles PS transitions and trigger-enabled U-APSD frames. */
