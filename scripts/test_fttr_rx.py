@@ -100,7 +100,7 @@ static void entry(struct rtl_qm_rx *rx,unsigned cos,unsigned slot,unsigned id,un
  writel(((slot+1)%128)*8,rx->ni+EPP_WRITE+cos*4);
 }
 '''
-common=common.replace('bool profile;', 'bool profile,deepq_configured;')
+common=common.replace('bool profile;', 'bool profile,deepq_configured;int stop_error;')
 driver = root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
 source = (driver/'rtl9617c-qm.c').read_text()
 poll = source[source.index('static void rtl_qm_rx_retire('):source.index('\nssize_t rtl_qm_rx_state(')]

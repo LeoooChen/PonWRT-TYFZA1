@@ -77,6 +77,7 @@ stop_end=source.index('\nvoid rtl_qm_rx_free(', stop)
 lifecycle=r'''
 #include <assert.h>
 #include <stdbool.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -93,7 +94,7 @@ typedef uint32_t u32;
 #define ES_CTRL 0x6108
 struct rtl_fttr_rx {int unused;};
 static void rtl_fttr_rx_reset(struct rtl_fttr_rx *r){(void)r;}
-struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];void *ni,*device,*ring_memory,*memory;unsigned ring_dma,memory_dma,read[8],trace_count;bool deepq_configured;};
+struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];void *ni,*device,*ring_memory,*memory;unsigned ring_dma,memory_dma,read[8],trace_count;bool deepq_configured,hardware_owned;int stop_error;};
 static unsigned char registers[65536],cpu[8192],hardware[8192];
 static unsigned synced,retired,reordered;
 static u32 readl(void *p){u32 v;memcpy(&v,p,4);return v;}

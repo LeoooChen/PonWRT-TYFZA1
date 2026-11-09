@@ -50,6 +50,9 @@ struct rtl_qm_rx {
 	void *wifi_epp[RTL_QM_PE_POOLS];
 	dma_addr_t wifi_epp_dma[RTL_QM_PE_POOLS];
 	bool deepq_configured;
+	/* Addresses may be retained even by a partially failed start. */
+	bool hardware_owned;
+	int stop_error;
 	unsigned int read[RTL_QM_VOQS];
 	u32 last_address;
 	u32 last_size;

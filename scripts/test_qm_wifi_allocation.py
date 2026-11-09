@@ -21,6 +21,7 @@ fixture = r'''
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -53,7 +54,7 @@ static u32 readl(const void *p){u32 value;memcpy(&value,p,4);return value;}
 struct device { int unused; };
 struct rtl_fttr_rx {int unused;};
 static void rtl_fttr_rx_reset(struct rtl_fttr_rx *r){(void)r;}
-struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];
+struct rtl_qm_rx {struct rtl_fttr_rx fttr_rx[8];bool hardware_owned;int stop_error;
  struct device *device;
  int fttr_supported;void *fttr_memory;dma_addr_t fttr_dma;
  void *memory,*ring_memory,*deepq_memory;
@@ -108,6 +109,8 @@ static int rtl_qm_push(struct rtl_qm_rx *rx,dma_addr_t address,unsigned int eq)
  }
  assert(0);return -1;
 }
+static void rtl_qm_rx_stop(struct rtl_qm_rx *r){(void)r;assert(0);}
+#define dev_err(...) ((void)0)
 void rtl_qm_rx_free(struct device *,struct rtl_qm_rx *);
 '''
 test = r'''

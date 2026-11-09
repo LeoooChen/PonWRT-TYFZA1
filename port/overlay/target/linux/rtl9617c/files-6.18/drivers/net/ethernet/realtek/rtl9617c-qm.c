@@ -372,12 +372,16 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 	if (ret)
 		return ret;
 	/* TQM reset invalidates old BIDs; all buffers are loaded anew below. */
+	rx->stop_error = 0;
 	memset(&rx->refill, 0, sizeof(rx->refill));
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
 	writel(0, ni + 0x6110);
 	writel(0, ni + 0x6114);
 	/* Hardware write pointers survive ndo_stop/open; retire the old queue first. */
+	/* From here even a failed start can leave DMA addresses/pool state
+	 * visible. Final free must confirm closure, not just successful start. */
+	rx->hardware_owned = true;
 	for (i = 0; i < RTL_QM_VOQS; i++) {
 		rx->read[i] = readl(ni + EPP_WRITE + i * 4) & (RTL_QM_RING_BYTES - 1);
 		writel(rx->read[i], ni + EPP_READ + i * 4);
@@ -531,10 +535,24 @@ void rtl_qm_rx_stop(struct rtl_qm_rx *rx)
 	writel(readl(rx->ni + 0x610c) & ~0xffffU, rx->ni + 0x610c);
 	writel(readl(rx->ni + RMU_CTRL) & ~BIT(31), rx->ni + RMU_CTRL);
 	writel(readl(rx->ni + ES_CTRL) & ~BIT(31), rx->ni + ES_CTRL);
+	/* Try every close even if another write failed. Keep the full set of
+	 * allocations on final free until all four controls read disabled. */
+	rx->stop_error = 0;
+	if (readl(rx->ni + CB_CTRL) & BIT(31)) rx->stop_error = -EIO;
+	if (readl(rx->ni + 0x610c) & 0xffffU) rx->stop_error = -EIO;
+	if (readl(rx->ni + RMU_CTRL) & BIT(31)) rx->stop_error = -EIO;
+	if (readl(rx->ni + ES_CTRL) & BIT(31)) rx->stop_error = -EIO;
 }
 
 void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 {
+	if (rx->hardware_owned) {
+		rtl_qm_rx_stop(rx);
+		if (rx->stop_error) {
+			dev_err(dev, "QM close unconfirmed (%d); retaining DMA pools and EPP rings\n", rx->stop_error);
+			return;
+		}
+	}
 	for (unsigned int cos = 0; cos < RTL_QM_VOQS; cos++)
 		rtl_fttr_rx_reset(&rx->fttr_rx[cos]);
 	for (unsigned int pool = 0; pool < RTL_QM_PE_POOLS; pool++)
@@ -551,6 +569,7 @@ void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx)
 	dma_free_coherent(dev, RTL_DQ_MEMORY_BYTES, rx->deepq_memory, rx->deepq_dma);
 	dma_free_noncoherent(dev, RTL_QM_RING_BYTES * RTL_QM_VOQS, rx->ring_memory, rx->ring_dma, DMA_FROM_DEVICE);
 	dma_free_noncoherent(dev, RTL_QM_MEMORY_BYTES, rx->memory, rx->memory_dma, DMA_FROM_DEVICE);
+	rx->hardware_owned = false;
 }
 
 static void rtl_qm_rx_retire(struct rtl_qm_rx *rx, unsigned int cos,
@@ -837,7 +856,7 @@ ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 {
 	u32 drop_info = readl(rx->ni + 0x6814);
 	writel(0x82, rx->ni + 0x105c);
-	return sysfs_emit(buf, "memory=%pad rmu=%08x es=%08x status=%08x eqreq=%08x pushrdy=%08x epp=%08x wr0=%u rd0=%u last=%08x/%08x hdra=%08x/%08x monitor=%08x ni_demux=%08x rxcount=%u txcount=%u no_buffer=%u last_no_buffer_EQ=%u VOQ=%u fe_drop=%u lenerr=%u td_global=%08x td_port=%08x td_priority=%08x l3te_control=%08x l3te_packets=%u l3te_tail_drop=%u refill_pending=%u refill_retries=%u refill_returned=%u refill_peak=%u\n",
+	return sysfs_emit(buf, "memory=%pad rmu=%08x es=%08x status=%08x eqreq=%08x pushrdy=%08x epp=%08x wr0=%u rd0=%u last=%08x/%08x hdra=%08x/%08x monitor=%08x ni_demux=%08x rxcount=%u txcount=%u no_buffer=%u last_no_buffer_EQ=%u VOQ=%u fe_drop=%u lenerr=%u td_global=%08x td_port=%08x td_priority=%08x l3te_control=%08x l3te_packets=%u l3te_tail_drop=%u refill_pending=%u refill_retries=%u refill_returned=%u refill_peak=%u hardware_owned=%u stop_error=%d\n",
 		&rx->memory_dma, readl(rx->ni + RMU_CTRL), readl(rx->ni + ES_CTRL),
 		readl(rx->ni + 0x6850), readl(rx->ni + 0x6328 + EQ_ID * 4),
 		readl(rx->ni + CPU_READY), readl(rx->ni + 0x659c),
@@ -849,7 +868,8 @@ ssize_t rtl_qm_rx_state(struct rtl_qm_rx *rx, char *buf)
 		readl(rx->ni + 0x6824), readl(rx->ni + 0x2d60), readl(rx->ni + 0x2d64),
 		readl(rx->ni + 0x2d78), readl(rx->ni + 0x9004),
 		readl(rx->ni + 0x9710), readl(rx->ni + 0x971c), READ_ONCE(rx->refill.pending),
-		rx->refill.retries, rx->refill.returned, rx->refill.peak);
+		rx->refill.retries, rx->refill.returned, rx->refill.peak,
+		rx->hardware_owned, rx->stop_error);
 }
 
 ssize_t rtl_qm_deepq_state(struct rtl_qm_rx *rx, char *buf)

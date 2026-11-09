@@ -313,6 +313,8 @@
 
 154. 修复QM重启复位未生效仍重装BID：旧073132e已分别复现CB/RMU/ES关闭或TQM置位/清除失败时，旧INIT_DONE高位仍允许继续初始化。现在逐项读回确认，任何失败EIO、ready超时均在refill清零/指针/缓存/EQ发布前退出，重试完整流程并保留无关复位位。原厂6850 bit30实际就绪读取、45原生故障/重试/已置位恢复场景、六项QM/FTTR接收回归、Image/模块/输入一致通过。PE未改、未实机；仅修复重启发布前置条件，共享QM停止后的总线访问、完整退场及ID复用仍未证明。详见[TQM复位门控](port/FTTR.md#verify-tqm-reset-edges-before-republishing-buffer-ownership)。
 
+155. 修复共享QM关闭失败仍释放已发布DMA池：记录hardware_owned覆盖部分失败start，stop尝试全部CB/入口/RMU/ES关闭并读回，free对已发布池重试关闭，仍失败时报告stop_error并保留整组池/环；未发布分配失败保持原清理。aea5f88原函数实际free已复现提前释放；62关闭失败组合/部分启动/反复free/成功重试、六项回归含17024 EPP/768 FTTR RX/100停止竞争、Image/模块/两输入一致通过。PE未改、未实机；关闭位读回不等于在途总线完成，成功stop/free的完整屏障与ID复用仍未证明。详见[QM关闭失败归属](port/FTTR.md#failed-shared-qm-closure-retains-published-dma-pools)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

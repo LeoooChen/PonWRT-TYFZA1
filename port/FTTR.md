@@ -9699,6 +9699,43 @@ This guards the existing restart boundary before buffer ownership is rebuilt.
 It does not establish stop/free bus-idle, downstream packet retirement or safe
 hardware-ID reuse. Those remain independent incomplete lifecycle requirements.
 
+### Failed shared QM closure retains published DMA pools
+
+The shared QM previously issued stop writes without readback and freed every
+allocation unconditionally. The actual old functions at `aea5f88` reproduce
+freeing hardware-published pools even when one of those writes is rejected.
+Allocation-only cleanup and pools from a partially failed start were also not
+distinguished by an explicit ownership state.
+
+QM now records `hardware_owned` before the startup sequence begins publishing
+queue/pool state. Thus a later failed start is covered even if
+`deepq_configured` was never set. Stop still attempts every CB, ingress,
+RMU and ES close, then records EIO in `stop_error` if any corresponding enable
+field remains set. Final free retries stop for a published allocation; if
+closure remains unconfirmed it logs the error and retains the entire set of
+DMA pools and EPP rings. Allocation failure before hardware publication does
+not touch inherited registers and retains the existing normal cleanup.
+State reporting includes both ownership and the last close error. A new start
+continues to require the complete checked TQM reset sequence before replacing
+BID ownership.
+
+Validation executes production allocation/stop/free with all15 combinations
+of failed close writes, both optional-FTTR pool layouts and complete/partial
+startup ownership:62 cases include repeated free attempts, exact allocation
+retention, successful retry and unchanged unrelated control bits. Old-revision
+reproduction now reaches the actual free calls and confirms the premature
+release. Six regressions pass: pool allocation,45 reset-gate cases,17024 cached
+EPP cases plus reopen,100 stop/poll interleavings,768 fragmented FTTR receive
+cases and multicast host-copy delivery. ASan/UBSan cover the lifetime fixtures.
+Image/modules build and both final kernel inputs match. Artifacts are
+`artifacts/fttr/qm-close-*-20261109.*`.
+
+This fixes explicit close-failure ownership. Reading disabled controls is not
+proof that all previously issued bus accesses have completed; successful
+stop/free still lacks a complete bus-idle/producer/downstream retirement
+contract. This change does not authorize ID reuse. PE firmware is unchanged
+and no physical device was accessed.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
