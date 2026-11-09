@@ -135,6 +135,7 @@ static int ni_mcast_bind(struct rtl_ax_tx *t,struct net_device *d){(void)t;(void
 static int rtl_ax_tx_mcast_unbind_vif(struct rtl_ax_tx *tx,struct net_device *d){(void)tx;(void)d;return 0;}
 static int ni_mcast_unbind(struct rtl_ax_tx *t){(void)t;return 0;}
 static void rtl_ax_rx_open_peer(void *rx,unsigned id,bool open){(void)rx;(void)id;(void)open;}
+static int rtl_ax_tx_unicast_policy(struct rtl_ax_tx *t,struct ieee80211_vif *v,unsigned id){(void)t;(void)v;(void)id;return 0;}
 static int rtl_ax_tx_mcast_policy(struct rtl_ax_tx *t,struct ieee80211_vif *v,unsigned id){(void)t;(void)v;(void)id;return 0;}
 static unsigned fail_stage,fail_index,ages[2],timers;static struct wiphy_work *queued;
 static struct rtl_dq_io fe_io(struct rtl_fe *fe){return (struct rtl_dq_io){fe};}

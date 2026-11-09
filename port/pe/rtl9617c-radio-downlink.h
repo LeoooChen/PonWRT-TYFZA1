@@ -107,7 +107,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 	u32 producer = ni[mailbox[114] / 4 + cos] & mask;
 	if (producer == consumer) return 0;
 	u32 count = 0, group = 0, head = 0, tail = 0, grouped = 0, group_bytes = 0;
-	u32 cached_peer = 0, cached_low = 0, cached_high = 0, cached_qos = 0;
+	u32 cached_peer = 0, cached_low = 0, cached_high = 0;
 	u32 flow_peer = 0, flow_low = 0, flow_high = 0, flow_packets = 0;
 	u32 fence = mailbox[171] & BIT(cos);
 	u32 target = *(u32 *)(memory + NI_EPP_RETIRE_TARGETS + cos * 4), crossed = 0;
@@ -125,7 +125,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 		u32 buffer = descriptor & 0xffffff80, header, tid;
 		u32 length = ni_length(entry, buffer, &header, &tid);
 		u8 *ethernet = uncached(buffer + RTL_QM_HEADROOM + header);
-		u32 macid = 0, ether0 = 0, ether1 = 0, qos = 0, cookie = ni_mcast_cookie(buffer);
+		u32 macid = 0, ether0 = 0, ether1 = 0, cookie = ni_mcast_cookie(buffer);
 		u32 admitted = ni_fttr_receive(mailbox, memory, buffer);
   u32 wifi_id=(entry[1]>>14)&63;
   ((u32 *)uncached(buffer))[4]=cookie;
@@ -144,7 +144,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 			 * asynchronously and must still be checked for every packet. */
 			if (cached_peer && low == cached_low && high == cached_high &&
 			    *(volatile u32 *)(memory + NI_PEER_ROUTE + cached_peer * 4)==wifi_id) {
-				macid = cached_peer; qos = cached_qos;
+				macid = cached_peer;
 			} else {
 				for (u32 peer = 1; peer < 128; peer++) {
 					if (*(u32 *)(memory + NI_PEER_ROUTE + peer * 4)!=wifi_id) continue;
@@ -155,11 +155,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 						macid = peer; break;
 					}
 				}
-				/* QoS header shape is fixed for this admitted association.
-				 * ARM withdraws and drains the peer before MACID reuse;
-				 * authorization remains checked on every cache hit. */
-				if (macid) qos = ((*(u32 *)(memory + 0xd000 + macid * 32 + 8) >> 16) & 63) == 26;
-				cached_peer = macid; cached_low = low; cached_high = high; cached_qos = qos;
+				cached_peer = macid; cached_low = low; cached_high = high;
 			}
 			}
 		}
@@ -178,14 +174,13 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) ni_ingest(volatil
 			ether3 = length >= 16 ? ((const u32 *)ethernet)[3] :
 				ethernet[12] | (u32)ethernet[13] << 8;
 		}
-		if (!cookie) tid = 0;
-		if (!cookie && macid && length >= 16 && qos) {
-			u32 type = ether3 & 65535;
-			if (type == 8 || type == 0xdd86) {
-				u32 up = type == 8 ? ether3 >> 29 : (ether3 >> 17) & 7;
-				tid = up < 4 ? ((up + 1) >> 1) & 1 : up & 6;
-			} else tid = rtl_ax_ethernet_tid(ethernet, length);
-		}
+  if(!cookie && macid) {
+   const u8 *policy=memory+RTL_AX_TX_PEER_POLICY+macid*128;
+   u32 type=ether3&65535;
+   u32 dscp=type==8?ether3>>26:((ether3>>14)&60)|(ether3>>30);
+   tid=length>=16 && (type==8 || type==0xdd86)?policy[dscp]:policy[64];
+  }
+
 		if (!macid) {tid=0;if(cookie)cookie=256;}
 		if(macid==RTL_MC_PE_BCMC_ROUTE)macid=0;
 		u32 queue = macid * 8 + tid;
@@ -413,9 +408,11 @@ static u32 __attribute__((section(".rxq"), noinline)) ni_select(volatile u32 *ma
 				request[RTL_SEQ_REQUEST] = ((request[2] >> 16) & 63) == 24 ? waiting[7] : 0;
 				request[2] = BIT(24) | (request[2] & 0x3f0000) | (length + ((request[2] >> 16) & 63) + 8 - 14);
 				request[4] = (request[4] & ~0x1fffU) | tid | indicators[tid] << 12;
-				if (waiting[4] && !bcmc) {
-					request[4] = (request[4] & ~BIT(13)) | ni_mcast_noack(mailbox, waiting, tid) << 13;
-				}
+				if (!bcmc) {
+     u32 noack=waiting[4]?ni_mcast_noack(mailbox,waiting,tid):
+      (memory[RTL_AX_TX_PEER_POLICY+macid*128+65]>>tid)&1;
+     request[4]=(request[4]&~BIT(13))|noack<<13;
+    }
 				request[5] = (request[5] & ~255U) | *(u32 *)(memory + NI_PEER_BA + (macid * 8 + tid) * 4);
 				if (request[4] & BIT(13)) request[5] &= ~255U;
 				request[8] = buffer + RTL_QM_HEADROOM + ((metadata >> 16) & 255);

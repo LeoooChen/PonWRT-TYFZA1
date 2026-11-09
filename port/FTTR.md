@@ -8805,6 +8805,46 @@ the shared port-color register retain their existing factory-backed behavior.
 This does not implement per-VIF hardware WMM queues, airtime fairness or TSPEC;
 full physical acceptance and hardware retirement remain outstanding.
 
+### Ordinary NI unicast uses Linux QoS and admission policy
+
+Ordinary NI unicast previously reclassified DSCP with a fixed priority mapping,
+while multicast already used the current mac80211 classifier. The radio now
+compiles the same Linux policy for each unicast peer before FE admission. A
+128-byte per-peer DDR slot at0x69400 holds64 DSCP TIDs, the inline-tagged/default
+TID and no-ACK bitmap. PE consumes that snapshot for IPv4/IPv6 and tagged frames;
+no-ACK also clears aggregation in the selected request. Multicast retains its
+immutable per-copy policy. The table fits within the existing512KiB TX context.
+
+All existing mac80211 QoS/ACM/TSPEC/no-ACK/reserved-TID policy publication sites
+now close ordinary NI admission before changing Linux state. The existing
+non-sleeping key-refresh gate and deferred withdrawal worker are reused; a
+reauthorization cannot reopen it while refresh is pending. The radio retires
+old queued work before replacing a policy. Compilation or withdrawal failure
+keeps the former snapshot and closed route for retry. A STA with admitted TSPEC,
+unsupported fragmentation/control-port policy or another unsupported classifier
+configuration is withdrawn to Linux, where the required per-packet accounting
+runs. This corrects bypass of Linux policy; it does not invent hardware airtime
+measurements or claim native TSPEC offload. The target OnAction_wmm remains a
+no-op and target RPQ does not supply proven airtime data, as recorded earlier.
+
+The end-to-end offline test executes the actual Linux classifier, native radio
+snapshot publisher and linked PE for384 IPv4/IPv6 DSCP/no-ACK selections, tagged
+frames, unchanged-policy idempotence, failed withdrawal and TSPEC rejection.
+The complete Linux policy matrix covers1179648 comparisons and18 publication
+sites. Additional actual publication tests verify unicast closure before the
+policy changes. Existing FE retry, per-VIF identity, multicast, BCMC, FTTR drain,
+EPP batching and selected-peer withdrawal regressions pass. Firmware fixtures
+that isolate batching initialize an explicit synthetic policy; they are not
+counted as Linux-classifier proofs.
+
+PE is32448 bytes, SHA256
+`f6d8b207b42d0f9f9cce54bc16616a524742c8752f0647d12b11e9a42c4a71f6`,
+with conservative stack7360/8192; non-uplink builds to13992 bytes. Image/modules
+builds, seven changed kernel inputs and patch238's zero-fuzz apply/reverse round
+trip pass. Evidence is `artifacts/fttr/unicast-policy-*-20261109.*`. No physical
+device was accessed; full upstream packet retirement, ID reuse and the previously
+recorded full-main pause-ACK simulation gap remain outstanding.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

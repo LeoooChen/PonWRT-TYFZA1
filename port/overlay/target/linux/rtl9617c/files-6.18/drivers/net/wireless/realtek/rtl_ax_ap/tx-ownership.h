@@ -8,6 +8,10 @@
  * bytes96..103; NI snapshots use words28/29 (its <=9 segments end at25). */
 #define RTL_AX_TX_SELF_VALID (1U << 23)
 #define RTL_AX_TX_PEER_SELF 0x68400
+/* Compiled Linux policy, one128-byte slot per peer: DSCP[64], tagged TID,
+ * no-ACK bitmap. Replaced only with the peer route withdrawn. */
+#define RTL_AX_TX_PEER_POLICY 0x69400
+#define RTL_AX_TX_POLICY_BYTES 66
 #define RTL_AX_TX_CPU_SELF 96
 #define RTL_AX_TX_ROLE_SHIFT 24
 #define RTL_AX_TX_ROLE_MASK (127U << RTL_AX_TX_ROLE_SHIFT)

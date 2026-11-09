@@ -689,6 +689,28 @@ unlock:
 	return ret;
 }
 
+int rtl_ax_tx_unicast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid)
+{
+ struct rtl9617c_wifi_policy policy;
+ u8 next[RTL_AX_TX_POLICY_BYTES],address[ETH_ALEN];
+ int ret,withdraw;
+ if(!macid || macid>=128 || !tx->pe_active)return -EINVAL;
+ ether_addr_copy(address,tx->pe.memory+0xe400+macid*8);
+ ret=ieee80211_rtl9617c_mcast_policy(vif,address,&policy);
+ if(!ret && ((get_unaligned_le32(tx->pe.memory+0xd000+macid*32+8)>>16)&63)!=(policy.qos?26:24))ret=-ESTALE;
+ if(!ret) {
+  memcpy(next,policy.dscp_tid,64);next[64]=policy.tagged_tid;next[65]=policy.noack_map;
+  if(!memcmp(tx->pe.memory+RTL_AX_TX_PEER_POLICY+macid*128,next,sizeof(next)))return 0;
+ }
+ /* Unsupported TSPEC/fragmentation/control policy must also retire a
+  * previously admitted peer; failure keeps its old route closed for retry. */
+ withdraw=rtl_ax_tx_ni_retire_peer(tx,macid);
+ if(withdraw)return withdraw;
+ if(ret)return ret;
+ memcpy(tx->pe.memory+RTL_AX_TX_PEER_POLICY+macid*128,next,sizeof(next));dma_wmb();
+ return 0;
+}
+
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid)
 {
 	int id, ret;

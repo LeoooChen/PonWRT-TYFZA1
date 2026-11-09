@@ -106,6 +106,7 @@ static struct wdev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif){(void)vif;r
 static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;(void)id;return 0;}
 static int rtl_ax_tx_ni_peer(int tx,int dev,unsigned id){(void)tx;(void)dev;assert(id==7);admitted++;return 1;}
 static void rtl_ax_rx_open_peer(int rx,unsigned id,bool open){(void)rx;(void)id;(void)open;}
+static int rtl_ax_tx_unicast_policy(int t,struct ieee80211_vif *v,unsigned id){(void)t;(void)v;(void)id;return 0;}
 static int rtl_ax_tx_mcast_policy(int tx,struct ieee80211_vif *v,unsigned id){(void)tx;(void)v;assert(id==7);return 0;}
 """
 stop = source.split("case IEEE80211_AMPDU_RX_STOP:\n", 1)[1].split("\n\t}\n", 1)[0]

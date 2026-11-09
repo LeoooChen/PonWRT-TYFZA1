@@ -1,0 +1,13 @@
+--- a/net/mac80211/wme.h
++++ b/net/mac80211/wme.h
+@@ -24,6 +24,10 @@
+ ieee80211_mcast_policy_begin(struct ieee80211_sub_if_data *sdata)
+ {
+ #ifdef CONFIG_ARCH_RTL9617C
++	/* NI unicast bypasses the same classifier. Close its admission before
++	 * publishing QoS/ACM/TSPEC changes, then refresh through the worker. */
++	if (sdata->local->ops->rtl9617c_key_changed)
++		sdata->local->ops->rtl9617c_key_changed(&sdata->local->hw, &sdata->vif);
+ 	return rtl9617c_bridge_wifi_policy_begin(sdata->dev);
+ #else
+ 	return NULL;

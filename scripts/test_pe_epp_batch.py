@@ -11,6 +11,9 @@ u=Uc(UC_ARCH_MIPS,UC_MODE_MIPS32|UC_MODE_LITTLE_ENDIAN)
 BASE,MB,NI,PAYLOAD,EPP=0x04000000,0x04002000,0x10000000,0x06000000,0x05000000
 for a,n in [(0x1fc00000,0x10000),(BASE,0x80000),(NI,0x10000),(PAYLOAD,0x200000),(0x12000000,0x10000),(EPP,0x80000),(0x10020000,0x1000)]:u.mem_map(a,n)
 u.mem_write(0x1fc00000,(p/"pe-tx.bin").read_bytes())
+# Seed the admitted policy; this fixture tests batching rather than Linux mapping.
+legacy=bytes((((d>>3)+1)>>1)&1 if d<32 else (d>>3)&6 for d in range(64))
+u.mem_write(BASE+0x69400,(legacy+bytes(64))*128)
 def put(a,v):u.mem_write(a,struct.pack("<I",v))
 def get(a):return struct.unpack("<I",u.mem_read(a,4))[0]
 for i,v in [(2,0xb2000000),(25,EPP),(114,0x7060),(115,0x7160),(167,15)]:put(MB+i*4,v)

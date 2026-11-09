@@ -2,6 +2,8 @@
 import struct
 
 def initialize(cpu, base, requests=2048, occupied=0):
+    legacy = bytes((((d >> 3) + 1) >> 1) & 1 if d < 32 else (d >> 3) & 6 for d in range(64))
+    cpu.mem_write(base + 0x69400, (legacy + bytes(64)) * 128)
     cpu.mem_write(base + 0x39000, struct.pack('<128I', *([10896 | 7 << 16] * 128)))
     cpu.mem_write(base + 0x2e000, struct.pack('<2048H', *range(2048)))
     cpu.mem_write(base + 0x58000, struct.pack('<4095H', *range(4095)))

@@ -111,6 +111,7 @@ static struct ieee80211_key *expected;
 static struct rtl_mc_pe_table radios[2];
 static void publish(struct ieee80211_key **p,struct ieee80211_key *key){
  if(p==&changing->default_multicast_key){
+  assert(!key_admitted);
   assert(changing_group&&rcu==1&&state.mc_gate.writers==1&&!state.mc_gate.active);
   assert((state.profile&15)==3&&!radios[0].epoch&&!radios[1].epoch&&key==expected);
  }
@@ -197,6 +198,13 @@ int main(void){
   select_default(link,4,false,true,NULL);cases++;
  }
  assert(unicast_changes&&state.mc_flush&&!rcu);
+ /* The policy begin helper must close unicast before the new QoS field is published. */
+ for(unsigned i=0;i<8;i++) {
+  key_admitted=true;unsigned before=key_closures;
+  const struct rtl9617c_bridge_mcast_ops *token=ieee80211_mcast_policy_begin(&s);
+  assert(!key_admitted&&key_closures==before+1&&state.mc_gate.writers);
+  ieee80211_mcast_policy_end(&s,token);
+ }
  changing=&s.deflink;changing_group=changing_unicast=false;changing_ptk=true;
  for(unsigned idx=0;idx<4;idx++)for(unsigned key=0;key<5;key++) {
   unsigned before=notified;u64 policy=rtl_wifi_policy_generation;

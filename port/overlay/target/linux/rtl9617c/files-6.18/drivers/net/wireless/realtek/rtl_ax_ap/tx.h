@@ -35,6 +35,7 @@ struct device *rtl_ax_tx_dma_device(struct rtl_ax_tx *tx);
 void rtl_ax_tx_bind_rx(struct rtl_ax_tx *tx, struct rtl_ax_rx *rx);
 void rtl_ax_tx_bind_hw(struct rtl_ax_tx *tx, struct ieee80211_hw *hw);
 void rtl_ax_tx_bind_ready(struct rtl_ax_tx *tx, void (*ready)(void *), void *context);
+int rtl_ax_tx_unicast_policy(struct rtl_ax_tx *tx,struct ieee80211_vif *vif,unsigned int macid);
 int rtl_ax_tx_ni_peer(struct rtl_ax_tx *tx, struct net_device *netdev, unsigned int macid);
 int rtl_ax_tx_ni_cleanup(struct rtl_ax_tx *tx);
 int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw);
