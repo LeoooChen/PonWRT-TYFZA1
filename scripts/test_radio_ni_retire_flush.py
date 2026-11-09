@@ -130,7 +130,8 @@ static int rtl_ax_rx_uplink_enable(void *rx,unsigned id,unsigned wifi){(void)rx;
 static int rtl9617c_wifi_id(struct net_device *dev){(void)dev;return 3;}
 static int ni_uplink_start(struct rtl_ax_tx *tx){assert(tx->ni.active);return 0;}
 static void rtl_ax_tx_open(struct rtl_ax_tx *tx) {tx->paused=false;}
-static bool ni_epps_empty(struct rtl_ax_tx *tx) {return !tx->ni.route_peers[2] || drop_mask[2]==15;}
+static bool ni_es_empty(struct rtl_ax_tx *tx);
+static bool ni_epps_empty(struct rtl_ax_tx *tx) {return ni_es_empty(tx) && (!tx->ni.route_peers[2] || drop_mask[2]==15);}
 static u32 readl(void *p) {return get_unaligned_le32(p);}
 static void ni_test_buffered(struct rtl_ax_tx *tx,unsigned id,unsigned mask) {(void)tx;(void)id;(void)mask;}
 static void cancel_work_sync(void *p) {(void)p;}
@@ -328,6 +329,23 @@ int main(void) {
   assert(!tx.ni.peer_retiring[1] && rx_active[1]==!escalate && !!rx_retired[1]==!!escalate && rx_active[2]);
  }
 
+
+ /* Empty PE/EPP state cannot retire the radio while ES still owns a BID. */
+ for(unsigned cpu=2;cpu<=3;cpu++)for(unsigned cos=0;cos<8;cos++){
+  u8 memory[0x80000]={};struct net_device dev={};struct pci_dev pdev={};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};struct rtl_ax_ap radio={.tx=&tx};pdev.radio=&radio;current=&tx;
+  memset(pending,0,sizeof(pending));memset(drop_mask,0,sizeof(drop_mask));memset(withdrawn,0,sizeof(withdrawn));memset(rx_active,0,sizeof(rx_active));memset(registers,0,sizeof(registers));
+  fail_drop=fail_unbind=fail_pause=fail_release=fail_withdraw=fail_drop_at=0;withhold_rpq=withhold_fence=false;drop_calls=pause_calls=poll_calls=release_calls=0;
+  tx.ni.active=true;tx.ni.route_dev=&dev;tx.ni.route_macid=1;tx.ni.regs=tx.ni.vp=registers;tx.ni.cpu=cpu;
+  tx.ni.peer_dev[1]=&dev;tx.ni.peer_address[1][0]=1;tx.ni.peer_wifi[1]=3;tx.ni.route_peers[1]=true;tx.peer_offloaded[1]=true;memory[0xe408]=1;
+  registers[0x6830/4]=BIT(cpu*8+cos);tick();
+  assert(rtl_ax_tx_ni_route(&tx,&dev,0)==-ETIMEDOUT && tx.ni.retire_quiescing && !release_calls);
+  unsigned before=drop_calls,pauses=pause_calls,polls=poll_calls;
+  for(unsigned n=0;n<3;n++)assert(rtl_ax_tx_ni_cleanup(&tx)==-EAGAIN && !release_calls);
+  assert(drop_calls==before&&pause_calls==pauses&&poll_calls==polls);
+  registers[0x6830/4]=0;
+  assert(!rtl_ax_tx_ni_cleanup(&tx) && release_calls==1 && !tx.ni.active && !tx.ni.route_dev);
+ }
  for(unsigned other_rx=0;other_rx<2;other_rx++){
   u8 memory[0x80000]={0};struct net_device dev={0};struct pci_dev pdev={0};
   struct rtl_ax_tx tx={.pe_active=true,.pe={memory},.pdev=&pdev};
@@ -431,7 +449,7 @@ pci = (driver / 'pci.c').read_text()
 drop = function(pci, 'rtl_ax_mac_drop_peer') if 'int rtl_ax_mac_drop_peer(' in pci else ''
 with tempfile.TemporaryDirectory(prefix='ni-retire-flush-') as directory:
     source, binary = Path(directory) / 'test.c', Path(directory) / 'test'
-    source.write_text(common + function(tx_source,'rtl_ax_tx_peer_authorized') + function((driver / 'role.h').read_text(), 'rtl_ax_station_drop') + drop +
+    source.write_text(common + function((driver/'ni-test.h').read_text(),'ni_es_empty') + function(tx_source,'rtl_ax_tx_peer_authorized') + function((driver / 'role.h').read_text(), 'rtl_ax_station_drop') + drop +
                       ''.join(function(ni,n) for n in ('ni_peer_bind','ni_peer_put','ni_peer_withdraw','ni_peer_routes_withdraw')) + function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'ni_peer_fence') + function(ni, 'ni_peer_idle') +
                       function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') +
                       function(ni, 'rtl_ax_tx_ni_retire_ba') + function(ni, 'rtl_ax_tx_ni_peer') +

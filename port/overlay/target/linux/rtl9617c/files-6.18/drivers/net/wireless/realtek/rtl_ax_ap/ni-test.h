@@ -302,9 +302,18 @@ static int ni_uplink_start(struct rtl_ax_tx *tx)
 	return 0;
 }
 
+static bool ni_es_empty(struct rtl_ax_tx *tx)
+{
+	/* Target aal_l3_tm_es_voq_status_get: CPU2/3 occupy the high two
+	 * bytes of QM_VOQ_STATUS0. EPP cursors do not cover these queued BIDs. */
+	return !(readl(tx->ni.regs + 0x6830 + (tx->ni.cpu / 4) * 4) &
+		 (0xffU << ((tx->ni.cpu % 4) * 8)));
+}
+
 static bool ni_epps_empty(struct rtl_ax_tx *tx)
 {
 	unsigned int cos;
+	if (!ni_es_empty(tx)) return false;
 	for (cos = 0; cos < 8; cos++)
 		if (readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32) + cos * 4) != readl(tx->ni.regs + tx->ni.registers[11] + cos * 4)) return false;
 	return true;
@@ -355,9 +364,19 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 	if (ret) return ret;
 	if (tx->ni.active) {
 		/* Stop new EPP publication before changing ring bases and pool maps. */
+		u32 enabled = readl(tx->ni.regs + 0x6108) & BIT(tx->ni.cpu);
 		writel(readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu), tx->ni.regs + 0x6108);
-		readl(tx->ni.regs + 0x6108);
-		if (!ni_epps_empty(tx)) return -EBUSY;
+		if (readl(tx->ni.regs + 0x6108) & BIT(tx->ni.cpu)) return -EIO;
+		if (!ni_epps_empty(tx)) {
+			/* A packet may reach ES/EPP after the preceding idle sample.
+			 * Keep the owned consumer draining for the next graceful retry.
+			 * Never reopen a port that was already disabled by its owner. */
+			if (enabled) {
+				writel(readl(tx->ni.regs + 0x6108) | enabled, tx->ni.regs + 0x6108);
+				if (!(readl(tx->ni.regs + 0x6108) & enabled)) return -EIO;
+			}
+			return -EBUSY;
+		}
 		if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 152)) return -EBUSY;
 		/* Empty EPPs do not account for WPs awaiting RPQ or EQ return. */
 		if (get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 120)) return -EBUSY;
@@ -518,7 +537,10 @@ released:
 	/* PCIe DMA is already closed by radio teardown. Stop NI publication
 	 * before releasing the PE mailbox, its IRQ action, or the EPP memory. */
 	writel(readl(tx->ni.regs + 0x6108) & ~BIT(tx->ni.cpu), tx->ni.regs + 0x6108);
-	readl(tx->ni.regs + 0x6108);
+	if (readl(tx->ni.regs + 0x6108) & BIT(tx->ni.cpu)) return -EIO;
+	/* Forced PCI cleanup cannot discard ES ownership by replacing EPP
+	 * pointers. Pending BIDs have not reached PE's owner lists yet. */
+	if (!ni_es_empty(tx)) return -EBUSY;
 	writel(0, tx->ni.vp);
 	readl(tx->ni.vp);
 	ret = rtl_ax_tx_pause(tx);

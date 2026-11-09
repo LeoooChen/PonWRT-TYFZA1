@@ -5,7 +5,7 @@ import subprocess,tempfile,argparse
 root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser();parser.add_argument('--source',type=Path);args=parser.parse_args()
 source=(args.source or root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/ni-test.h').read_text()
-a=source.index('static int ni_uplink_stop(');b=source.index('\nstatic bool ni_epps_empty',a)
+a=source.index('static int ni_uplink_stop(');b=source.index('\nstatic bool ni_es_empty' if 'static bool ni_es_empty' in source else '\nstatic bool ni_epps_empty',a)
 code=r'''
 #include <assert.h>
 #include <stdint.h>

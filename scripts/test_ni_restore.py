@@ -98,7 +98,7 @@ static void dev_put(void *p){(void)p;assert(0);}
 static void *phys_to_virt(u32 a){(void)a;assert(0);return NULL;}
 static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dir){(void)dev;(void)a;(void)bytes;(void)dir;assert(0);}
 '''
-code+=fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
+code+=fn('ni_es_empty')+fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));

@@ -9609,6 +9609,55 @@ software/hardware queue cutoff through command failures; it does not prove
 complete MCE/AFT upstream or ES/MiniOLT downstream retirement, and does not
 enable hardware-ID reuse.
 
+### Wireless ES occupancy participates in NI retirement
+
+Radio retirement previously checked EPP producer/consumer equality and PE
+queued/owned BIDs, but did not inspect the preceding ES queues. An empty EPP
+therefore allowed release even when ES retained a packet that had not been
+published to PE. The old release function at `bc25b35` reproduces this with
+`scripts/test_ni_es_retirement.py --revision bc25b35`.
+
+The target `aal_l3_tm_es_voq_status_get` at `0x6f0a0` reads `0x6830` for CPU2
+and CPU3. Bits16..23 and24..31 respectively indicate occupied COS queues;
+the original API inverts the selected bit to return empty. Executing all256
+occupancy masks, both CPU ports and all8 COS selectors confirms4096 results
+and the exact register address. This is an ES occupancy observation, not an
+upstream DMA or MCE/AFT completion acknowledgement.
+
+The native shared queue-empty check now includes all8 ES queues for the
+radio, in addition to EPP cursors. Global retirement keeps the owned PE/EPP
+consumer running while ES drains and completes only after the existing
+pending-WP checks also pass. The release path disables its ES CPU port and
+verifies the write before inspecting the queues again. If data appeared
+between the preceding empty sample and port closure, it retains all maps and
+resources, restores the CPU enable bit only if it had been enabled on entry,
+and returns EBUSY for a later drain retry. An unapplied enable/disable write
+returns EIO. A pre-disabled owner is never implicitly reopened.
+
+Forced PCI cleanup also checks ES after disabling the CPU port and refuses
+to restore maps with pending ES BIDs. Those buffers have not reached PE owner
+lists and cannot be reclaimed by walking those lists. No speculative flush
+register write or global RMU drop selector was introduced: the original flush
+helper's timeout-fabricated success, already documented above, is not a valid
+replacement for this observation.
+
+Validation passes554 native occupancy/arrival/pre-disabled/write-failure/forced
+cleanup cases and16 global lifecycle cases where EPP/PE are empty but one ES
+COS remains busy. Busy retries retain ownership without resending DROP; clearing
+the modeled ES status permits completion. Ten related suites pass, including
+NI register restore, inflight WPs, uplink cache mode, complete peer retirement,
+authorization, FE publication, exact device ownership, BCMC and linked PE
+peer/FTTR retirement. ASan/UBSan check the native fixtures. Image/modules build
+passes and the changed input matches the compiled kernel tree. PE firmware is
+unchanged; no physical device was accessed. Receipts are
+`artifacts/fttr/ni-es-retirement-*-20261109.*` and
+`ni-es-retirement-20261109.json`.
+
+This adds the previously missing ES queue to release eligibility. Packets still
+upstream of ES can arrive after the observation; complete MCE/AFT production
+retirement, MiniOLT downstream retirement and safe hardware-ID reuse remain
+unproven and are not enabled by this change.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

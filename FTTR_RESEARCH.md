@@ -309,6 +309,8 @@
 
 152. 修复DROP失败后后续peer覆盖已发布NI屏障：907e5ed生产函数已复现peer1写入EPP截止/退场编号但DROP失败后，peer2覆盖其归属。现在恢复PE前记录屏障owner及独立retire_drop_pending，其他peer只撤自身路由，原owner重试DROP保留同一截止位置，成功后才等待原EPP/RPQ/EQ完成；全局/BCMC失败同样保留阶段，BA升级仍撤RX。四AC位置加第二peer、截止不变/完成阻塞/最终清理及重新准入、十项回归通过，含25链接peer/251链接FTTR回收；Image/模块/两输入一致通过。PE未改、未实机；完整上游/下游排空和ID复用仍未由此证明。详见[DROP失败屏障归属](port/FTTR.md#preserve-the-ni-fence-owner-while-drop-setup-is-incomplete)。
 
+153. 将无线ES队列纳入NI退场：实际原厂status函数4096次对照确认CPU2/3在6830高两字节的COS占用位。旧bc25b35已复现EPP空但ES忙仍释放；现在全局空检查包含ES，关闭CPU后再次检查，迟到队列保留映射/引用并仅恢复原本开启的消费者继续排空，写入不生效报EIO，强制PCI清理也拒绝丢弃ES归属。554原生状态/迟到/关闭/写故障/强制清理、16全局生命周期及十项回归、Image/模块/输入一致通过，PE未变、未实机。未使用原厂超时假成功flush；尚未进入ES的MCE/AFT报文及MiniOLT下游仍缺完整屏障，ID安全复用仍未完成。详见[ES退场检查](port/FTTR.md#wireless-es-occupancy-participates-in-ni-retirement)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |
