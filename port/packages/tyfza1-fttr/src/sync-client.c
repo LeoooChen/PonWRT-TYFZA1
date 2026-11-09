@@ -276,6 +276,81 @@ static int neighbors_reply(struct json_object *value, const uint8_t peer[6],
 	return 0;
 }
 
+/* Decode only after collecting all accepted segments, since a row may span
+ * reports. The original scanner uses eight comma-separated fields after ':',
+ * without quoting/escaping. Do not guess how to repair ambiguous input. */
+int fttr_sync_neighbor_fields(struct json_object *summary, const uint8_t peer[6])
+{
+	static const char *const keys[] = { NULL, "RadioType", "SSIDName", "BSSID",
+		"NetworkType", "Channel", "RSSI", "Standard" };
+	static const unsigned int limits[] = { 31, 4, 32, 31, 15, 7, 4, 5 };
+	struct json_object *text, *rows;
+	const char *line, *end;
+	char mac[13];
+	int ret = -EBADMSG;
+
+	if (!summary || !json_object_object_get_ex(summary, "scanResult", &text) ||
+	    !json_object_is_type(text, json_type_string) ||
+	    (size_t)json_object_get_string_len(text) != strlen(json_object_get_string(text))) return ret;
+	rows = json_object_new_array();
+	if (!rows) return -ENOMEM;
+	snprintf(mac, sizeof(mac), "%02X%02X%02X%02X%02X%02X", peer[0], peer[1], peer[2], peer[3], peer[4], peer[5]);
+	line = json_object_get_string(text);
+	end = line + json_object_get_string_len(text);
+	while (line < end) {
+		const char *newline = memchr(line, '\n', end - line), *stop = newline ? newline : end;
+		const char *colon = memchr(line, ':', stop - line);
+		char buffer[256], *field[8], *cursor, address_text[18], rssi[6];
+		uint8_t address[6];
+		struct json_object *row, *value;
+		if (stop > line && stop[-1] == '\r') stop--;
+		if (!colon || colon == line || stop - line > 255 || stop <= colon + 1) goto out;
+		memcpy(buffer, colon + 1, stop - colon - 1); buffer[stop - colon - 1] = 0;
+		cursor = buffer;
+		for (unsigned int i = 0; i < 8; i++) {
+			char *comma = strchr(cursor, ',');
+			if ((i < 7 && !comma) || (i == 7 && comma)) goto out;
+			if (comma) *comma = 0;
+			field[i] = cursor;
+			if (!*cursor || strlen(cursor) > limits[i]) goto out;
+			for (const unsigned char *p = (const unsigned char *)cursor; *p; p++)
+				if (*p < 32 || *p == 127) goto out;
+			cursor = comma ? comma + 1 : cursor + strlen(cursor);
+		}
+		for (unsigned int i = 0; i < 8; i++) if (i == 0 || i == 5 || i == 6) {
+			const char *p = field[i];
+			if (i == 6 && *p == '-') p++;
+			if (!*p) goto out;
+			for (; *p; p++) if (*p < '0' || *p > '9') goto out;
+		}
+		if (strlen(field[3]) == 12) {
+			for (unsigned int i = 0; i < 6; i++) {
+				address_text[3*i] = field[3][2*i]; address_text[3*i+1] = field[3][2*i+1];
+				address_text[3*i+2] = i == 5 ? 0 : ':';
+			}
+		} else if (strlen(field[3]) == 17) memcpy(address_text, field[3], 18);
+		else goto out;
+		if (fttr_sync_mac_parse(address_text, address)) goto out;
+		/* Retain the target's sign handling, including zero-prefixed forms. */
+		snprintf(rssi, sizeof(rssi), "%s%s", field[6][0] == '-' || field[6][0] == '0' ? "" : "-", field[6]);
+		field[6] = rssi;
+		row = json_object_new_object();
+		if (!row) { ret = -ENOMEM; goto out; }
+		if (json_object_array_add(rows, row)) { json_object_put(row); ret = -ENOMEM; goto out; }
+		for (unsigned int i = 0; i < 8; i++) {
+			value = json_object_new_string(i ? field[i] : mac);
+			if (!value || json_object_object_add(row, i ? keys[i] : "MAC", value)) {
+				json_object_put(value); ret = -ENOMEM; goto out;
+			}
+		}
+		line = newline ? newline + 1 : end;
+	}
+	if (json_object_object_add(summary, "neighbors", rows)) { ret = -ENOMEM; goto out; }
+	return 0;
+out:
+	json_object_put(rows); return ret;
+}
+
 static int notification_reply(struct json_object *value, const char *method, bool *ack_seen)
 {
 	struct json_object *field;

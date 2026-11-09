@@ -77,7 +77,7 @@ ssize_t send(int fd,const void *p,size_t n,int flags){
     variants=('single','empty','append','replace','duplicate','auto','fragment','request-type',
               'foreign-source','wrong-method','nack','ack-only','timeout','reregister','no-method','no-data',
               'bad-mac','bad-flag','orphan','nul','bad-json','bad-result','fragment-missing','fragment-conflict',
-              'pending-fragment','bad-after-valid','too-many','too-large','late','split-line','auto-orphan')
+              'pending-fragment','bad-after-valid','too-many','too-large','late','split-line','auto-orphan','bad-line','extra-field','bad-bssid','empty-field','positive-rssi','crlf','no-newline')
     if not a.stage: variants+=('ack-send-failure',)
     def report(flag='NEW',text='row:1,5G,Synthetic,020000000001,11ax,36,-55,80\n'):
         return dict(RPCMethod='GetWifiNeighbor',MAC=target.hex().upper(),RECVFLAG=flag,scanResult=text)
@@ -93,7 +93,7 @@ ssize_t send(int fd,const void *p,size_t n,int flags){
             while proc.poll() is None:
                 assert time.monotonic()<end,case
                 if delayed and time.monotonic()>=delayed:
-                    send(report('REMAINING','later'));delayed=None
+                    send(report('REMAINING',report()['scanResult']));delayed=None
                 if not select.select([remote],[],[],.01)[0]:continue
                 frame,meta=remote.recvfrom(16384)
                 if meta[2]==socket.PACKET_OUTGOING:continue
@@ -119,6 +119,9 @@ ssize_t send(int fd,const void *p,size_t n,int flags){
                 if case=='bad-json':send(b'{broken');valid_reports=0;continue
                 if case=='foreign-source':send(dict(value,RECVFLAG='BAD'),foreign=True)
                 if case=='wrong-method':send(dict(value,RPCMethod='Other',Result=0))
+                if case in ('bad-line','extra-field','bad-bssid','empty-field','positive-rssi','crlf','no-newline'):
+                    value['scanResult']={'bad-line':'row:partial\n','extra-field':expected.rstrip() + ',extra\n','bad-bssid':expected.replace('020000000001','030000000001'),'empty-field':expected.replace('Synthetic',''),'positive-rssi':expected.replace('-55','55'),'crlf':expected.replace('\n','\r\n'),'no-newline':expected.rstrip('\n')}[case]
+                    expected=value['scanResult']
                 if case=='empty':value['scanResult']='';expected=''
                 if case=='split-line':value['scanResult']='row:1,5G,';expected='row:1,5G,'
                 if case=='too-large':value['scanResult']='x'*15000;valid_reports=4
@@ -128,7 +131,7 @@ ssize_t send(int fd,const void *p,size_t n,int flags){
                 if case=='pending-fragment':send(report('REMAINING','unfinished'),fragments=True,missing=True)
                 if case=='bad-after-valid':send(dict(value,RECVFLAG='BAD'))
                 if case in ('append','duplicate','replace','split-line'):
-                    extra='Synthetic\n' if case=='split-line' else 'second'
+                    extra='Synthetic,020000000001,11ax,36,-55,80\n' if case=='split-line' else report()['scanResult']
                     send(report('NEW' if case=='replace' else 'REMAINING',extra));reports=valid_reports=2
                     expected=extra if case=='replace' else expected+extra
                     restarts=int(case=='replace')
@@ -138,14 +141,14 @@ ssize_t send(int fd,const void *p,size_t n,int flags){
                     for i in range(64):send(report('REMAINING','x'))
                 if case=='too-large':
                     for i in range(4):send(report('REMAINING','x'*15000),fragments=True)
-                if case=='late':delayed=time.monotonic()+2.4;expected+='later';reports=valid_reports=2
+                if case=='late':delayed=time.monotonic()+2.4;expected+=report()['scanResult'];reports=valid_reports=2
             out,err=proc.communicate(timeout=1)
             while select.select([remote],[],[],0)[0]:
                 frame,meta=remote.recvfrom(16384)
                 if meta[2]!=socket.PACKET_OUTGOING:
                     assert frame[14]&15==7;acknowledgements.append(frame)
             good=case in ('single','empty','append','replace','duplicate','auto','fragment','request-type',
-                         'foreign-source','wrong-method','late','split-line')
+                         'foreign-source','wrong-method','late','split-line','positive-rssi','crlf','no-newline')
             assert (proc.returncode==0)==good,(case,out,err)
             assert requests==1
             assert len(acknowledgements)==(0 if case=='ack-send-failure' else valid_reports),(case,len(acknowledgements),valid_reports,out,err)
@@ -155,6 +158,10 @@ ssize_t send(int fd,const void *p,size_t n,int flags){
             if good:
                 result=json.loads(out)
                 assert result['scanResult']==expected and result['reports']==reports and result['restarts']==restarts,(case,result,expected)
+                count=0 if case=='empty' else 3 if case=='duplicate' else 2 if case in ('append','late') else 1
+                assert len(result['neighbors'])==count
+                for row in result['neighbors']:
+                    assert row==dict(MAC=target.hex().upper(),RadioType='5G',SSIDName='Synthetic',BSSID='020000000001',NetworkType='11ax',Channel='36',RSSI='-55',Standard='80')
                 assert not result['scan_complete'] and not result['identity_authenticated']
                 assert time.monotonic()-start>=2.9
             else:assert not out,(case,out)

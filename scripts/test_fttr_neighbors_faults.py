@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise neighbor accumulation ownership and every JSON allocation failure."""
+"""Exercise neighbor accumulation ownership, neighbor fields and every JSON allocation failure."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -74,6 +74,15 @@ int main(void){
   input=json_tokener_parse(first);
   json_object_object_add(input,fields[i],variant==0?json_object_new_boolean(1):variant==1?json_object_new_int(1):json_object_new_string_len("a\0b",3));
   assert(decode(json_object_to_json_string_ext(input,JSON_C_TO_STRING_PLAIN),&summary,&observed)<0&&!summary&&!observed);json_object_put(input);
+ }
+ const char *rowtext="row:1,5G,Synthetic,020000000001,11ax,36,55,80\n";
+ const uint8_t peer[6]={2,0,0,0,0,1};
+ for(unsigned n=1;n<128;n++){
+  summary=json_object_new_object();json_object_object_add(summary,"scanResult",json_object_new_string(rowtext));
+  calls=0;fail_at=n;int ret=fttr_sync_neighbor_fields(summary,peer);unsigned count=calls;fail_at=0;
+  bool published=json_object_object_get_ex(summary,"neighbors",&field);
+  if(count<n){assert(!ret&&published&&json_object_array_length(field)==1);json_object_put(summary);break;}
+  assert(ret==-ENOMEM&&!published);json_object_put(summary);faults++;assert(n<127);
  }
  printf("Neighbor parser: %u allocation/copy failures, replacement preserves old state on failure, orphan/bounds/NUL/type ASan/UBSan PASS\n",faults);
 }

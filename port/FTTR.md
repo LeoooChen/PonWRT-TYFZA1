@@ -9420,6 +9420,48 @@ directories and actual-image program tests. The full log is
 `artifacts/fttr/world-refresh-20261109.log`. These generated/private-input
 artifacts remain local; public Git contains the code and verification scope.
 
+### Structured neighbor fields from the retained manager
+
+`wifi-neighbors` now adds a `neighbors` array after collecting its report text.
+The eight fields after the original line prefix/colon are index, radio band,
+SSID, BSSID, network type, channel, RSSI and standard. Native emits the same
+manager field names: `MAC` (the queried subordinate), `RadioType`, `SSIDName`,
+`BSSID`, `NetworkType`, `Channel`, `RSSI` and `Standard`. The raw `scanResult`
+remains available and `scan_complete` remains false.
+
+`tools/trace_stock_fttr_neighbor_fields.py` executes the retained manager's
+actual JSON-output block at `0x450a24..0x450b7c`, with explicit values in the
+destinations of its preceding file scanner. Both bands and five RSSI forms
+match: a positive magnitude is prefixed with minus, while negative or
+zero-prefixed strings retain their form. The native parser restricts RSSI to
+an optional leading minus followed by digits before applying this conversion;
+it does not reproduce the original's permissive treatment of a minus anywhere
+in arbitrary text. The original scanner itself is represented by its known
+eight-field layout, not claimed as executed by this oracle.
+
+Conversion occurs only after accepted NEW/REMAINING reports are joined, so a
+line may span reports. LF, CRLF and a final syntactically complete row without
+newline are accepted. SSID spaces/UTF8 are preserved up to32 bytes; BSSID must
+be valid unicast in compact or colon form. All eight fields are required,
+control characters and extra commas are rejected, and fixed field/line bounds
+prevent the original unbounded `%[^,]` copies. The original format has no
+verified quoting convention for commas or empty SSIDs; those inputs return an
+error rather than guessing a replacement. Malformed trailing rows or allocation
+failure discard the entire structured output and fail the query. Syntactic row
+validity still cannot prove that all reports from a scan were received.
+
+Validation passes77 direct original/native and malformed-row comparisons,
+39 actual glibc CLI/veth cases and38 packaged musl cases, including cross-report
+rows, replacement/duplicates, newline forms, malformed/BSSID/empty/extra fields
+and positive RSSI. ASan/UBSan now covers62 allocation/copy failure points across
+report accumulation and field conversion. Station33 and QosSync38 regressions
+pass. FTTR packages rebuild; all67 source/header inputs and four installed
+programs match their package staging. Reports are
+`artifacts/fttr/neighbor-fields-*-20261109.*`. No kernel/PE change or device
+access occurred; this increment was package-tested, not included in the prior
+full RAM FIT receipt. Complete scan identity/termination, resident neighbor
+collection, roaming decisions and physical RF verification remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

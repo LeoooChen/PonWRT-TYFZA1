@@ -23,6 +23,7 @@ int fttr_sync_request(int fd, const uint8_t source[6], const uint8_t peer[6], ui
 		uint8_t slot, unsigned int settings, struct json_object *configuration);
 int fttr_sync_web_password_validate(struct json_object *value);
 int fttr_sync_qos_validate(struct json_object *value);
+int fttr_sync_neighbor_fields(struct json_object *summary, const uint8_t peer[6]);
 int fttr_sync_web_password_check(struct json_object *observed,struct json_object *desired,bool compare);
 int fttr_sync_iptv_ports_validate(struct json_object *value);
 int fttr_sync_iptv_ports_check(struct json_object *observed,struct json_object *desired,bool compare);

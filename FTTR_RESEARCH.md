@@ -301,6 +301,8 @@
 
 148. 完成累积重写后的整镜像离线刷新：清理并重新准备Linux6.18.55，91补丁目标与原验证树、196 overlay输入逐字节一致；world内核/模块/用户程序/rootfs/索引全部通过。构建树旧LuCI补丁已保存比对后更新，同时修正文案以反映同信道八AP能力；补丁重复应用/实际Linux组合/界面回归通过。PE32448字节、栈7360/8192、嵌入模块与提交头一致；四程序经原sstrip后与镜像逐字节一致，四关键模块代码/数据一致，1905条initramfs与rootfs的1469普通文件及全部链接一致。直接从镜像提取的终端查询32场景、UCI51转换及常驻读写通过。生成ASIC/FPGA本地RAM FIT并独立验证载荷SHA256/RSA与DT引用；main仍为76ad78c，未合回、未发布/启动/实机。此项关闭整构建验证缺口，不改变全链路退场/ID复用及剩余原厂功能未完成的结论。详见[整镜像刷新](port/FTTR.md#full-offline-image-refresh-after-the-accumulated-rewrite)。
 
+149. 补齐邻居原文到原厂JSON字段转换：执行管理程序实际输出块确认MAC/RadioType/SSIDName/BSSID/NetworkType/Channel/RSSI/Standard及RSSI负号规则；接收窗口结束后再解析完整拼接文本，支持跨段行/CRLF/末行无换行，校验八字段、BSSID、数字与字节界限，畸形尾行或分配失败不返回半表。原文保留且scan_complete仍为false。77原厂/原生字段比较、39 glibc/38打包musl网络场景、62分配故障ASan/UBSan及终端/QoS回归、整包/67输入/四程序一致通过；首次网络首包超时重试后通过，未据此归因。内核/PE未改、未实机；完整扫描、自动采集/漫游、全链路退场/ID复用仍未完成。详见[邻居字段转换](port/FTTR.md#structured-neighbor-fields-from-the-retained-manager)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

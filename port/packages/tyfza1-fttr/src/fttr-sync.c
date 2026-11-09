@@ -111,6 +111,7 @@ static int exchange(int fd, const uint8_t source[6], const uint8_t peer[6], uint
 	 * Neighbor accumulation must start with no prior scan segments. */
 	if (settings == 17) { json_object_put(*summary); *summary = NULL; }
 	int ret = exchange_receive(fd, source, peer, ethertype, slot, settings, configuration, ack_seen, summary, observed);
+	if (!ret && settings == 17) ret = fttr_sync_neighbor_fields(*summary, peer);
 	if (ret && settings == 17) { json_object_put(*summary); *summary = NULL; }
 	return ret;
 }
