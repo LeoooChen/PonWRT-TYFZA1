@@ -30,6 +30,7 @@ static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dire
 #define readl_poll_timeout(a,v,c,d,t) ({(void)(a);(void)(d);(void)(t);v=count<limit?BIT(31):0;(c)?0:-ETIMEDOUT;})
 static void writel(u32 v,void *p) {(void)p;assert(count<limit && count<5);assert((v&127)==6);unsigned a=v&~127U;for(unsigned i=0;i<count;i++)assert(returned[i]!=a);returned[count++]=a;memset(phys_to_virt(a),0xa5,128);}
 static u32 readl(void *p){(void)p;return BIT(31);}
+static int rtl9617c_wifi_retire(unsigned pool){assert(pool==0);return 0;}
 static int cleanup(struct rtl_ax_tx *tx) {int ret;u32 status;unsigned i;
 '''
 test=r'''

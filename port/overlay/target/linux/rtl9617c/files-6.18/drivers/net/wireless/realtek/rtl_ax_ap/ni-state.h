@@ -10,7 +10,7 @@ struct rtl_ax_ni_state {
  u32 registers[14], saved[14], arb[8], epp_bases[8], epp_eq[8];
  u32 attrs[2][2], vp_saved[5];
  unsigned int cpu, eq, profile, vp_index;
- bool active, vp_active;
+ bool active, vp_active, epp_retiring;
  bool retire_quiescing, retire_drop_pending;
  /* Requested withdrawal closes admission even before FE/PKT_DROP succeeds.
   * retire_quiescing separately records an established drain fence. */

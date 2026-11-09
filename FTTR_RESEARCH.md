@@ -315,6 +315,8 @@
 
 155. 修复共享QM关闭失败仍释放已发布DMA池：记录hardware_owned覆盖部分失败start，stop尝试全部CB/入口/RMU/ES关闭并读回，free对已发布池重试关闭，仍失败时报告stop_error并保留整组池/环；未发布分配失败保持原清理。aea5f88原函数实际free已复现提前释放；62关闭失败组合/部分启动/反复free/成功重试、六项回归含17024 EPP/768 FTTR RX/100停止竞争、Image/模块/两输入一致通过。PE未改、未实机；关闭位读回不等于在途总线完成，成功stop/free的完整屏障与ID复用仍未证明。详见[QM关闭失败归属](port/FTTR.md#failed-shared-qm-closure-retains-published-dma-pools)。
 
+156. 补齐强制无线退场未被PE接管的EPP缓冲区归还：原流程只清owner/软件链并追平RD，会跳过EPP里的BID；现在经QM供应者核对两池/八环/2KiB地址，逐项RD读回后推EQ，保留失败或堵塞的地址/游标，64项预算和最终队列复核，radio epp_retiring防止下次普通释放绕过待归还项；恢复寄存器不再追平RD。162 QM范围/回绕/片段/堵塞/写失败/迟到场景、强制清理旧代码复现、十项回归、Image/模块/八输入一致通过。PE未改、未实机；AXI字段未找到原厂完整停止等待序列，不据字段名推断空闲；MCE/AFT/AXI全链路和MiniOLT退场、ID复用仍待补齐。详见[强制EPP归还](port/FTTR.md#forced-radio-teardown-returns-unconsumed-epp-buffers)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

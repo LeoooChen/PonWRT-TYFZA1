@@ -43,6 +43,7 @@ struct rtl9617c_ni_wifi_endpoint {
 
 int rtl9617c_ni_wifi_attach(struct device *dev, struct rtl9617c_ni_wifi_endpoint *endpoint);
 int rtl9617c_ni_wifi_detach(struct device *dev, unsigned int id);
+int rtl9617c_ni_wifi_retire(struct device *dev, unsigned int pool);
 int rtl9617c_ni_wifi_id(struct device *dev, struct net_device *netdev);
 bool rtl9617c_ni_wifi_enabled(struct device *dev);
 int rtl9617c_ni_wifi_peer_route(struct device *dev, struct net_device *netdev,

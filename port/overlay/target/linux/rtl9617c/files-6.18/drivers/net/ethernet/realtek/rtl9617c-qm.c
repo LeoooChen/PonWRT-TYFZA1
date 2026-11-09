@@ -373,6 +373,7 @@ int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port)
 		return ret;
 	/* TQM reset invalidates old BIDs; all buffers are loaded anew below. */
 	rx->stop_error = 0;
+	memset(rx->wifi_retire, 0, sizeof(rx->wifi_retire));
 	memset(&rx->refill, 0, sizeof(rx->refill));
 	writel(readl(ni + RMU_CTRL) & ~BIT(31), ni + RMU_CTRL);
 	writel(readl(ni + ES_CTRL) & ~BIT(31), ni + ES_CTRL);
@@ -929,4 +930,62 @@ ssize_t rtl_qm_rx_pool(struct rtl_qm_rx *rx, char *buf)
 				    readl(rx->ni + 0x66b4));
 	}
 	return length;
+}
+
+int rtl_qm_wifi_retire(struct rtl_qm_rx *rx, unsigned int pool)
+{
+	unsigned int cpu, eq, budget = 64;
+	u32 status, producer, consumer, command, address;
+	int ret;
+	if (pool >= RTL_QM_PE_POOLS) return -EINVAL;
+	if (!rx->hardware_owned || !rx->wifi_epp[pool]) return -ENODEV;
+	cpu = 3 - pool; eq = RTL_QM_PE_EQ + pool;
+	/* Caller has joined PE and PCI DMA and withdrawn FE publication. These
+	 * local checks do not establish the upstream MCE/AFT retirement fence. */
+	if ((readl(rx->ni + ES_CTRL) & BIT(cpu)) ||
+	    (readl(rx->ni + 0x6830) & (0xffU << (cpu * 8)))) return -EBUSY;
+	for (unsigned int cos = 0; cos < 8; cos++) {
+		unsigned int reg = cpu * 32 + cos * 4;
+		if (readl(rx->ni + EPP_BASE + reg) != lower_32_bits(rx->wifi_epp_dma[pool] + cos * RTL9617C_WIFI_EPP_BYTES))
+			return -ESTALE;
+		for (;;) {
+			if (!rx->wifi_retire[pool].address) {
+				producer = readl(rx->ni + EPP_WRITE + reg);
+				consumer = readl(rx->ni + EPP_READ + reg);
+				if ((producer | consumer) & ~(RTL9617C_WIFI_EPP_BYTES - 8U)) return -EPROTO;
+				if (producer == consumer) break;
+				if (!budget) return -EAGAIN;
+				dma_rmb();
+				command = get_unaligned_le32(rx->wifi_epp[pool] + cos * RTL9617C_WIFI_EPP_BYTES + consumer);
+				address = command & 0xffffff80U;
+				/* Even malformed packet fragments own one buffer. Validate its
+				 * allocation before returning it, without reading BID headroom. */
+				unsigned int chunk;
+				for (chunk = 0; chunk < RTL_QM_PE_CHUNKS; chunk++) {
+					dma_addr_t base = rx->wifi_dma[pool][chunk];
+					if (rx->wifi_memory[pool][chunk] && address >= base &&
+					    address - base < rtl_qm_wifi_chunk_bytes(chunk) &&
+					    !((address - base) % RTL_QM_BUFFER_BYTES)) break;
+				}
+				if (chunk == RTL_QM_PE_CHUNKS) return -ERANGE;
+				rx->wifi_retire[pool].next = (consumer + 8) & (RTL9617C_WIFI_EPP_BYTES - 1);
+				rx->wifi_retire[pool].cos = cos;
+				rx->wifi_retire[pool].address = address;
+			}
+			if (rx->wifi_retire[pool].cos != cos) break;
+			/* Retire the descriptor before EQ may reuse its buffer/ring data.
+			 * A failed RD write or full EQ leaves this exact return pending. */
+			writel(rx->wifi_retire[pool].next, rx->ni + EPP_READ + reg);
+			if (readl(rx->ni + EPP_READ + reg) != rx->wifi_retire[pool].next) return -EIO;
+			ret = readl_poll_timeout(rx->ni + 0x6368 + cpu * 8, status, status & BIT(31), 1, 100000);
+			if (ret) return ret;
+			writel(rx->wifi_retire[pool].address | eq, rx->ni + 0x636c + cpu * 8);
+			readl(rx->ni + 0x6368 + cpu * 8);
+			rx->wifi_retire[pool].address = 0;
+			budget--;
+		}
+	}
+	for (unsigned int cos = 0; cos < 8; cos++)
+		if (readl(rx->ni + EPP_WRITE + cpu * 32 + cos * 4) != readl(rx->ni + EPP_READ + cpu * 32 + cos * 4)) return -EAGAIN;
+	return readl(rx->ni + 0x6830) & (0xffU << (cpu * 8)) ? -EBUSY : 0;
 }

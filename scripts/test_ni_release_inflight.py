@@ -26,7 +26,7 @@ struct rtl_ax_tx {
  void *dma_device,*rx;
  unsigned producer[6];
  struct {void *memory;} pe;
- struct {bool active,vp_active;void *vp,*dma,*regs,*test_memory;
+ struct {bool active,vp_active,epp_retiring;void *vp,*dma,*regs,*test_memory;
   unsigned cpu,vp_index,vp_saved[5],test_dma;int ps_work;} ni;
 };
 static unsigned released,stopped,restored;

@@ -297,3 +297,13 @@ int rtl9617c_wifi_id(struct net_device *netdev)
 }
 EXPORT_SYMBOL_GPL(rtl9617c_wifi_id);
 
+int rtl9617c_wifi_retire(unsigned int pool)
+{
+	int ret;
+	mutex_lock(&wifi_mcast_lock);
+	ret = wifi_ni ? rtl9617c_ni_wifi_retire(wifi_ni, pool) : -ENODEV;
+	mutex_unlock(&wifi_mcast_lock);
+	return ret;
+}
+EXPORT_SYMBOL_GPL(rtl9617c_wifi_retire);
+

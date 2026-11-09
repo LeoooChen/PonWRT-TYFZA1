@@ -332,8 +332,8 @@ static int ni_restore_registers(struct rtl_ax_tx *tx)
 	ret = readl_poll_timeout(tx->ni.regs + 0x66a4, status, !(status & BIT(31)), 1, 100000);
 	if (ret) return ret;
 	for (i = 0; i < 14; i++)
-		if (tx->ni.registers[i] != 0x6108)
-			writel(tx->ni.registers[i] == tx->ni.registers[11] ? readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32)) : tx->ni.saved[i], tx->ni.regs + tx->ni.registers[i]);
+		if (tx->ni.registers[i] != 0x6108 && tx->ni.registers[i] != tx->ni.registers[11])
+			writel(tx->ni.saved[i], tx->ni.regs + tx->ni.registers[i]);
 	for (i = 0; i < 8; i++) {
 		writel(tx->ni.arb[i], tx->ni.regs + 0x1658);
 		ret = ni_access(tx, 0x1654, BIT(31) | BIT(30) | (i * 64 + 16 + tx->ni.cpu));
@@ -342,7 +342,8 @@ static int ni_restore_registers(struct rtl_ax_tx *tx)
 	for (i = 0; i < 8; i++) {
 		writel(tx->ni.epp_bases[i], tx->ni.regs + tx->ni.registers[12] + i * 4);
 		writel(tx->ni.epp_eq[i], tx->ni.regs + tx->ni.registers[10] + i * 4);
-		writel(readl(tx->ni.regs + (0x7000 + tx->ni.cpu * 32) + i * 4), tx->ni.regs + tx->ni.registers[11] + i * 4);
+		/* Only an actual consumer may advance RD. A late publication must
+		 * remain visible; matching RD to a fresh WR here leaks its BID. */
 	}
 	ret = attr_write(tx, tx->ni.eq, tx->ni.attrs[0]);
 	if (ret) return ret;
@@ -360,6 +361,7 @@ static int ni_test_release(struct rtl_ax_tx *tx)
 	u32 status;
 	int ret;
 
+	if (tx->ni.epp_retiring) return -EBUSY;
 	ret = ni_uplink_stop(tx);
 	if (ret) return ret;
 	if (tx->ni.active) {
@@ -545,6 +547,7 @@ released:
 	readl(tx->ni.vp);
 	ret = rtl_ax_tx_pause(tx);
 	if (ret) return ret;
+	tx->ni.epp_retiring = true;
 	pe_event_release(tx);
 	cancel_work_sync(&tx->ni.ps_work);
 	ret = rtl_ax_rx_pe_rpq_stop(tx->rx);
@@ -606,6 +609,10 @@ released:
 			address = next;
 		}
 	}
+	/* Unconsumed EPPs have not acquired PE generation/cookie references.
+	 * Return them through the QM supplier's exact pool/ring ownership. */
+	ret = rtl9617c_wifi_retire(3 - tx->ni.cpu);
+	if (ret) return ret;
 	ret = ni_restore_registers(tx);
 	if (ret) return ret;
 	for(i=1;i<128;i++)ni_peer_put(tx,i);
@@ -613,7 +620,7 @@ released:
 	if (tx->ni.route_dev) { dev_put(tx->ni.route_dev); tx->ni.route_dev = NULL; }
 	if (tx->ni.test_memory) dma_free_coherent(tx->dma_device, TEST_MEMORY_BYTES, tx->ni.test_memory, tx->ni.test_dma);
 	iounmap(tx->ni.dma); iounmap(tx->ni.regs);
-	tx->ni.active = tx->ni.vp_active = false;
+	tx->ni.active = tx->ni.vp_active = tx->ni.epp_retiring = false;
 	tx->ni.test_memory = NULL; tx->ni.regs = tx->ni.dma = tx->ni.vp = NULL;
 	return 0;
 }

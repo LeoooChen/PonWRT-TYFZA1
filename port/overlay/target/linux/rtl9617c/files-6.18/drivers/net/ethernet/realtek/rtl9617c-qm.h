@@ -49,6 +49,8 @@ struct rtl_qm_rx {
 	dma_addr_t wifi_dma[RTL_QM_PE_POOLS][RTL_QM_PE_CHUNKS];
 	void *wifi_epp[RTL_QM_PE_POOLS];
 	dma_addr_t wifi_epp_dma[RTL_QM_PE_POOLS];
+	/* Consumer advance may have succeeded before EQ has return credit. */
+	struct { u32 address, next, cos; } wifi_retire[RTL_QM_PE_POOLS];
 	bool deepq_configured;
 	/* Addresses may be retained even by a partially failed start. */
 	bool hardware_owned;
@@ -71,6 +73,7 @@ struct rtl_qm_rx {
 
 int rtl_qm_rx_alloc(struct device *dev, struct rtl_qm_rx *rx);
 int rtl_qm_rx_start(struct rtl_qm_rx *rx, unsigned int port);
+int rtl_qm_wifi_retire(struct rtl_qm_rx *rx, unsigned int pool);
 void rtl_qm_rx_stop(struct rtl_qm_rx *rx);
 void rtl_qm_rx_free(struct device *dev, struct rtl_qm_rx *rx);
 int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget);

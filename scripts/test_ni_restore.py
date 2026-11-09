@@ -2,7 +2,7 @@
 """Execute native NI register restoration and release with indirect-IO failures."""
 from pathlib import Path
 import argparse,re,struct,subprocess,sys,tempfile
-parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--stock",type=Path);args=parser.parse_args()
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument("--stock",type=Path);parser.add_argument("--revision");args=parser.parse_args()
 root=Path(__file__).resolve().parents[1]
 driver=root/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap'
 if args.stock:
@@ -33,7 +33,7 @@ if args.stock:
    assert writes[1][0]==0x66a4 and writes[1][1]&0xc000003f==0xc0000000|entry
    assert reads==min(complete,300) and logs==(complete>300)
  print('Original AXI attribute:16 entry/completion cases confirm write/access order and300-poll timeout')
-s=(driver/'ni-test.h').read_text()
+s=subprocess.check_output(['git','show',args.revision+':'+str((driver/'ni-test.h').relative_to(root))],cwd=root,text=True) if args.revision else (driver/'ni-test.h').read_text()
 def fn(name):
  a=re.search(r'^static (?:int|void|bool) '+name+r'\([^;]*?\)\s*\{',s,re.M).start();b=s.index('{',a)+1;n=1
  while n:n+=(s[b]=='{')-(s[b]=='}');b+=1
@@ -53,7 +53,7 @@ typedef uint32_t u32;
 #define RTL_AX_TX_RINGS 6
 #define TEST_MEMORY_BYTES 128
 struct rtl_ax_tx {void *dma_device,*rx;unsigned producer[6];struct {void *memory;}pe;
- struct {void *route_dev,*retired_vif[12],*peer_dev[128];unsigned char peer_wifi[128];bool active,vp_active;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
+ struct {void *route_dev,*retired_vif[12],*peer_dev[128];unsigned char peer_wifi[128];bool active,vp_active,epp_retiring;void *regs,*dma,*vp,*test_memory;u32 test_dma;int ps_work;
  unsigned cpu,eq,registers[14],saved[14],arb[8],attrs[2][2],epp_bases[8],epp_eq[8],vp_saved[5],vp_index;}ni;};
 static u32 mmio[0x10000/4],dma[0x1000/4],arb[512],attr[64][2];static unsigned char memory[0x80000];
 static unsigned accesses,fail_at,polls,mmio_writes,opens,released,paused;
@@ -93,6 +93,8 @@ code+=r'''
 static int ni_test_lock,withdraw_error;static unsigned withdraws,withdraw_fail_peer;
 static void mutex_lock(int *p){assert(!*p);*p=1;}static void mutex_unlock(int *p){assert(*p);*p=0;}
 static int ni_peer_withdraw(struct rtl_ax_tx *t,unsigned id){assert(ni_test_lock&&t->ni.peer_dev[id]);assert(!get_unaligned_le32(t->pe.memory+0x11a00+id*4));withdraws++;return id==withdraw_fail_peer?withdraw_error:0;}
+static int epp_error;static unsigned epp_calls;
+static int __attribute__((unused)) rtl9617c_wifi_retire(unsigned pool){assert(pool<2);epp_calls++;return epp_error;}
 static unsigned route_attempts;static int rtl_ax_tx_ni_route(struct rtl_ax_tx *t,void *dev,unsigned id){assert(dev==t->ni.route_dev&&!id);route_attempts++;return -EAGAIN;}
 static void dev_put(void *p){(void)p;assert(0);}
 static void *phys_to_virt(u32 a){(void)a;assert(0);return NULL;}
@@ -101,6 +103,7 @@ static void dma_sync_single_for_cpu(void *dev,u32 a,unsigned bytes,unsigned dir)
 code+=fn('ni_es_empty')+fn('ni_peer_routes_withdraw')+fn('ni_peer_put')+fn('ni_access')+fn('attr_write')+fn('ni_restore_registers')+fn('ni_test_release')+fn('ni_test_remove')
 code+=r'''
 static struct rtl_ax_tx setup(unsigned cpu){
+ epp_error=0;epp_calls=0;
  memset(mmio,0,sizeof(mmio));memset(dma,0,sizeof(dma));memset(memory,0,sizeof(memory));
  accesses=mmio_writes=polls=opens=released=paused=loading=0;load_fail=false;
  struct rtl_ax_tx t={.pe={memory},.ni={.active=true,.regs=mmio,.dma=dma,.vp=(u8*)dma+0x100,.cpu=cpu,.eq=cpu==3?6:7}};
@@ -113,6 +116,24 @@ static struct rtl_ax_tx setup(unsigned cpu){
  return t;
 }
 int main(void){unsigned cases=0;
+ for(unsigned cpu=2;cpu<=3;cpu++) {
+  struct rtl_ax_tx t=setup(cpu);fail_at=0;epp_error=-EAGAIN;
+  put_unaligned_le32(1,memory+0x2078);
+  assert(ni_test_remove(&t)==-EAGAIN&&t.ni.epp_retiring&&t.ni.active&&!accesses&&!released&&epp_calls==1);
+  /* The old graceful path would now succeed after an EPP return; it must
+   * not bypass a retained return whose RD has already advanced. */
+  put_unaligned_le32(0,memory+0x2078);
+  assert(ni_test_release(&t)==-EBUSY&&!released);
+  assert(ni_test_remove(&t)==-EAGAIN&&!accesses&&!released&&epp_calls==2);
+  epp_error=0;assert(!ni_test_remove(&t)&&!t.ni.epp_retiring&&!t.ni.active&&released==2&&epp_calls==3);
+ }
+
+ for(unsigned cpu=2;cpu<=3;cpu++){
+  struct rtl_ax_tx t=setup(cpu);fail_at=0;
+  for(unsigned cos=0;cos<8;cos++){mmio[(0x7000+cpu*32)/4+cos]=24;mmio[t.ni.registers[11]/4+cos]=8;}
+  assert(!ni_restore_registers(&t));
+  for(unsigned cos=0;cos<8;cos++)assert(mmio[t.ni.registers[11]/4+cos]==8);
+ }
  for(unsigned failure=0;failure<2;failure++)for(unsigned graceful=0;graceful<2;graceful++)for(unsigned fail_peer=1;fail_peer<=2;fail_peer++){
   struct rtl_ax_tx blocked=setup(3);blocked.ni.peer_dev[1]=&blocked;blocked.ni.peer_dev[2]=&blocked;
   put_unaligned_le32(17,memory+0x11a04);put_unaligned_le32(23,memory+0x11a08);
@@ -162,8 +183,9 @@ int main(void){unsigned cases=0;
  }
  t=setup(3);fail_at=0;put_unaligned_le32(1,memory+0x2078);load_fail=true;
  assert(ni_test_remove(&t)==-ETIMEDOUT&&loading==1&&!accesses&&!released);
- unsigned writes=mmio_writes;assert(ni_test_remove(&t)==-ETIMEDOUT&&loading==1&&mmio_writes==writes+3);
+ unsigned writes=mmio_writes;assert(ni_test_remove(&t)==-ETIMEDOUT&&loading==1&&mmio_writes==writes+2);
  load_fail=false;dma[0x104/4]=0;assert(!ni_test_remove(&t)&&released==2);cases++;
+
  printf("NI restore:%u indirect-write/VP-load failures, busy-engine retry, successful release and unrelated ES bits passed\n",cases);
 }
 '''

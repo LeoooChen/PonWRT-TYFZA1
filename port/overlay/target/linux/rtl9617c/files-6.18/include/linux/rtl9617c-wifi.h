@@ -18,4 +18,6 @@ struct rtl_mc_pe_table;
 int rtl9617c_wifi_mcast_table(struct net_device *netdev,unsigned int destination,
  struct rtl_mc_pe_table *table,bool bind);
 int rtl9617c_wifi_id(struct net_device *netdev);
+/* Forced teardown only: FE withdrawn, ES closed, PE/PCI DMA joined. */
+int rtl9617c_wifi_retire(unsigned int pool);
 #endif

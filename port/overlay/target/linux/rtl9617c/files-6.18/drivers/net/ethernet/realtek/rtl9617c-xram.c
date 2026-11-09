@@ -1059,6 +1059,12 @@ int rtl9617c_ni_wifi_id(struct device *dev, struct net_device *netdev)
 }
 EXPORT_SYMBOL_GPL(rtl9617c_ni_wifi_id);
 
+int rtl9617c_ni_wifi_retire(struct device *dev, unsigned int pool)
+{
+	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));
+	return rtl_qm_wifi_retire(&priv->qm, pool);
+}
+
 int rtl9617c_ni_wifi_detach(struct device *dev, unsigned int id)
 {
 	struct rtl_xram *priv = netdev_priv(dev_get_drvdata(dev));

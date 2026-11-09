@@ -9736,6 +9736,58 @@ stop/free still lacks a complete bus-idle/producer/downstream retirement
 contract. This change does not authorize ID reuse. PE firmware is unchanged
 and no physical device was accessed.
 
+### Forced radio teardown returns unconsumed EPP buffers
+
+Forced radio cleanup previously walked the PE WP-owner and queued-BID lists,
+then restored EPP read pointers to freshly sampled producers. EPP entries not
+yet ingested by PE belonged to neither list, so this cursor update could skip
+their buffer return. The original native cleanup at `00c5cf3` fails the new
+retained-EPP release boundary in `test_ni_restore.py --revision 00c5cf3`.
+
+Forced teardown now requests EPP retirement from the QM supplier that owns
+the exact ring allocations and split buffer pools. The radio first withdraws
+FE, disables its ES CPU port, verifies ES empty, joins PE/PCI DMA and finishes
+the existing software owner walks. The QM routine then checks the current
+eight ring bases, aligned in-range producer/consumer pointers and every BID
+address against the selected radio's allocated2KiB buffers. Wrong-pool,
+misaligned or out-of-range addresses are not returned to EQ. Packet fragment
+flags do not prevent returning an otherwise owned buffer.
+
+The routine advances and reads back the consumer before returning that buffer
+to EQ. It retains the sampled address/COS/next cursor if the read-pointer write
+fails or EQ return is blocked, so retries never reread a reused descriptor or
+return the same BID twice. At most64 buffers return per invocation; pending
+work returns EAGAIN. All COS pointers and ES occupancy are checked again after
+the pass. The supplier call is serialized with supplier removal. A radio
+`epp_retiring` flag keeps later retries on the forced path, preventing a now
+empty EPP cursor from bypassing a pending EQ return. Raw EPP entries have not
+acquired PE FTTR/multicast generation references; this path does not decrement
+those counters.
+
+Register restoration no longer writes any EPP consumer pointer. Only actual
+PE/ARM consumption advances it; a later producer update remains visible instead
+of being silently skipped during restoration. This does not settle how every
+upstream late arrival retires, but removes the identified buffer-return loss.
+
+Validation passes162 actual QM retirement cases: two radio pools, all COS,
+ring wrap, fragment flags, split-pool ends, wrong addresses, producer geometry,
+EQ timeout, failed read-pointer write, changed ring during retry,64-buffer
+budget and late lower-COS publication. Native forced-cleanup tests verify that
+EPP errors prevent map/resource restoration and remain retryable after cursor
+advance. Ten suites pass, including existing partial aggregate/queued BID
+walks, ES occupancy, pool allocation/close, supplier binding and linked PE
+peer/FTTR retirement. ASan/UBSan cover the native fixtures. Final Image/modules
+and eight changed source/header identities pass. Artifacts are
+`artifacts/fttr/epp-retire-*-20261109.*`; PE firmware is unchanged and no device
+was accessed.
+
+AXI investigation found only return-status fields and EPP grant/response
+counters in the reference map; no verified original stop-wait sequence uses
+them as an end-to-end ownership barrier. They were not guessed into production.
+Complete MCE/AFT/AXI quiescence, MiniOLT downstream retirement and safe hardware
+ID reuse remain unproven. The new routine covers already-published EPP buffers,
+not packets still upstream or an assertion that successful disable is bus-idle.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
