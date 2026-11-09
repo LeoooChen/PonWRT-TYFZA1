@@ -34,7 +34,7 @@ struct vlan_dev_priv {unsigned flags,ingress_priority_map[8],egress_priority_map
 struct net {unsigned refs;struct {struct nf_hook_entries *hooks_bridge[5];} nf;};
 struct net_device {bool running,carrier;unsigned ifindex,group,flags,num_tx_queues,mtu,vid,features;u8 dev_addr[6];struct netdev_queue *queue;struct net_device *master,*lower;struct net *net;void *tcx_ingress,*tcx_egress;struct nf_hook_entries *nf_hooks_ingress,*nf_hooks_egress;struct wireless_dev *ieee80211_ptr;struct vlan_dev_priv vlan;};''')
 code=code.replace('struct rtl_fe_flow {',re.search(r'struct rtl_fe_mc_host \{.*?\n\};',(DRIVERS/'rtl9617c-fe.c').read_text(),re.S)[0]+'\nstruct rtl_fe_flow {')
-code=code.replace('struct rtl_fe {','#include "rtl9617c-epon-path.h"\nstruct rtl_fe_mtu {unsigned users,size,saved;};\nstruct rtl_fe {struct rtl_epon_paths epon_paths;bool epon_admitted;struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
+code=code.replace('struct rtl_fe {','#include "rtl9617c-epon-path.h"\nstruct rtl_fe_mtu {unsigned users,size,saved;bool ready;};\nstruct rtl_fe {struct rtl_epon_paths epon_paths;bool epon_admitted;struct net_device *itu_netdev;struct rtl_itu_paths *itu_paths;struct rtl_fe_mtu mtus[16];struct rtl_fe_mc_host *mc_hosts[256];struct rtl_fe_mc_direct *mc_directs[256];')
 code=code.replace('struct rtl_fe {','struct rtl_fe_mc_binding {struct net_device *netdev;struct rtl9617c_wifi_policy bcmc;u64 bcmc_policy_generation;};\nstruct rtl_fe {')
 code=code.replace('struct rtl_fe_mc_profile mc_profile;','''struct rtl_fe_mc_profile mc_profile;
  struct {struct rtl_mc_pe_table *table;struct rtl_fe_mc_binding vif[12];unsigned owner[256];} mc_pe[2];
@@ -50,7 +50,7 @@ code=code.replace('static int fe_mtu_get(struct rtl_fe *f,struct rtl_fe_flow *v,
  'static unsigned fe_read(struct rtl_fe *f,unsigned r){return read_reg(f,r);}'
  +'static void fe_write(struct rtl_fe *f,unsigned r,unsigned v){write_reg(f,r,v);}'
  +scope['function']('fe_mtu_get'))
-code=code.replace('static void fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);}',scope['function']('fe_mtu_put'))
+code=code.replace('static int fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}',scope['function']('fe_mtu_put'))
 code=code.replace('static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *f,struct rtl_fe_port *p,const u8 *a){(void)f;(void)p;(void)a;return NULL;}',
  'static struct rtl_fe_wifi_peer test_peer;static struct rtl_fe_port *test_peer_port;static u64 test_policy_generation=1;'
  +'u64 rtl9617c_bridge_wifi_policy_generation(void){return test_policy_generation;}'

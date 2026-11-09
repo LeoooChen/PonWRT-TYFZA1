@@ -10452,6 +10452,30 @@ register-layout evidence; physical high-index behavior was not exercised. Safe
 reuse after full packet retirement remains unproven, as do the other outstanding
 factory features and physical acceptance items.
 
+### MTU recipes retain ownership until verified restoration
+
+The16 hardware MTU values occupy two14-bit fields per register at3520..353c.
+Native acquisition now reserves the original field and flow reference before
+writing, and verifies the selected field before making it shareable. A rejected
+or corrupted write returns `EIO`; another flow cannot share that incomplete
+recipe. Last-owner restoration checks its readback before decrementing the
+reference, clearing flow ownership or releasing the Hash cookie. Failed
+restoration uses the existing cleanup retry path. Both programming and restore
+preserve the currently observed neighboring field and reserved bits.
+
+The target `aal_l3pe_mtu_size_set/get` executes240 index/value/initial-word
+combinations and three invalid bounds. Old `a56451c` reproduces false success
+after a rejected write. Native get plus actual deletion passes32 initial/restore
+fault cases over all16 slots, shared-reference behavior,17th-recipe exhaustion
+and invalid sizes. Ten related suites, ASan/UBSan, Image/modules and source
+identity pass. A stale multicast test fixture was updated for the new checked
+release return and ready flag; it was not counted as a production failure.
+Evidence is `artifacts/fttr/mtu-owner-*-20261110.*`.
+
+No physical device was accessed and PE firmware is unchanged. This verifies
+the table control transaction, not retirement of packets already carrying an
+MTU selector or safe selector reuse after full hardware drain.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

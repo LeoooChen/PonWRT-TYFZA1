@@ -93,6 +93,7 @@ struct rtl_fe_interface {
 };
 struct rtl_fe_mtu {
  unsigned int users, size, saved;
+ bool ready;
 };
 struct rtl_fe_mc_host {
  struct rtl9617c_bridge_frame input;
@@ -612,8 +613,12 @@ static int fe_mtu_get(struct rtl_fe *fe,struct rtl_fe_flow *flow,unsigned int si
  unsigned int i,index=16,address,shift,value;
  struct rtl_fe_mtu *mtu;
 
+ if(!size || size>0x3fff)return -EINVAL;
  for(i=0;i<16;i++) {
-  if(fe->mtus[i].users && fe->mtus[i].size==size){index=i;break;}
+  if(fe->mtus[i].users && fe->mtus[i].size==size){
+   if(!fe->mtus[i].ready)return -EBUSY;
+   index=i;break;
+  }
   if(!fe->mtus[i].users && index==16)index=i;
  }
  if(index==16)return -ENOSPC;
@@ -623,20 +628,31 @@ static int fe_mtu_get(struct rtl_fe *fe,struct rtl_fe_flow *flow,unsigned int si
   value=fe_read(fe,address);
   mtu->saved=(value>>shift)&0x3fff;
   mtu->size=size;
+  mtu->ready=false;
+  /* Own the saved half-word before a write whose readback can fail. */
+  mtu->users=1;flow->mtu_index=index;flow->mtu_owned=true;
   fe_write(fe,address,(value&~(0x3fffU<<shift))|size<<shift);
+  if(((fe_read(fe,address)>>shift)&0x3fff)!=size)return -EIO;
+  mtu->ready=true;
+  return 0;
  }
  mtu->users++;
  flow->mtu_index=index;flow->mtu_owned=true;
  return 0;
 }
-static void fe_mtu_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
+static int fe_mtu_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 {
  unsigned int index=flow->mtu_index,address=0x3520+(index/2)*4,shift=(index%2)*16;
  struct rtl_fe_mtu *mtu=&fe->mtus[index];
 
- if(!--mtu->users)
+ if(mtu->users==1) {
+  mtu->ready=false;
   fe_write(fe,address,(fe_read(fe,address)&~(0x3fffU<<shift))|mtu->saved<<shift);
+  if(((fe_read(fe,address)>>shift)&0x3fff)!=mtu->saved)return -EIO;
+ }
+ mtu->users--;
  flow->mtu_owned=false;
+ return 0;
 }
 static int fe_destination_get(struct rtl_fe *fe,struct rtl_fe_flow *flow,const u8 *address)
 {
@@ -1197,7 +1213,10 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
   if(ret)goto retry;
   flow->source_owned=false;
  }
- if(flow->mtu_owned)fe_mtu_put(fe,flow);
+ if(flow->mtu_owned) {
+  ret=fe_mtu_put(fe,flow);
+  if(ret)goto retry;
+ }
  __clear_bit(flow->hash_index,fe->hashes);
  rb_erase(&flow->cookie_node,&fe->cookies);
  list_del(&flow->retry);

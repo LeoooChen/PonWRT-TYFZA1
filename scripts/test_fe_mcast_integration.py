@@ -134,7 +134,7 @@ static int fe_mtu_get(struct rtl_fe *f,struct rtl_fe_flow *v,unsigned n){(void)f
 static int fe_source_put(struct rtl_fe *f,unsigned i){(void)f;(void)i;assert(0);return -1;}
 static int fe_destination_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)v;assert(f->drain_requests);if(f->late_fail){f->late_fail--;return -EIO;}return 0;}
 static int fe_interface_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}
-static void fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);}
+static int fe_mtu_put(struct rtl_fe *f,struct rtl_fe_flow *v){(void)f;(void)v;assert(0);return -1;}
 static struct rtl_fe_wifi_peer *fe_wifi_peer(struct rtl_fe *f,struct rtl_fe_port *p,const u8 *a){(void)f;(void)p;(void)a;return NULL;}
 '''
 code += 'static void fe_mcast_hw_withdrawn(struct rtl_fe *f){assert(!f->age && !f->groups[1][0] && !f->groups[1][1]);f->drain_requests++;}'

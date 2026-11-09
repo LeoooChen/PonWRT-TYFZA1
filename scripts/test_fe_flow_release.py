@@ -56,7 +56,7 @@ struct net_device {};
 struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid,bindings;bool retired;};
 struct rtl_fe_mac {unsigned int users,saved[5];u8 address[6];bool ready;};
 struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted,ready;};
-struct rtl_fe_mtu {unsigned int users,size,saved;};
+struct rtl_fe_mtu {unsigned int users,size,saved;bool ready;};
 struct work_struct {int unused;};
 struct delayed_work {struct work_struct work;unsigned int queued;};
 #define to_delayed_work(w) container_of(w,struct delayed_work,work)
