@@ -353,6 +353,8 @@
 
 174. 补齐目的FDB不确定APPEND/恢复归属：仅HIT/MISS进入获取，写前绑定原快照，新建/继承条目均可回滚；完整APPEND+索引查询后才ready，删除中或未完成项拒绝共享。1ca0忙时不改数据，删除允许HIT5/MISS15，恢复必须HIT5，其余结果保留重试；4/11可能已更新的限额结果也保留归属。843fc37原get→delete已复现缺口；26原生场景、15原厂命令/结果与3忙分支、九回归及Image/模块/三FE输入一致通过。PE未改、未实机；接口表和已携带索引报文退场仍未完成。详见[目的FDB事务归属](port/FTTR.md#destination-fdb-ownership-survives-uncertain-append-and-restore)。
 
+175. 修正出口接口表容量及引用依赖：目标AAL max_entry32且3000地址只有5位，原64软件项可能别名覆盖前32项；现分配/访问限32，纠正历史容量清单。dc5e2c1在真实5位地址模型已复现旧流源MAC/PPPoE被覆盖；4096共享流、33种不同配置边界、128原厂读写成功/超时及6越界拒绝通过。接口写成功才ready可共享，最后恢复先撤ready，忙窗口不改数据；删除先恢复接口再释放其源CAM，失败保留依赖/重试。六归属故障、实际get/put与删除链、十回归、Image/模块/两输入一致通过。PE未改、未实机；32容量有原厂/寄存器证据，不冒充物理高索引验证，完整报文退场及ID复用仍未证明。详见[32项接口及依赖归属](port/FTTR.md#correct32-entry-egress-interfaces-and-retain-their-source-dependency)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

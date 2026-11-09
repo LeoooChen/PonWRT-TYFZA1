@@ -384,7 +384,9 @@
     "production_function_host_test": "logs/fe-interface-capacity.json",
     "flows_tested": 4096,
     "source_MACs": 15,
-    "independent_counter_owners": 64,
+    "independent_counter_owners": 32,
+    "forwarding_interfaces": 32,
+    "capacity_correction": "2026-11-10: target AAL interface table and5-bit hardware index allow32 rows;64-row software allocation could alias earlier entries. Current4096-flow test uses32 physical rows and verifies retained source-MAC/PPPoE contents after each new allocation.",
     "other_flows": "Hash age activity only;no invented packet/byte counts",
     "reference_Hash_hit_age_cycle": "logs/fe-stock-activity01-device.txt",
     "reference_cycle": [

@@ -55,7 +55,7 @@ struct rtl_fe;
 struct net_device {};
 struct rtl_fe_port {struct list_head list;struct rtl_fe *fe;struct net_device *netdev;unsigned int source,destination,llid,bindings;bool retired;};
 struct rtl_fe_mac {unsigned int users,saved[5];u8 address[6];bool ready;};
-struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted;};
+struct rtl_fe_interface {unsigned int users,saved,source_mac,pppoe;bool counted,ready;};
 struct rtl_fe_mtu {unsigned int users,size,saved;};
 struct work_struct {int unused;};
 struct delayed_work {struct work_struct work;unsigned int queued;};
@@ -72,7 +72,7 @@ struct rtl_fe {
  u64 deletes;
  unsigned int registers[0x4000/4],ages[RTL_FE_HASH_ENTRIES/32][4],cam[5];
  unsigned int deletes_FDB,restores_CAM,restores_IF,cache_invalidates;
- bool fail_CAM,fail_age,fail_cache;
+ bool fail_CAM,fail_age,fail_cache,fail_IF;
  struct delayed_work cleanup_work;
  int lock;
 };
@@ -101,7 +101,7 @@ static int fe_access(void *context,unsigned int reg,unsigned int value){
   if(fe->fail_CAM){fe->fail_CAM=false;return -ETIMEDOUT;}
   fe->restores_CAM++;
   for(unsigned int i=0;i<5;i++)fe->cam[i]=fe_read(fe,0x3214-i*4);
- } else if(reg==0x3000)fe->restores_IF++;
+ } else if(reg==0x3000){if(fe->fail_IF){fe->fail_IF=false;return -ETIMEDOUT;}fe->restores_IF++;}
  else assert(0);
  return 0;
 }
@@ -144,15 +144,18 @@ int main(void){
  fe.fail_cache=true;
  assert(fe_delete(&fe,b)==-ETIMEDOUT && b->published && b->destination_owned);
  assert(!fe.deletes_FDB && fe.source_macs[0].users==1);
+ fe.fail_IF=true;
+ assert(fe_delete(&fe,b)==-ETIMEDOUT&&b->source_owned&&b->interface_owned);
+ assert(fe.source_macs[0].users==1&&!fe.restores_CAM&&test_bit(30,fe.counters));
  fe.fail_CAM=true;
  assert(fe_delete(&fe,b)==-ETIMEDOUT);
  fe_collect_ports(&fe);assert(fe.ports.next==&port->list);
  assert(fe.deletes_FDB==1 && fe.source_macs[0].users==1);
- assert(!b->published && !b->destination_owned && b->source_owned && b->interface_owned);
- assert(test_bit(65344,fe.hashes) && test_bit(30,fe.counters));
+ assert(!b->published && !b->destination_owned && b->source_owned && !b->interface_owned);
+ assert(test_bit(65344,fe.hashes) && !test_bit(30,fe.counters));
  assert(!((u32 *)fe.memory)[65344]);
  port->bindings=1;
- assert(b->deleting && fe.cleanup_work.queued==3);
+ assert(b->deleting && fe.cleanup_work.queued==4);
  assert(fe.retries.next==&b->retry && b->retry.next==&fe.retries);
  fe_cleanup_work(&fe.cleanup_work.work);
  fe_collect_ports(&fe);assert(fe.ports.next==&port->list);

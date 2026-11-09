@@ -55,7 +55,7 @@ static void fe_mcast_host_remove(struct rtl_fe *fe,struct rtl_fe_flow *flow);
 static void fe_mcast_hw_withdrawn(struct rtl_fe *fe);
 static int fe_mcast_host_publish(struct rtl_fe *fe,struct rtl_fe_flow *flow,struct rtl_fe_mc_host *host);
 
-#define FE_INTERFACES 64
+#define FE_INTERFACES RTL_FE_INTERFACES
 #define FE_COUNTERS 32
 #define FE_SOURCE_MACS 15
 #define FE_LAN_PORTS 5
@@ -89,7 +89,7 @@ struct rtl_fe_mac {
 };
 struct rtl_fe_interface {
  unsigned int users, saved, source_mac, pppoe;
- bool counted;
+ bool counted, ready;
 };
 struct rtl_fe_mtu {
  unsigned int users, size, saved;
@@ -547,18 +547,21 @@ static int fe_source_put(struct rtl_fe *fe,unsigned int index)
  return ret;
 }
 /* L3 output interfaces select a source MAC; they are not flow-table slots.
- * TYFZA1 has independent MIBs at0..31;32..63 read the same aggregate.
+ * The target AAL table and hardware address are32 entries (five bits).
+ * A six-bit action selector does not create additional table storage.
  * Counted flows own one interface MIB. Further flows share its MAC selection
  * with their action counter bit clear, so they cannot pollute that flow MIB. */
 static int fe_interface_get(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 {
+ struct rtl_dq_io io=fe_io(fe);
  struct rtl_fe_interface *interface;
  unsigned int index=find_first_zero_bit(fe->counters,FE_INTERFACES),i;
  int ret;
 
  if(index==FE_INTERFACES) {
   for(i=0;i<FE_INTERFACES;i++)
-   if(fe->interfaces[i].source_mac==flow->source_mac &&
+   if(fe->interfaces[i].users && fe->interfaces[i].ready &&
+      fe->interfaces[i].source_mac==flow->source_mac &&
       fe->interfaces[i].pppoe==flow->pppoe &&
       (!fe->interfaces[i].counted || index==FE_INTERFACES)) {
     index=i;
@@ -568,11 +571,11 @@ static int fe_interface_get(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  }
  interface=&fe->interfaces[index];
  if(!interface->users) {
-  ret=fe_access(fe,0x3000,BIT(31)|index);
+  ret=rtl_fe_interface_read(&io,index,&interface->saved);
   if(ret)return ret;
-  interface->saved=fe_read(fe,0x3004);
   interface->source_mac=flow->source_mac;
   interface->pppoe=flow->pppoe;
+  interface->ready=false;
   __set_bit(index,fe->counters);
  }
  flow->counter=index;
@@ -582,19 +585,21 @@ static int fe_interface_get(struct rtl_fe *fe,struct rtl_fe_flow *flow)
  flow->interface_owned=true;
  if(interface->users==1) {
   /* Exclude Ethernet padding from the PPPoE payload length (SDK EIF bit23). */
-  fe_write(fe,0x3004,BIT(23)|BIT(18)|((flow->source_mac+1)<<19)|flow->pppoe);
-  return fe_access(fe,0x3000,BIT(31)|BIT(30)|index);
+  ret=rtl_fe_interface_write(&io,index,BIT(23)|BIT(18)|((flow->source_mac+1)<<19)|flow->pppoe);
+  if(!ret)interface->ready=true;
+  return ret;
  }
  return 0;
 }
 static int fe_interface_put(struct rtl_fe *fe,struct rtl_fe_flow *flow)
 {
+ struct rtl_dq_io io=fe_io(fe);
  struct rtl_fe_interface *interface=&fe->interfaces[flow->counter];
  int ret;
 
  if(interface->users==1) {
-  fe_write(fe,0x3004,interface->saved);
-  ret=fe_access(fe,0x3000,BIT(31)|BIT(30)|flow->counter);
+  interface->ready=false;
+  ret=rtl_fe_interface_write(&io,flow->counter,interface->saved);
   if(ret)return ret;
   __clear_bit(flow->counter,fe->counters);
  }
@@ -1180,15 +1185,17 @@ static int fe_delete(struct rtl_fe *fe,struct rtl_fe_flow *flow)
   if(ret)goto retry;
   flow->destination_owned=false;
  }
- if(flow->source_owned) {
-  ret=fe_source_put(fe,flow->source_mac);
-  if(ret)goto retry;
-  flow->source_owned=false;
- }
+ /* An egress interface still names the source CAM until its last-owner
+  * restore completes. Keep that source reference across failed restores. */
  if(flow->interface_owned) {
   ret=fe_interface_put(fe,flow);
   if(ret)goto retry;
   flow->interface_owned=false;
+ }
+ if(flow->source_owned) {
+  ret=fe_source_put(fe,flow->source_mac);
+  if(ret)goto retry;
+  flow->source_owned=false;
  }
  if(flow->mtu_owned)fe_mtu_put(fe,flow);
  __clear_bit(flow->hash_index,fe->hashes);
@@ -1570,9 +1577,9 @@ static int fe_counters_show(struct seq_file *file,void *unused)
    seq_printf(file,"%u retiring error=%d\n",flow->hash_index,fe->error);continue;
   }
   ret=rtl_fe_main_age_read(&io,flow->hash_index,&age);
-  if(!ret && flow->interface_owned)ret=fe_access(fe,0x3000,BIT(31)|flow->counter);
+  interface=0;
+  if(!ret && flow->interface_owned)ret=rtl_fe_interface_read(&io,flow->counter,&interface);
   if(ret){seq_printf(file,"%u error=%d\n",flow->hash_index,ret);continue;}
-  interface=flow->interface_owned?fe_read(fe,0x3004):0;
   action=fe->memory+RTL_FE_ACTION_OFFSET+flow->hash_index*RTL_FE_ACTION_BYTES;
   destination=le32_to_cpu(action[0])>>8&1023;
   if((le32_to_cpu(action[0])&BIT(18)) && (le32_to_cpu(action[3])&BIT(6)))

@@ -116,6 +116,25 @@ static inline int rtl_fe_source_mac_write(const struct rtl_dq_io *io,unsigned in
  for(i=0;i<5;i++)io->write(io->context,0x3214-i*4,words[i]);
  return io->indirect(io->context,0x3200,0xc0030000U|index);
 }
+/* Output interfaces share one staging word, including the diagnostic reader.
+ * A previous timeout may still own both word and index after FE unlock. */
+#define RTL_FE_INTERFACES 32
+static inline int rtl_fe_interface_read(const struct rtl_dq_io *io,unsigned int index,unsigned int *word)
+{
+ int ret;
+ if(index>=RTL_FE_INTERFACES)return -EINVAL;
+ if(io->read(io->context,0x3000)&0x80000000U)return -EBUSY;
+ ret=io->indirect(io->context,0x3000,0x80000000U|index);
+ if(!ret)*word=io->read(io->context,0x3004);
+ return ret;
+}
+static inline int rtl_fe_interface_write(const struct rtl_dq_io *io,unsigned int index,unsigned int word)
+{
+ if(index>=RTL_FE_INTERFACES)return -EINVAL;
+ if(io->read(io->context,0x3000)&0x80000000U)return -EBUSY;
+ io->write(io->context,0x3004,word);
+ return io->indirect(io->context,0x3000,0xc0000000U|index);
+}
 /* TX interface MIB is224 bits:bytes64,UC32,non-UC32,drop-bytes64,
  * drop-packets32. A flow can own one of64 egress-interface counter slots. */
 static inline int rtl_fe_tx_counter_read(const struct rtl_dq_io *io,

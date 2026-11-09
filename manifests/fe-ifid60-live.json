@@ -8,7 +8,8 @@
     "32_to_63": "identical cumulative values",
     "64_to_127": "read-back address wraps modulo64"
   },
-  "forwarding_interfaces": 64,
+  "forwarding_interfaces": 32,
+  "forwarding_interface_correction": "2026-11-10: the earlier value64 inferred egress-interface storage from counter readback. Target fe_l3e_if_tbl_table.max_entry is32 and EGRESS_L3_IF_TBL_ACCESS.addr is5 bits. Historical counter observations below are unchanged; the current native allocator uses32 interfaces. See port/FTTR.md interface ownership/capacity correction.",
   "independent_counter_slots": 32,
   "hash_entries": 65536,
   "counted_ids_in_final_snapshot": [

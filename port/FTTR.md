@@ -10410,6 +10410,48 @@ the FDB transaction's software ownership, not retirement of packets already
 carrying its index. Interface-table review and complete hardware-ID retirement
 remain separate outstanding work.
 
+### Correct32-entry egress interfaces and retain their source dependency
+
+The target `fe_l3e_if_tbl_table.max_entry` is32, matching its AAL header and the
+five-bit address in `L3FE_GLB_EGRESS_L3_IF_TBL_ACCESS`. The action's six-bit
+interface selector and the counter-address observations do not establish64
+independent egress table entries. Native allocation previously used64, allowing
+index32+ to alias an earlier source-MAC/PPPoE configuration. The allocator and
+table helper bounds now use32. The previous64-interface claim in the historical
+capacity manifests is corrected; their recorded counter observations are not
+rewritten as interface-table evidence.
+
+The test executes the real original read/write functions across32 entries,
+including128 success/timeout combinations and six rejected out-of-range calls.
+Its hardware model decodes only five address bits. Old `dc5e2c1` reproduces
+overwriting an earlier interface while allocating more than32 software owners.
+The fixed path still supports4096 flows sharing15 source MACs and two PPPoE
+sessions, with up to32 independent counter owners. A33rd distinct interface
+recipe fails with `ENOSPC` without modifying any live row. Header helpers also
+reject index32..63 before issuing hardware commands.
+
+Interface ownership is established before writing, but a write or restoration
+timeout previously left it eligible for sharing. An interface now becomes
+ready only after successful programming and stops being shareable before its
+last-owner restore. Reads/writes and diagnostic reads reject a busy `0x3000`
+window without modifying the staging word or publishing a result. Six fault
+cases cover applied/unapplied setup and restoration failures, full-table sharing
+and repeated busy-window operations.
+
+Flow deletion now releases/restores its egress interface before dropping the
+source CAM reference named by that interface. A failed interface restore retains
+that source reference and cookie until retry completes; a later source restore
+failure does not release the interface twice. The actual production deletion
+test verifies this dependency alongside shared-MAC/FDB cleanup.
+
+Ten related suites, ASan/UBSan, final Image/modules and both FE source identities
+pass. Evidence is `artifacts/fttr/interface-owner-*-20261110.*` plus the existing
+`logs/fe-interface-capacity.json` and `logs/fe-flow-release.json`. PE firmware is
+unchanged and no device was accessed. The32-row limit has direct original and
+register-layout evidence; physical high-index behavior was not exercised. Safe
+reuse after full packet retirement remains unproven, as do the other outstanding
+factory features and physical acceptance items.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before
