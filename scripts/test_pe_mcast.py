@@ -190,7 +190,7 @@ for pending in (False,True,2):
     # Return exactly this dropped BID after the hardware push reg gains credit.
     m.put(mb+116*4,0x6380);m.put(mb+117*4,6)
     m.call('ni_recycle',mb,base);assert m.get(base+0x20000+(0 if pending else 2048*8))==payload
-    m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+    m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
     assert not m.get(mb+47*4) and not m.get(base+0x20000+(0 if pending else 2048*8)) and m.get(ni+0x6384)==payload|6
     vectors+=1
 # The main-branch WMM quota counts multicast recipes on their resolved TID,
@@ -204,7 +204,7 @@ for tid in range(8):
     assert not m.get(pending) and not m.get(mb+38*4)
     m.put(mb+116*4,0x6380);m.put(mb+117*4,6)
     m.call('ni_recycle',mb,base);assert m.get(base+0x20000+2048*8)==payload
-    m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+    m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
     assert not m.get(mb+47*4) and not m.get(pending)
     vectors+=1
 # Same peer with different owners must not enter one A-MSDU. Otherwise a

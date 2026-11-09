@@ -317,6 +317,8 @@
 
 156. 补齐强制无线退场未被PE接管的EPP缓冲区归还：原流程只清owner/软件链并追平RD，会跳过EPP里的BID；现在经QM供应者核对两池/八环/2KiB地址，逐项RD读回后推EQ，保留失败或堵塞的地址/游标，64项预算和最终队列复核，radio epp_retiring防止下次普通释放绕过待归还项；恢复寄存器不再追平RD。162 QM范围/回绕/片段/堵塞/写失败/迟到场景、强制清理旧代码复现、十项回归、Image/模块/八输入一致通过。PE未改、未实机；AXI字段未找到原厂完整停止等待序列，不据字段名推断空闲；MCE/AFT/AXI全链路和MiniOLT退场、ID复用仍待补齐。详见[强制EPP归还](port/FTTR.md#forced-radio-teardown-returns-unconsumed-epp-buffers)。
 
+157. 补齐所有缓冲区归还入口的原厂inactive-BID有效信用：目标函数56有效位/计数、8 FIFO状态和12 PUSH编码实执行确认bit31+低14位非零与FIFO就绪是独立条件。强制owner/队列/EPP归还补信用检查，正常CPU初始化/refill和PE回收补有效位；无效或耗尽时保留头/引用，旧强制路径与旧PE均复现非法PUSH。194 EPP、729双EQ、28链接peer/251 FTTR/125组播/132 PS与16项当前回归通过；四旧夹具因既有布局/初始化问题未计通过。PE32456字节、栈7360、无上行14000、重复一致，Image/模块/三输入一致通过；未实机，完整退场及ID复用仍未证明。详见[BID归还信用](port/FTTR.md#valid-inactive-bid-credit-gates-every-buffer-return)。
+
 ## 建议接着做的工作
 
 | 方向 | 当前缺口 |

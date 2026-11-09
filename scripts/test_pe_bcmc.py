@@ -56,7 +56,7 @@ def finish(m):
  m.u.reg_write(UC_MIPS_REG_A0,mb|0xa0000000);m.u.reg_write(UC_MIPS_REG_SP,0xa7e01ff0)
  m.u.emu_start(e['symbols']['pe_main'],0x9fc0fff0,count=20000)
  assert m.get(base+0x20004)&1<<31 and m.get(base+0x20000)==payload
- m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+ m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
  assert not m.get(base+0x20000) and not m.get(mb+30*4)
  assert not m.get(base+0x40000+(5*4096+tag)*4)
 
@@ -108,7 +108,7 @@ for stage in ('ingress','queued','selected'):
   if stage=='selected':publish(m)
   else:assert not m.call('ni_select',mb,base,requests)
   assert not m.get(mb+10*4) and m.get(SEQ+16)==4095
-  m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+  m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
   assert not m.get(mb+30*4);cases+=1
 # All eight priorities select the same non-QoS HIQ recipient; the record
 # retains actual Linux policy instead of leaking an incoming CoS into QSEL.

@@ -25,7 +25,7 @@ def call(name,*args):
  assert u.reg_read(UC_MIPS_REG_PC)==0x9fc0fff0,name
  return u.reg_read(UC_MIPS_REG_V0)
 for i,v in [(0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1),(2,BAR|0xa0000000),(11,RING),(12,WD),(14,HDR),(24,1),(68,RPQ),(72,FWD),(116,0x6380),(117,6)]:put(MB+i*4,v)
-put(NI+0x6380,1<<31);put(NI+0x6340,4095)
+put(NI+0x6380,1<<31);put(NI+0x6340,(1<<31)|4095)
 ap=bytes.fromhex('020000000001');dst=bytes.fromhex('020000000002');u.mem_write(MB+64,ap)
 u.mem_write(B+0xd020,struct.pack('<8I',0,0,26<<16,0x3019b,1<<24|1<<18|1<<16,7<<16|64,0,0))
 put(B+0x39004,0);put(B+0xe204,64<<18);put(B+0x11a04,1);put(B+0x12020,64)
@@ -66,7 +66,7 @@ for cycle in range(cycles):
   if chunk==0:
    put(NI+0x6340,0);call('ni_recycle',MB,B)
    assert get(MB+30*4)==capacity and len(returns)==before
-  put(NI+0x6340,4095);call('ni_recycle',MB,B)
+  put(NI+0x6340,(1<<31)|4095);call('ni_recycle',MB,B)
  assert get(MB+30*4)==0 and get(B+0x18020)==0
  assert len(returns)-before==capacity and len(set(returns[before:]))==capacity
  assert all(get(B+0x40000+t*4)==0 for t in tags)

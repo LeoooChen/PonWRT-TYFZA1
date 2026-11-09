@@ -70,7 +70,7 @@ static int rtl_qm_push(struct rtl_qm_rx *rx, u32 address, unsigned int eqid)
 
 	/* EQM must have a released BID; PUSH FIFO readiness alone is insufficient. */
 	ret = readl_poll_timeout_atomic(rx->ni + 0x6328 + eqid * 4, status,
-				       status & GENMASK(13, 0), 1, 10000);
+				       (status & BIT(31)) && (status & GENMASK(13, 0)), 1, 10000);
 	if (ret)
 		return ret;
 	ret = readl_poll_timeout_atomic(rx->ni + CPU_READY, status, status & BIT(31), 1, 10000);
@@ -87,8 +87,10 @@ static int rtl_qm_try_push(void *context, unsigned int address, unsigned int eqi
 
 	/* NAPI alone returns these EQs. Reuse a conservative credit snapshot
 	 * within this drain; every accepted PUSH consumes one released BID. */
-	if (!*credit)
-		*credit = readl(rx->ni + 0x6328 + eqid * 4) & GENMASK(13, 0);
+	if (!*credit) {
+		u32 status = readl(rx->ni + 0x6328 + eqid * 4);
+		*credit = status & BIT(31) ? status & GENMASK(13, 0) : 0;
+	}
 	/* Keep the per-buffer FIFO check. Busy buffers wait for the next poll. */
 	if (!*credit || !(readl(rx->ni + CPU_READY) & BIT(31)))
 		return -EAGAIN;
@@ -977,6 +979,11 @@ int rtl_qm_wifi_retire(struct rtl_qm_rx *rx, unsigned int pool)
 			 * A failed RD write or full EQ leaves this exact return pending. */
 			writel(rx->wifi_retire[pool].next, rx->ni + EPP_READ + reg);
 			if (readl(rx->ni + EPP_READ + reg) != rx->wifi_retire[pool].next) return -EIO;
+			/* Target inactive-BID getter returns zero unless bit31 validates
+			 * the low14 count. PUSH FIFO readiness alone cannot accept a BID. */
+			ret = readl_poll_timeout(rx->ni + 0x6328 + eq * 4, status,
+				(status & BIT(31)) && (status & 0x3fff), 1, 100000);
+			if (ret) return ret;
 			ret = readl_poll_timeout(rx->ni + 0x6368 + cpu * 8, status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(rx->wifi_retire[pool].address | eq, rx->ni + 0x636c + cpu * 8);

@@ -145,7 +145,7 @@ m.put(ni+0x6340,0)
 m.u.emu_start(m.u.reg_read(UC_MIPS_REG_PC),0x9fc0fff0,count=90000)
 assert m.get(mb+70*4)==1 and m.get(base+0x20004)&1<<31
 assert m.get(mb+4*4)==1 and not m.get(mb+194*4), 'EQ still owns the tag'
-m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31)
+m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31)
 m.u.emu_start(m.u.reg_read(UC_MIPS_REG_PC),0x9fc0fff0,count=90000)
 assert m.get(mb+4*4)==2 and m.get(mb+194*4)==1 and not m.get(base+0x20000)
 assert m.get(ni+0x6384)==b['payload']|6 and not m.get(mb+30*4)

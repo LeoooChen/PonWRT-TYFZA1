@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Run the production forced EPP drain against exact, separated QM allocations."""
+import argparse
 import json
 from pathlib import Path
 import subprocess
 import tempfile
 
 r=Path(__file__).resolve().parents[1]
+parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--revision');args=parser.parse_args()
 s=(r/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c').read_text()
+if args.revision:s=subprocess.check_output(['git','show',args.revision+':port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek/rtl9617c-qm.c'],cwd=r,text=True)
 helper=s[s.index('int rtl_qm_wifi_retire('):]
 code=r'''
 #include <assert.h>
@@ -34,11 +37,12 @@ struct rtl_qm_rx {
  struct {u32 address,next,cos;}wifi_retire[2];
 };
 static u32 regs[65536/4];static unsigned char rings[2][8*32768];
-static struct rtl_qm_rx rx;static unsigned cpu,pool,returned,writes,ready_count,limit,rd_fail,late;
+static struct rtl_qm_rx rx;static unsigned cpu,pool,returned,writes,ready_count,limit,rd_fail,late,eq_credit,eq_valid;
 static u32 addresses[128];
 static unsigned int rtl_qm_wifi_chunk_bytes(unsigned n){return (n==2?448:1024)*2048;}
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static u32 readl(const void *p){
+ if(p==regs+(0x6328+(6+pool)*4)/4)return (eq_valid?BIT(31):0)|eq_credit;
  if(p==regs+(0x6368+cpu*8)/4){ready_count++;return returned<limit?BIT(31):0;}
  return *(const u32*)p;
 }
@@ -52,6 +56,7 @@ static void writel(u32 v,void *p){
  assert(rx.wifi_retire[pool].address==address);
  unsigned cos=rx.wifi_retire[pool].cos;
  assert(regs[(EPP_READ+cpu*32)/4+cos]==rx.wifi_retire[pool].next);
+ assert(eq_valid&&eq_credit);eq_credit--;
  addresses[returned++]=address;
  /* EQ may reuse this slot immediately after PUSH. A blocked retry must
   * retain the sampled address rather than reread this descriptor. */
@@ -62,7 +67,7 @@ static void writel(u32 v,void *p){
 #define readl_poll_timeout(p,v,c,d,t) ({(void)(d);(void)(t);v=readl(p);(c)?0:-ETIMEDOUT;})
 static void setup(unsigned selected){
  memset(&rx,0,sizeof(rx));memset(regs,0,sizeof(regs));memset(rings,0,sizeof(rings));
- pool=selected;cpu=3-pool;returned=writes=ready_count=rd_fail=late=0;limit=128;
+ pool=selected;cpu=3-pool;returned=writes=ready_count=rd_fail=late=0;limit=128;eq_credit=128;eq_valid=1;
  rx.ni=regs;rx.hardware_owned=true;
  for(unsigned p=0;p<2;p++){
   rx.wifi_epp[p]=rings[p];rx.wifi_epp_dma[p]=0x8000000+p*0x100000;
@@ -77,6 +82,18 @@ static void entry(unsigned cos,unsigned offset,unsigned n,unsigned flags){
 }
 '''+helper+r'''
 int main(void){unsigned cases=0;
+ for(unsigned p=0;p<2;p++)for(unsigned cos=0;cos<8;cos++)for(unsigned valid=0;valid<2;valid++){
+  setup(p);entry(cos,0,0,0x50);entry(cos,8,1,0x50);regs[(EPP_WRITE+cpu*32)/4+cos]=16;
+  eq_valid=valid;eq_credit=valid?0:9;
+  assert(rtl_qm_wifi_retire(&rx,p)==-ETIMEDOUT && !returned && rx.wifi_retire[p].address);
+  assert(regs[(EPP_READ+cpu*32)/4+cos]==8);
+  memset(rings[p]+cos*32768,0xcc,8);
+  eq_valid=1;eq_credit=1;
+  assert(rtl_qm_wifi_retire(&rx,p)==-ETIMEDOUT&&returned==1&&rx.wifi_retire[p].address);
+  assert(regs[(EPP_READ+cpu*32)/4+cos]==16&&!eq_credit);
+  eq_credit=1;assert(!rtl_qm_wifi_retire(&rx,p)&&returned==2&&!rx.wifi_retire[p].address);cases++;
+ }
+
  for(unsigned p=0;p<2;p++)for(unsigned cos=0;cos<8;cos++)for(unsigned wrap=0;wrap<2;wrap++)for(unsigned flags=0;flags<4;flags++){
   setup(p);unsigned start=wrap?32760:0;entry(cos,start,0,(unsigned[]){0,0x10,0x40,0x50}[flags]);entry(cos,(start+8)&32767,1,0x50);
   regs[(EPP_READ+cpu*32)/4+cos]=start;regs[(EPP_WRITE+cpu*32)/4+cos]=(start+16)&32767;

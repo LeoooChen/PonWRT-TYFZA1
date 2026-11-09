@@ -52,7 +52,7 @@ for generation in (0,17,0xffffffff):
     assert m.get(quota)==1 and m.get(DRAIN+8)==1
     m.call('ni_recycle',mb,base)
     assert m.get(quota)==1 and m.get(base+0x20000)==payload
-    m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+    m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
     assert not m.get(quota) and not m.get(DRAIN+8) and not m.get(mb+30*4)
     assert m.get(DONE+4)==42+(not newer)
     snapshots.append((current,m.get(DONE),m.get(DONE+4),not newer))
@@ -75,7 +75,7 @@ for generation,newer,status in itertools.product((0,17,0xffffffff),(False,True),
  assert m.get(DONE)==current and m.get(DONE+4)==42+(not newer)
  assert m.get(base+0x20004)&(1<<31) and m.get(base+0x3e010)==1
  m.call('pe_rpq',mb,base);assert m.get(DONE+4)==42+(not newer)
- m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+ m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
  assert not m.get(base+0x3e010) and not m.get(DRAIN+8)
  snapshots.append((current,m.get(DONE),m.get(DONE+4),not newer));cases+=1
 print(f'PS withdrawal: {cases} selected grant, credit stall, stale/current generation, completion and BID/quota cases passed')
@@ -89,7 +89,7 @@ code=e['code']
 code+='static const u32 records[][4]={'+','.join('{'+','.join(str(int(v))+'U' for v in row)+'}' for row in snapshots)+'};\n'
 code+=r'''
 int main(void){
- struct ieee80211_local local={};struct sta_info sta={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
+ struct ieee80211_local local={};struct sta_info sta={.sta={.id=1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
  static u8 memory[0x80000];struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
  lookup[1]=&sta;memory[0xe408]=1;
  /* Include both production setup functions in this bridge fixture. */

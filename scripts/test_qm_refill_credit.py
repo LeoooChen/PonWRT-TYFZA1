@@ -20,7 +20,7 @@ model = r"""
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
-typedef uint32_t u32;
+typedef uint32_t u32;typedef uint64_t dma_addr_t;
 #define BIT(n) (1U<<(n))
 #define GENMASK(h,l) ((~0U<<(l))&(~0U>>(31-(h))))
 #define EQ_ID 4
@@ -28,31 +28,47 @@ typedef uint32_t u32;
 #define CPU_PUSH 0x6384
 #include "rtl9617c-qm-refill.h"
 struct rtl_qm_rx {void *ni;struct rtl_qm_refill refill;};
-static u32 registers[0x10000/4],credit[2],reads[2],fifo_reads,pushed[2],stop_after,add_after,ready;
+static u32 registers[0x10000/4],credit[2],reads[2],fifo_reads,pushed[2],stop_after,add_after,ready,valid[2];
 static u32 readl(void *p) {
  unsigned reg=(char *)p-(char *)registers;
- if(reg==0x6338||reg==0x633c){unsigned eq=(reg-0x6338)/4;reads[eq]++;return credit[eq];}
+ if(reg==0x6338||reg==0x633c){unsigned eq=(reg-0x6338)/4;reads[eq]++;return (valid[eq]?BIT(31):0)|credit[eq];}
  assert(reg==CPU_READY);fifo_reads++;return ready?BIT(31):0;
 }
 static void writel(u32 value,void *p) {
  assert((char *)p-(char *)registers==CPU_PUSH);
- unsigned eq=(value&15)-4;assert(eq<2&&ready&&credit[eq]);
+ unsigned eq=(value&15)-4;assert(eq<2&&ready&&valid[eq]&&credit[eq]);
  assert((value&~127U)==0x4000000+eq*0x100000+pushed[eq]*128);
  pushed[eq]++;credit[eq]--;
  if(pushed[0]+pushed[1]==add_after)credit[0]+=64;
  if(pushed[0]+pushed[1]==stop_after)ready=0;
 }
 """
+start_push = source.index('static int rtl_qm_push(')
+end_push = source.index('static int rtl_qm_try_push(', start_push)
+model += '#define readl_poll_timeout_atomic(p,v,c,d,t) ({(void)(d);(void)(t);v=readl(p);(c)?0:-ETIMEDOUT;})\n'
+model += source[start_push:end_push]
 cases = r"""
 static void setup(struct rtl_qm_rx *rx,unsigned n0,unsigned n1,unsigned c0,unsigned c1) {
  memset(rx,0,sizeof(*rx));rx->ni=registers;
  memset(reads,0,sizeof(reads));memset(pushed,0,sizeof(pushed));fifo_reads=0;
- credit[0]=c0;credit[1]=c1;ready=1;stop_after=add_after=~0U;
+ credit[0]=c0;credit[1]=c1;ready=valid[0]=valid[1]=1;stop_after=add_after=~0U;
  for(unsigned e=0;e<2;e++)for(unsigned i=0;i<(e?n1:n0);i++)
   rtl_qm_refill_add(&rx->refill,(0x4000000+e*0x100000+i*128)|(e+4));
 }
 int main(void) {
  struct rtl_qm_rx rx;unsigned count=0;
+ for(unsigned eq=4;eq<=5;eq++)for(unsigned condition=0;condition<4;condition++){
+  setup(&rx,0,0,1,1);valid[eq-4]=condition!=0;credit[eq-4]=condition==1?0:1;ready=condition!=2;
+  assert(rtl_qm_push(&rx,0x4000000+(eq-4)*0x100000,eq)==(condition==3?0:-ETIMEDOUT));
+  assert(pushed[eq-4]==(condition==3));
+ }
+ setup(&rx,2,2,2,2);valid[0]=valid[1]=0;
+ rtl_qm_refill_drain(&rx.refill,&rx,rtl_qm_try_push,64);
+ assert(!pushed[0]&&!pushed[1]&&rx.refill.pending==4);
+ valid[0]=1;rtl_qm_refill_drain(&rx.refill,&rx,rtl_qm_try_push,64);
+ assert(pushed[0]==2&&!pushed[1]&&rx.refill.pending==2);
+ valid[1]=1;rtl_qm_refill_drain(&rx.refill,&rx,rtl_qm_try_push,64);
+ assert(pushed[1]==2&&!rx.refill.pending);
  for(unsigned c0=0;c0<=64;c0+=8)for(unsigned c1=0;c1<=64;c1+=8)
  for(unsigned stop=0;stop<=64;stop+=8){
   setup(&rx,64,64,c0,c1);stop_after=stop;if(!stop)ready=0;

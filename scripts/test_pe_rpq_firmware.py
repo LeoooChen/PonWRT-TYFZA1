@@ -149,7 +149,7 @@ for batch in range(64):
     put(mailbox + 296, (slot + 1) & 255)
     put(ni + 0x6340, 0x8000007c)
     if batch in (0, 1):
-        if batch == 0: put(ni + 0x6340, 1)
+        if batch == 0: put(ni + 0x6340, (1<<31)|1)
         else: stop_after = old_returns + 1
         run()
         assert returns[old_returns:] == buffers[:1]

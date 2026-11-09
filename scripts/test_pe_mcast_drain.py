@@ -13,7 +13,7 @@ def drain(m,sequence=1):
  m.put(DRAIN,sequence);m.call('ni_prefix_drain',mb,base,DRAIN)
 
 def recycle(m,count):
- m.put(ni+0x6340,count);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+ m.put(ni+0x6340,(1<<31)|count);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
  m.call('ni_prefix_drain',mb,base,DRAIN)
 
 cases=0
@@ -25,6 +25,8 @@ for source in (0,4,6,7,18,63):
    m.put(table,0);drain(m)
    m.put(base+0xe810,1);assert not m.call('ni_select',mb,base,requests)
    recycle(m,0);assert not m.get(DRAIN+4) and m.get(DRAIN+8)==1
+   m.put(ni+0x6340,16383);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+   assert m.get(DRAIN+8)==1 and not m.get(DRAIN+4)
    recycle(m,1);assert m.get(DRAIN+4)==1 and not m.get(DRAIN+8) and not m.get(FTTR+8)
    cases+=1
 # No-cookie ordinary traffic is outside this independent multicast counter.

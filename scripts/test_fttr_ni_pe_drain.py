@@ -35,7 +35,7 @@ def drain(m, sequence=1):
 
 
 def finish_one(m, count=1):
-    m.put(ni + 0x6340, count); m.put(ni + 0x6380, 1 << 31)
+    m.put(ni + 0x6340, (1<<31)|count); m.put(ni + 0x6380, 1 << 31)
     m.call('ni_recycle', mb, base)
     m.call('ni_prefix_drain', mb, base, DRAIN)
 
@@ -186,7 +186,7 @@ m.u.reg_write(UC_MIPS_REG_SP, 0xa7e01ff0)
 m.u.emu_start(env['symbols']['pe_main'], 0x9fc0fff0, count=10000)
 assert not m.get(DRAIN + 12) and not m.get(DRAIN + 4)
 m.put(mb + 114 * 4, 0x7060); m.put(mb + 3 * 4, 5)
-m.put(ni + 0x6340, 10); m.put(ni + 0x6380, 1 << 31)
+m.put(ni + 0x6340, (1<<31)|10); m.put(ni + 0x6380, 1 << 31)
 m.u.emu_start(m.u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=30000)
 assert m.get(DRAIN + 4) == 1 and not m.get(DRAIN + 8); cases += 1
 # An unpublished request has no hardware WP tag. After main separates

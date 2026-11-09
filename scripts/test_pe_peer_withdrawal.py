@@ -9,6 +9,18 @@ exec(compile(f.read_text().split('cases = 0',1)[0],str(f),'exec'),e)
 machine,base,mb,ni,bar,payload,table,requests,DRAIN=(e[n] for n in ('machine','base','mb','ni','bar','payload','table','requests','DRAIN'))
 
 cases=0
+# A nonzero stale count is not credit unless the target req bit is set.
+for source in (0,6,7):
+ m=machine(source=source,cookie=False);m.u.mem_write(payload+64+m.header+15,b'\0');m.ingest();m.put(bar+0xc438,10000)
+ assert m.call('ni_select',mb,base,requests)==1
+ m.put(mb+193*4,1);m.put(base+0x11a04,0);m.call('pe_tx_publish',mb,8,requests)
+ m.put(ni+0x6380,1<<31);m.put(ni+0x6340,16383)
+ before=bytes(m.u.mem_read(payload,28));m.call('ni_recycle',mb,base)
+ assert m.get(base+0x20000)==payload and m.get(mb+30*4)==1
+ assert bytes(m.u.mem_read(payload,28))==before and m.get(DRAIN+8)==(source==6)
+ m.put(ni+0x6340,(1<<31)|1);m.call('ni_recycle',mb,base)
+ assert not m.get(base+0x20000) and not m.get(mb+30*4) and not m.get(DRAIN+8)
+ cases+=1
 for source in (0,6,7):
  for cause in ('route','peer-fence','global-fence'):
   for blocked in (False,True):
@@ -29,7 +41,7 @@ for source in (0,6,7):
    m.call('ni_recycle',mb,base)
    assert m.get(base+0x3e010)==1 and m.get(base+0x20000)==payload
    assert m.get(DRAIN+8)==(source==6)
-   m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+   m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
    assert not m.get(base+0x3e010) and not m.get(base+0x20000) and not m.get(DRAIN+8)
    assert m.get(base+0x34004)==2049 and not m.get(mb+30*4)
    # No hardware WP was ever taken; retirement cannot release a foreign tag.
@@ -48,11 +60,11 @@ for tid,tos,ring in ((0,0,0),(1,32,1),(4,128,2),(6,192,3)):
  assert m.get(quota)==1 and m.get(DRAIN+8)==2
  m.put(mb+193*4,1);m.put(base+0x11a04,0);m.call('pe_tx_publish',mb,8,requests)
  assert m.get(mb+194*4)==1 and not m.get(mb+10*4)
- m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+ m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
  assert m.get(base+0x20000)==second and m.get(quota)==1 and m.get(DRAIN+8)==1
  m.put(ni+0x6340,0);m.call('ni_recycle',mb,base)
  assert m.get(base+0x20000)==second and m.get(quota)==1
- m.put(ni+0x6340,1);m.call('ni_recycle',mb,base)
+ m.put(ni+0x6340,(1<<31)|1);m.call('ni_recycle',mb,base)
  assert not m.get(base+0x20000) and not m.get(quota) and not m.get(DRAIN+8)
  cases+=1
 # A different peer's retirement cannot discard this admitted request. Once
@@ -62,7 +74,7 @@ assert m.call('ni_select',mb,base,requests)==1
 m.put(mb+193*4,1);m.put(mb+62*4,2);m.call('pe_tx_publish',mb,8,requests)
 assert m.get(mb+10*4)==1 and m.get(mb+194*4)==1
 m.put(base+0x11a04,0);m.put(mb+62*4,1);m.call('pe_tx_publish',mb,8,requests)
-m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
 assert not m.get(mb+45*4) and m.get(base+0x20000)==payload and m.get(base+0x3e010)==1
 # Only the hardware report can complete the published WP.
 from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_SP
@@ -84,7 +96,7 @@ for fence in (1,128):
  m=b['machine']();b['choose'](m);m.put(mb+62*4,fence);b['publish'](m)
  assert m.get(mb+194*4)==1 and m.get(mb+10*4)==(fence!=128)
  if fence==128:
-  m.put(ni+0x6340,1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
+  m.put(ni+0x6340,(1<<31)|1);m.put(ni+0x6380,1<<31);m.call('ni_recycle',mb,base)
   assert not m.get(base+0x20000) and not m.get(mb+30*4)
  else:b['finish'](m)
  assert not any(m.get(base+0x3e000+i*4) for i in range(4))

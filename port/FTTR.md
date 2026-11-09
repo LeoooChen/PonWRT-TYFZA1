@@ -9788,6 +9788,53 @@ Complete MCE/AFT/AXI quiescence, MiniOLT downstream retirement and safe hardware
 ID reuse remain unproven. The new routine covers already-published EPP buffers,
 not packets still upstream or an assertion that successful disable is bus-idle.
 
+### Valid inactive-BID credit gates every buffer return
+
+The target `aal_l3qm_get_inactive_bid_cntr` at `0x575c0` returns the low14
+count only when bit31 validates it; otherwise it returns zero. The original
+RX refill path obtains that credit before checking the separate CPU PUSH
+FIFO-ready flag and submitting the address. `trace_stock_qm_return_credit.py`
+executes56 validity/count combinations for EQ4..7,8 FIFO-ready states and12
+actual PUSH encodings for CPU0/2/3. All match this independent two-condition
+contract.
+
+Forced PE owner/queued-BID cleanup and the new unconsumed-EPP cleanup previously
+checked only FIFO readiness. They now wait for validated nonzero inactive-BID
+credit first, retaining the current list head or pending EPP return on timeout.
+CPU startup/refill and normal PE recycling also now reject nonzero low bits
+when the valid bit is clear. PE/CPU normal refill continue consuming a bounded
+local credit snapshot, refreshing it only when exhausted. Every accepted PUSH
+still consumes one credit and preserves the existing post-PUSH ownership order.
+No cached allowance survives a later refill call.
+
+The old native forced paths reproduce PUSH while the modeled inactive pool
+has no valid slot. Linked old PE likewise returns a BID with a stale nonzero
+count and clears its pending reference. Fixed tests verify that ordinary,
+source6 FTTR and multicast references remain held until valid credit returns.
+Fixture credit values now include the original hardware valid bit explicitly;
+no production condition was relaxed to preserve an inaccurate fixture.
+
+Validation includes194 forced EPP cases, aggregate/queued-chain cleanup with
+independent invalid-credit/zero-credit/FIFO stalls,729 dual-EQ normal refill
+cases plus startup and invalid-bit cases,28 linked peer-withdrawal cases,251
+linked FTTR drain cases,125 multicast drain cases and132 PS withdrawal records
+consumed by ARM/mac80211. Sixteen current regression suites pass, including
+actual RPQ ownership/recycle, BCMC, channel progress, downlink aggregation,
+TX publication and full RXQ/pause tests. A non-QoS sequence fixture fails with
+both old and new firmware; three other old standalone fixtures use obsolete
+layout/setup assumptions. They were not counted as passing and their attempted
+fixture changes were removed. The valid-credit edits needed by the exercised
+fixtures are retained.
+
+PE now builds to32456 bytes, SHA256
+`3766ba833e734982d1aac72afc43010e1e9baaa45ac0ad6257faf3da1ed71bad`,
+with unchanged7360/8192 conservative stack use and fixed32768-byte IMEM.
+Repeated build output is identical; the non-uplink build is14000 bytes.
+Image/modules and all three changed kernel inputs match the embedded PE/header
+and current sources. Artifacts are `artifacts/fttr/eq-credit-*-20261109.*`.
+No physical device was accessed. This corrects buffer-return admission; it
+does not establish full upstream/downstream retirement or hardware-ID reuse.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

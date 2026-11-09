@@ -804,8 +804,10 @@ static void __attribute__((section(".rxq"), noinline)) ni_recycle(volatile u32 *
 		u32 buffer = owners[id * 2], returned = 0;
 		/* PE1 alone pushes to this EQ. Carry unused credit across this
 		 * call's MPDUs; every accepted PUSH consumes one sampled BID. */
-		if (!credit)
-			credit = ni[(0x6328 + eq * 4) / 4] & 0x3fff;
+		if (!credit) {
+			u32 request = ni[(0x6328 + eq * 4) / 4];
+			credit = request & BIT(31) ? request & 0x3fff : 0;
+		}
 		/* A WP owns one completed MPDU. Account its BID chain together,
 		 * retaining the unreturned suffix when either hardware credit stalls. */
 		do {

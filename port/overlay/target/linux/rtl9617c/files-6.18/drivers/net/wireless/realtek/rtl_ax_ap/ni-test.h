@@ -571,6 +571,9 @@ released:
 			multicast = get_unaligned_le32(phys_to_virt(address) + 16);
 			fttr = get_unaligned_le32(phys_to_virt(address) + 20) ||
 				get_unaligned_le32(phys_to_virt(address) + 24);
+			ret = readl_poll_timeout(tx->ni.regs + 0x6328 + tx->ni.eq * 4, status,
+				(status & BIT(31)) && (status & 0x3fff), 1, 100000);
+			if (ret) return ret;
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
@@ -596,6 +599,9 @@ released:
 			multicast = get_unaligned_le32(phys_to_virt(address) + 16);
 			fttr = get_unaligned_le32(phys_to_virt(address) + 20) ||
 				get_unaligned_le32(phys_to_virt(address) + 24);
+			ret = readl_poll_timeout(tx->ni.regs + 0x6328 + tx->ni.eq * 4, status,
+				(status & BIT(31)) && (status & 0x3fff), 1, 100000);
+			if (ret) return ret;
 			ret = readl_poll_timeout(tx->ni.regs + (0x6368 + tx->ni.cpu * 8), status, status & BIT(31), 1, 100000);
 			if (ret) return ret;
 			writel(address | tx->ni.eq, tx->ni.regs + (0x636c + tx->ni.cpu * 8));
