@@ -9235,6 +9235,65 @@ arriving after a new endpoint is attached, remains an explicit unresolved
 requirement. No additional reuse permission or full-drain claim follows from
 the closing flag.
 
+### Original downstream wireless station information
+
+The explicit syncserv client now queries the connected subordinate's station
+table using the retained `GetWifiStaInfo` request:
+
+```sh
+fttr-sync fttr0 02:00:00:00:00:01 auto 0x88aa wifi-stations
+```
+
+The request has only `RPCMethod` and uses the target's Ethernet address. The
+response must name `GetWifiStaInfo` and contain a `StaInfo` array, including an
+empty array for an empty table. A bare ACK or missing list does not complete
+the query. The existing interface lease, source pin, three-second deadline
+and independent type6/type7 fragment assembly apply; a new registration
+cancels the query. After validating the whole report, native sends the same
+empty JSON response object that the target controller emits. Failed response
+transmission returns an error without exposing a successful snapshot.
+
+Each row retains the original `OnuMAC`, `OnuIntf`, `BandType`, `StaMAC`,
+`StaRssi`, `StaNegoUpRate` and `StaNegoDownRate` fields. OnuMAC and StaMAC must
+be valid unicast MAC strings; every OnuMAC must match the queried device.
+Other known fields accept the original JSON string or integer form, with
+bounded strings and no embedded NUL. Missing measurement fields stay absent,
+and unknown fields are not copied into output. The same terminal MAC on
+different BSS interfaces is retained as separate records. Original names and
+reported values are preserved; no inferred rate units or RSSI calibration
+are added. `report_complete` means the complete valid report was received;
+`identity_authenticated` remains false.
+
+The original consumer clears its table and consumes at most64 records. It
+narrows RSSI to8 bits and negotiated rates to16 bits, and serializes OnuIntf
+with JSON quotes before copying into a fixed buffer. Native retains the
+received values, rejects more than64 records rather than silently truncating,
+and never exposes partial rows if validation or allocation fails.
+`tools/trace_stock_fttr_stations.py` executes the actual request builder,
+consumer, empty response and Ethernet encoder. All seven fields are checked
+in complete one/two-record reports;0/63/64/65-record cases independently check
+clear, capacity and truncation behavior using compact records. The file-save
+boundary and remote data are explicitly modeled.
+
+Validation comprises33 glibc CLI/veth cases (including response-send failure),
+32 equivalent packaged musl cases, full64-record out-of-order reassembly,
+empty/missing/oversized tables, source/method/record identity checks,
+re-registration, malformed/NUL/type cases and same-terminal separate BSS rows.
+ASan/UBSan passes22 native JSON allocation/copy failure points plus malformed
+and partially built reports. Radio19 CLI/7 resident, QosSync38 and resident
+controller37 regressions pass. The FTTR and retained FPGA packages rebuild;
+67 sources/headers and four installed programs match the package staging.
+Reports are `artifacts/fttr/stations-*-20261109.*`. Kernel/PE are unchanged and
+no device was accessed.
+
+This supplies station-report input for later gateway/roaming coordination; it
+does not implement a roaming decision or prove association/RF behavior. The
+separate `GetWifiNeighbor` report uses `scanResult` text and NEW/REMAINING file
+append semantics. The retained manager waits two seconds after requesting it
+before reading the file (`getWifiNeighbor+0x2e4`, `0x450818`); this is not proof
+that all segments arrived. Complete neighbor scan termination/loss handling,
+automatic resident station collection and physical acceptance remain open.
+
 ### Outstanding implementation and acceptance
 
 1. FPGA board startup: retained image packaging, automatic loading before

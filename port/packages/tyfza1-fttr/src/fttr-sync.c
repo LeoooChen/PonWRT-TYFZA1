@@ -80,6 +80,20 @@ static int exchange(int fd, const uint8_t source[6], const uint8_t peer[6], uint
 			return ret;
 		message.slot = slot;
 		ret = fttr_sync_reply_decode(&message, peer, settings, configuration != NULL, ack_seen, summary, observed);
+		if (!ret && settings == 16) {
+			/* The retained station consumer replies with an empty response
+			 * object after accepting the complete report. */
+			ret = fttr_sync_pack(source, peer, ethertype, slot, FTTR_SYNC_RESPONSE,
+				"{}", 2, frame, sizeof(frame));
+			if (ret >= 0) {
+				ssize_t sent = send(fd, frame, ret, 0);
+				ret = sent == ret ? 0 : sent < 0 ? -errno : -EIO;
+			}
+			if (ret) {
+				json_object_put(*summary); *summary = NULL;
+				if (observed) { json_object_put(*observed); *observed = NULL; }
+			}
+		}
 		if (ret != -EAGAIN)
 			return ret;
 	}
@@ -248,6 +262,7 @@ int main(int argc, char **argv)
 	bool apply = argc == 7 && !strcmp(argv[5], "wifi-apply");
 	bool easymesh = argc == 7 && !strcmp(argv[5], "easymesh");
 	bool info = argc == 6 && !strcmp(argv[5], "onu-info");
+	bool stations = argc == 6 && !strcmp(argv[5], "wifi-stations");
 	bool qos = argc == 7 && !strcmp(argv[5], "qos-sync");
 	bool password_apply=argc==7 && !strcmp(argv[5],"web-password-apply");
 	bool password_info=argc==6 && !strcmp(argv[5],"web-password");
@@ -261,13 +276,13 @@ int main(int argc, char **argv)
 	bool wan = argc == 7 && !strcmp(argv[5], "wan-ip");
 	bool radio_info = argc == 6 && !strcmp(argv[5], "radio-info");
 	bool registering = argc == 7 && !strcmp(argv[5], "register");
-	unsigned int settings = qos?15:password_apply?14:password_info?13:ports_apply?12:ports_info?11:iptv_apply?10:iptv_info?9:time_apply?8:time_info?7:wan?6:radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
+	unsigned int settings = stations?16:qos?15:password_apply?14:password_info?13:ports_apply?12:ports_info?11:iptv_apply?10:iptv_info?9:time_apply?8:time_info?7:wan?6:radio_apply?5:radio_info?4:info ? 3 : easymesh ? 2 : apply || (argc == 6 && !strcmp(argv[5], "wifi-settings"));
 	bool automatic = !resident && (argc == 5 || settings || registering) && !strcmp(argv[3], "auto");
 	bool ack_seen = false;
 
 	if ((!discover && !resident && !settings && !registering && argc != 5) || strlen(argv[1]) >= IFNAMSIZ || strchr(argv[1], '/') ||
 	    (!discover && !resident && fttr_sync_mac_parse(argv[2], peer))) {
-		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [qos-sync <private-json-file> | web-password | web-password-apply <private-json-file> | iptv-ports | iptv-ports-apply <private-json-file> | iptv-settings | iptv-apply <private-json-file> | time-settings | time-apply <private-json-file> | wan-ip <IPv4-or-IPv6> | onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
+		fprintf(stderr, "Usage: %s <interface> <peer-MAC> <sync-slot:0..15|auto> <ethertype> [wifi-stations | qos-sync <private-json-file> | web-password | web-password-apply <private-json-file> | iptv-ports | iptv-ports-apply <private-json-file> | iptv-settings | iptv-apply <private-json-file> | time-settings | time-apply <private-json-file> | wan-ip <IPv4-or-IPv6> | onu-info | radio-info | radio-apply <private-json-file> | wifi-settings | wifi-apply <private-json-file> | easymesh <0|1> | register <private-policy-file>]\n"
 			"       %s <interface> discover <ethertype>\n"
 			"       %s <interface> serve <ethertype> <private-policy-file> [--state <private-persistent-directory>]\n", argv[0], argv[0], argv[0]);
 		return 2;
@@ -489,7 +504,7 @@ out:
 			ret = -errno;
 	}
 	if (ret)
-		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : qos ? "qos-sync" : password_apply ? "web-password-apply" : password_info ? "web-password" : ports_apply ? "iptv-ports-apply" : ports_info ? "iptv-ports" : iptv_apply ? "iptv-apply" : iptv_info ? "iptv-settings" : time_apply ? "time-apply" : time_info ? "time-settings" : wan ? "wan-ip" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
+		fprintf(stderr, "FTTR sync %s: %s (%d)\n", resident ? "serve" : discover ? "discovery" : registering ? "register" : stations ? "wifi-stations" : qos ? "qos-sync" : password_apply ? "web-password-apply" : password_info ? "web-password" : ports_apply ? "iptv-ports-apply" : ports_info ? "iptv-ports" : iptv_apply ? "iptv-apply" : iptv_info ? "iptv-settings" : time_apply ? "time-apply" : time_info ? "time-settings" : wan ? "wan-ip" : easymesh ? "easymesh" : apply ? "wifi-apply" : radio_apply ? "radio-apply" : radio_info ? "radio-info" : info ? "onu-info" : settings ? "wifi-settings" : "GetWifi", strerror(-ret), ret);
 	json_object_put(summary);
 	json_object_put(desired);
 	if (fd >= 0) close(fd);
