@@ -11,6 +11,7 @@
 #include <linux/mutex.h>
 #include <linux/pci.h>
 #include <linux/spinlock.h>
+#include <linux/thermal.h>
 #include <linux/tyfza1-led.h>
 #include <net/mac80211.h>
 #include "fw.h"
@@ -98,6 +99,7 @@ MODULE_PARM_DESC(dfs_region, "Original DFS region0=regulatory domain,1=FCC,2=MKK
 struct rtl_ax_ap {
 	struct tyfza1_led led;
 	bool led_registered;
+	struct thermal_zone_device *tzdev;
 	struct pci_dev *pdev;
 	void __iomem *bar;
 	struct rtl_ax_io io;
@@ -171,7 +173,7 @@ struct rtl_ax_ap {
 	DECLARE_BITMAP(station_ids, 128);
 	DECLARE_BITMAP(preload_peers, 128);
 	struct { u8 self[6], peer[6]; u16 aid; bool pending, mesh, client; } retired_stations[128];
-	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; } tx_ba[128];
+	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; u32 last_activity[IEEE80211_NUM_TIDS]; } tx_ba[128];
 	struct wiphy_delayed_work cleanup_work;
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
@@ -588,9 +590,15 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *radio, unsigned int buffer_cla
 	if (!ret)
 		radio->command_sequence++;
 	if (!ret && (receive_ack || done_ack)) {
-		/* Wait for the requested firmware ACK. A receive-only command
-		 * proves acceptance; done-ACK proves execution. */
-		if (!wait_for_completion_timeout(&radio->command_done, msecs_to_jiffies(1000)))
+		/* Wait for the requested firmware ACK. Kick RX worker if PE event IRQ
+		 * was missed across interface reload so C2H ACK is drained promptly. */
+		unsigned long left = wait_for_completion_timeout(&radio->command_done, msecs_to_jiffies(25));
+		if (!left) {
+			if (radio->rx)
+				rtl_ax_rx_pe_wake(radio->rx);
+			left = wait_for_completion_timeout(&radio->command_done, msecs_to_jiffies(975));
+		}
+		if (!left)
 			ret = -ETIMEDOUT;
 		else if (radio->command_result)
 			ret = -EREMOTEIO;
@@ -2731,6 +2739,41 @@ static const struct attribute_group rtl_ax_group = {
 };
 static const struct attribute_group *rtl_ax_groups[] = { &rtl_ax_group, NULL };
 
+static int rtl_ax_thermal_get_temp(struct thermal_zone_device *tz, int *temp)
+{
+	struct rtl_ax_ap *radio = thermal_zone_device_priv(tz);
+	unsigned int path;
+	int max_mc = -100000;
+	int ret = 0;
+
+	if (!radio || !radio->phy_inputs_ready)
+		return -EAGAIN;
+
+	mutex_lock(&radio->command_mutex);
+	for (path = 0; path < 2; path++) {
+		u8 raw = 0;
+		int mc;
+
+		ret = rtl_ax_rf_thermal(&radio->io, path, &raw);
+		if (ret)
+			break;
+		radio->rf_runtime.thermal[path] = raw;
+		mc = 25000 + ((int)raw - 20) * 1500;
+		if (mc > max_mc)
+			max_mc = mc;
+	}
+	mutex_unlock(&radio->command_mutex);
+
+	if (ret)
+		return ret;
+	*temp = max_mc;
+	return 0;
+}
+
+static const struct thermal_zone_device_ops rtl_ax_thermal_ops = {
+	.get_temp = rtl_ax_thermal_get_temp,
+};
+
 static int rtl_ax_led_set(struct tyfza1_led *led, unsigned int on)
 {
 	struct rtl_ax_ap *radio = container_of(led, struct rtl_ax_ap, led);
@@ -2913,6 +2956,13 @@ static int rtl_ax_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		return dev_err_probe(&pdev->dev, ret, "radio LED registration failed\n");
 	}
 	radio->led_registered = true;
+	radio->tzdev = thermal_tripless_zone_device_register(
+		radio->chip == RTL_AX_8852C ? "wifi-5g-thermal" : "wifi-2g-thermal",
+		radio, &rtl_ax_thermal_ops, NULL);
+	if (IS_ERR(radio->tzdev)) {
+		dev_warn(&pdev->dev, "thermal zone registration failed: %ld\n", PTR_ERR(radio->tzdev));
+		radio->tzdev = NULL;
+	}
 	dev_info(&pdev->dev,
 		 "native AP backend chip=0x%02x cv=%u factory=%c adie=0x%04x; %s WCPU ready; packets=%u bytes=%u\n",
 		 radio->chip, radio->identity.cv, radio->identity.factory,
@@ -2935,6 +2985,10 @@ static void rtl_ax_remove(struct pci_dev *pdev)
 {
 	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
 
+	if (radio->tzdev) {
+		thermal_zone_device_unregister(radio->tzdev);
+		radio->tzdev = NULL;
+	}
 	rtl_ax_monitor_unregister(radio);
 	rtl_ax_stop(radio);
 	rtl_ax_monitor_free(radio);
@@ -2944,6 +2998,10 @@ static void rtl_ax_shutdown(struct pci_dev *pdev)
 {
 	struct rtl_ax_ap *radio = pci_get_drvdata(pdev);
 
+	if (radio->tzdev) {
+		thermal_zone_device_unregister(radio->tzdev);
+		radio->tzdev = NULL;
+	}
 	rtl_ax_monitor_unregister(radio);
 	rtl_ax_stop(radio);
 	rtl_ax_monitor_free(radio);

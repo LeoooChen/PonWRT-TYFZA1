@@ -56,6 +56,7 @@ void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 void rtl_ax_tx_peer_counters(struct rtl_ax_tx *tx, unsigned int macid, u32 *bytes, u32 *packets);
 void rtl_ax_tx_ac_counters(struct rtl_ax_tx *tx, u32 packets[4]);
 u8 rtl_ax_tx_active_tids(struct rtl_ax_tx *tx, unsigned int macid);
+u32 rtl_ax_tx_tid_activity(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid);
 void rtl_ax_tx_wmm(struct rtl_ax_tx *tx, unsigned int quota);
 void rtl_ax_tx_peer_amsdu(struct rtl_ax_tx *tx, unsigned int macid, unsigned int policy);
 unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid);
