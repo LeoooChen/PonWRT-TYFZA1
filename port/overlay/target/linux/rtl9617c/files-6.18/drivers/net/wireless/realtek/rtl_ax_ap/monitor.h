@@ -101,11 +101,15 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	unsigned long flags;
 	int ret;
 
+	WRITE_ONCE(radio->monitor_started, false);
+	wiphy_work_cancel(hw->wiphy, &radio->offload_work);
+	wiphy_work_cancel(hw->wiphy, &radio->beacon_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->cleanup_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->ra_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->dm_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->mesh_sync_work);
 	wiphy_work_cancel(hw->wiphy, &radio->ra_update_work);
+	synchronize_rcu();
 	/* Wiphy serialization keeps the AP alive; PKT_DROP takes command_mutex. */
 	ret = rtl_ax_tx_ni_route(radio->tx, NULL, 0);
 	if (ret) dev_err(&radio->pdev->dev, "NI withdrawal on radio stop failed: %d\n", ret);
@@ -113,7 +117,6 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	spin_lock_irqsave(&radio->command_lock, flags);
 	radio->dfs.enabled = false;
 	spin_unlock_irqrestore(&radio->command_lock, flags);
-	WRITE_ONCE(radio->monitor_started, false);
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	tasklet_kill(&radio->tx_tasklet);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
@@ -361,13 +364,18 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 			if (sta && sta->wme && (sta->deflink.ht_cap.ht_supported ||
 			    sta->deflink.vht_cap.vht_supported || sta->deflink.he_cap.has_he)) {
 				struct rtl_ax_station *station = (void *)sta->drv_priv;
-				for (unsigned int tid = 0; tid < 6; tid++)
+				for (unsigned int tid = 0; tid < 6; tid++) {
 					if ((tids & BIT(tid)) && !radio->tx_ba[macid].aggregation[tid] &&
 					    !(radio->tx_ba[macid].stopping & BIT(tid)) &&
 					    (!station->ba_retry[tid] || time_after_eq(jiffies, station->ba_retry[tid]))) {
-						station->ba_retry[tid] = jiffies + HZ;
-						ieee80211_start_tx_ba_session(sta, tid, 0);
+						u32 act = rtl_ax_tx_tid_activity(radio->tx, macid, tid);
+						if ((u32)(act - radio->tx_ba[macid].last_activity[tid]) >= 8) {
+							radio->tx_ba[macid].last_activity[tid] = act;
+							station->ba_retry[tid] = jiffies + 3 * HZ;
+							ieee80211_start_tx_ba_session(sta, tid, 0);
+						}
 					}
+				}
 			}
 			rcu_read_unlock();
 		}
@@ -392,6 +400,9 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 static void rtl_ax_offload_ready(void *context)
 {
 	struct rtl_ax_ap *radio = context;
+	if (!READ_ONCE(radio->monitor_started) ||
+	    (!READ_ONCE(radio->ap_started) && !READ_ONCE(radio->sta_associated)))
+		return;
 	wiphy_work_queue(radio->hw->wiphy, &radio->offload_work);
 }
 
@@ -747,9 +758,13 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 
 static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 {
+	static u8 fail_count[RTL_AX_SECURITY_ENTRIES];
 	unsigned int index;
 	bool retry = false;
 	u8 cam[24], dctl[68];
+
+	if (!READ_ONCE(radio->monitor_started))
+		return false;
 
 	for_each_set_bit(index, radio->security_deleting, RTL_AX_SECURITY_ENTRIES) {
 		if (radio->security_unlink[index]) {
@@ -763,9 +778,18 @@ static bool rtl_ax_security_cleanup(struct rtl_ax_ap *radio)
 			/* Use the current desired role, including keys installed since the failure. */
 			rtl_ax_security_dctl(dctl, macid, &radio->security_roles[macid]);
 			if (rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 9, dctl, sizeof(dctl), true)) {
-				retry = true;
+				if (++fail_count[index] < 3) {
+					retry = true;
+					continue;
+				}
+				fail_count[index] = 0;
+				radio->security_unlink[index] = 0;
+				__clear_bit(index, radio->security_deleting);
+				__clear_bit(index, radio->security_ids);
+				__clear_bit(index, radio->security_aborting);
 				continue;
 			}
+			fail_count[index] = 0;
 			radio->security_unlink[index] = 0;
 			if (macid && (radio->security_roles[macid].valid & 3))
 				rtl_ax_offload_ready(radio);
@@ -1091,7 +1115,7 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		WRITE_ONCE(radio->tx_ba[station->macid].aggregation[params->tid], aggregate);
 		rtl_ax_tx_peer_ba(radio->tx, station->macid, params->tid, aggregate);
 		rtl_ax_offload_ready(radio);
-		dev_info(&radio->pdev->dev, "native TX BA MACID%u TID%u size%u operational\n",
+		dev_dbg(&radio->pdev->dev, "native TX BA MACID%u TID%u size%u operational\n",
 			station->macid, params->tid, aggregate);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
@@ -1836,7 +1860,80 @@ found:
 	for (i = 0; i < 6; i++) seq->ccmp.pn[i] = pn >> (i * 8);
 }
 
+static int rtl_ax_get_survey(struct ieee80211_hw *hw, int idx,
+			     struct survey_info *survey)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct rtl_ax_environment *env = &radio->environment;
+	struct ieee80211_channel *chan = hw->conf.chandef.chan;
+	u8 threshold[11], weight[12];
+	u32 bins[12];
+	u64 weighted_sum = 0, total_bins = 0, samples;
+	unsigned int i, first = 12;
+	s8 noise_dbm = -95, ext_loss;
+	bool is_c;
+
+	if (idx != 0)
+		return -ENOENT;
+
+	if (!READ_ONCE(radio->monitor_started) || !chan)
+		return -ENOENT;
+
+	samples = READ_ONCE(env->samples);
+	is_c = env->is_c;
+	ext_loss = READ_ONCE(env->external_loss);
+
+	if (samples > 0) {
+		for (i = 0; i < 11; i++)
+			threshold[i] = env->nhm_threshold[i] -
+				(is_c && i == 10 ? 0 : ext_loss);
+
+		for (i = 0; i < 12; i++) {
+			bins[i] = READ_ONCE(env->nhm_bins[i]);
+			weight[i] = !i ? (threshold[0] > 2 ? threshold[0] - 2 : 0) :
+				i == 11 ? threshold[10] + 2 :
+				(threshold[i - 1] + threshold[i]) / 2;
+		}
+		if (is_c) {
+			weight[10] = weight[11] = threshold[9] + 2;
+			bins[0] += bins[11];
+			bins[11] = 0;
+		}
+
+		/* 定位首个有效底噪档位，仅统计底噪主峰（连续3档），避免周边Wi-Fi突发流量拉高底噪 */
+		for (i = 0; i < 12; i++) {
+			if (bins[i] > 0) {
+				first = i;
+				break;
+			}
+		}
+		for (i = first; i < 12 && i < first + 3; i++) {
+			weighted_sum += (u64)bins[i] * weight[i];
+			total_bins += bins[i];
+		}
+
+		if (total_bins > 0) {
+			u32 avg_weight = div64_u64(weighted_sum, total_bins);
+
+			noise_dbm = clamp_t(int, (int)(avg_weight >> 1) - 110, -110, -20);
+		}
+	} else {
+		u8 igi = READ_ONCE(radio->dig.unit[0].igi);
+
+		if (igi > 0)
+			noise_dbm = clamp_t(int, (int)igi - 110, -110, -20);
+	}
+
+	memset(survey, 0, sizeof(*survey));
+	survey->channel = chan;
+	survey->filled = SURVEY_INFO_NOISE_DBM | SURVEY_INFO_IN_USE;
+	survey->noise = noise_dbm;
+
+	return 0;
+}
+
 static const struct ieee80211_ops rtl_ax_monitor_ops = {
+	.get_survey = rtl_ax_get_survey,
 	.set_rts_threshold = rtl_ax_set_rts_threshold,
 	.tx = rtl_ax_monitor_tx,
 	.wake_tx_queue = rtl_ax_wake_tx_queue,
