@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Check the native parser against Linux6.18's actual NAT action builders."""
+import argparse
 import hashlib
 import json
 from pathlib import Path
@@ -10,7 +11,10 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 drivers = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/ethernet/realtek'
 native = (drivers / 'rtl9617c-fe.c').read_text()
-kernel = Path(subprocess.check_output(['python3', str(root / 'port/tools/project_paths.py'),
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--kernel', type=Path, help='Prepared Linux source tree')
+args = parser.parse_args()
+kernel = args.kernel or Path(subprocess.check_output(['python3', str(root / 'port/tools/project_paths.py'),
     '--kernel-directory', str(root / 'sources/openwrt')], text=True).strip())
 upstream_path = kernel / 'net/netfilter/nf_flow_table_offload.c'
 upstream = upstream_path.read_text()
@@ -269,9 +273,9 @@ int main(void)
      assert(parsed.ethernet_bytes==14+4*output);
      for(unsigned int tag=0;tag<input;tag++)
       assert(parsed.vlan[tag].vid==((id+tag)&4095) && parsed.vlan[tag].tpid==1);
-     /* Linux pushes the encap array in order; last push is outermost. */
+     /* Tuples store outermost first; output pushes must preserve wire order. */
      for(unsigned int tag=0;tag<output;tag++)
-      assert(parsed.action.vlan[tag].vid==((4095-id+output-1-tag)&4095) && parsed.action.vlan[tag].tpid==1);
+      assert(parsed.action.vlan[tag].vid==((4095-id+tag)&4095) && parsed.action.vlan[tag].tpid==1);
      unsigned int packed[8],key[23];rtl_fe_ipv4_action(packed,&parsed.action);
      rtl_fe_ipv4_key(key,&parsed.key);rtl_fe_vlan_key(key,parsed.vlan,parsed.vlan_count);
      assert((packed[5]&12)==(output<<2)); /* Literal group20 final VLAN count at162. */
@@ -303,10 +307,10 @@ int main(void)
     }
     struct flow_offload_tuple *input=&flow.tuplehash[1].tuple;
     flow.tuplehash[1].tuple.encap_num=2;
-    flow.tuplehash[1].tuple.encap[0].proto=htons(ETH_P_PPP_SES);
-    flow.tuplehash[1].tuple.encap[0].id=sid;
-    flow.tuplehash[1].tuple.encap[1].proto=htons(ETH_P_8021Q);
-    flow.tuplehash[1].tuple.encap[1].id=100;
+    flow.tuplehash[1].tuple.encap[0].proto=htons(ETH_P_8021Q);
+    flow.tuplehash[1].tuple.encap[0].id=100;
+    flow.tuplehash[1].tuple.encap[1].proto=htons(ETH_P_PPP_SES);
+    flow.tuplehash[1].tuple.encap[1].id=sid;
     struct nf_flow_match match={};
     assert(!nf_flow_rule_match(&match,input,NULL));
     assert(match.dissector.used_keys&BIT_ULL(FLOW_DISSECTOR_KEY_PPPOE));
@@ -331,6 +335,11 @@ int main(void)
      assert(!flow_offload_port_snat(NULL,&flow,direction,&nf));
     }
     assert(!linux_vlan_actions(&flow,direction,&nf));
+    if(!direction) {
+     assert(rule.action.num_entries>=2);
+     assert(rule.action.entries[rule.action.num_entries-2].id==FLOW_ACTION_PPPOE_PUSH);
+     assert(rule.action.entries[rule.action.num_entries-1].id==FLOW_ACTION_VLAN_PUSH);
+    }
     ethernet_actions(&nf,source,destination,direction?&lan:&pon);
     assert(!fe_parse(direction?&pp:&lp,&cls,&parsed));
     assert(parsed.ipv6==ipv6 && parsed.pppoe_input==direction);

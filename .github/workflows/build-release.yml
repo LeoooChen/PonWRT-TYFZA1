@@ -125,6 +125,7 @@ jobs:
         run: |
           kernel=$(python3 port/tools/project_paths.py --kernel-directory sources/openwrt)
           python3 scripts/test_board_variants.py --kernel "$kernel"
+          python3 scripts/test_fe_flow_parser.py --kernel "$kernel"
           python3 scripts/test_nand_batch.py --kernel "$kernel"
       - name: Verify LuCI scan and package regressions
         run: |
