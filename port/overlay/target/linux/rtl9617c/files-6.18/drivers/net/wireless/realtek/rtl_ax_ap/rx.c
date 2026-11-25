@@ -436,10 +436,17 @@ void rtl_ax_rx_pe_open(struct rtl_ax_rx *rx)
 	dma_wmb();
 }
 
-void rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx)
+bool rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx)
 {
-	if (rx && READ_ONCE(rx->pe.attached))
-		put_unaligned_le32(get_unaligned_le32(rx->pe.memory + 0x2114), rx->pe.memory + 0x2108);
+	u32 generation;
+
+	if (!rx || !READ_ONCE(rx->pe.attached))
+		return false;
+	generation = get_unaligned_le32(rx->pe.memory + 0x2114);
+	if (generation == get_unaligned_le32(rx->pe.memory + 0x2108))
+		return false;
+	put_unaligned_le32(generation, rx->pe.memory + 0x2108);
+	return true;
 }
 
 void rtl_ax_rx_pe_wake(struct rtl_ax_rx *rx)

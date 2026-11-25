@@ -30,6 +30,7 @@ common = r"""
 typedef uint8_t u8;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define READ_ONCE(x) (x)
 #define HZ 100
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_SECURITY_ENTRIES 128
@@ -99,6 +100,10 @@ int main(void){
  struct rtl_ax_ap r={.ap_vif=&vif,.ap_started=true,.monitor_started=true};
  r.rx_ba[0].valid=true;r.rx_ba[0].macid=7;r.rx_ba[0].tid=3;window=64;
  r.peer_authorized[7]=true;r.tx_ba[7].aggregation[0]=64;r.security_roles[7].valid=1;
+ r.monitor_started=false;
+ rtl_ax_offload_work(&w,&r.offload_work);
+ assert(!admitted);
+ r.monitor_started=true;
  retire_error=-ETIMEDOUT;
  assert(stop(&r,&hw,&sta,&p)==-ETIMEDOUT);
  assert(r.rx_ba[0].valid&&r.rx_ba[0].deleting&&queued==1&&!commands&&window==64);

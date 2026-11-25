@@ -21,6 +21,7 @@ jobs:
           python3 scripts/test_wifi_cleanup_nonblocking.py
           python3 scripts/test_radio_key_cleanup.py
           python3 scripts/test_radio_pe_waiters.py
+          python3 scripts/test_pe_event_dispatch.py
           python3 scripts/test_wifi_offload_transaction.py
           python3 scripts/test_radio_rx_ba_cleanup.py
           python3 scripts/test_radio_ni_retire_flush.py

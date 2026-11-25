@@ -13,6 +13,9 @@ args = parser.parse_args()
 source = args.source.read_text()
 start = source.index('static irqreturn_t pe_event_interrupt(')
 end = source.index('\nstatic void pe_event_release(', start)
+rx_source = (args.source.parent / 'rx.c').read_text()
+rx_start = rx_source.index('bool rtl_ax_rx_pe_event_ack(')
+rx_end = rx_source.index('\nvoid rtl_ax_rx_pe_wake(', rx_start)
 fixture = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -23,13 +26,13 @@ typedef int irqreturn_t;
 #define IRQ_HANDLED 1
 #define READ_ONCE(x) (x)
 #define PE_PROBE_MAILBOX 0x2000
-struct rtl_ax_rx { unsigned id; };
+struct rtl_ax_rx { unsigned id; struct { unsigned char *memory; bool attached; } pe; };
 struct rtl_ax_tx { struct { unsigned char *memory; } pe;
  struct rtl_ax_rx *rx; unsigned key_flush_wait; struct { unsigned ps_work; } ni; };
 static struct rtl_ax_tx *pe_event_radios[2];
 static unsigned char timer[36];
 static void *pe_event_timer = timer;
-static unsigned pe_event_interrupts, rx_ack[2], rx_wake[2], tx_wake[2], ps[2];
+static unsigned pe_event_interrupts, rx_wake[2], tx_wake[2], ps[2];
 static bool inject;
 static u32 get_unaligned_le32(const void *p) { u32 v; memcpy(&v,p,4); return v; }
 static void put_unaligned_le32(u32 v,void *p) {
@@ -39,7 +42,6 @@ static void put_unaligned_le32(u32 v,void *p) {
  }
 }
 static void writel(u32 v,void *p) { put_unaligned_le32(v,p); }
-static void rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx) { rx_ack[rx->id]++; }
 static void rtl_ax_rx_pe_wake(struct rtl_ax_rx *rx) { rx_wake[rx->id]++; }
 static void wake_up_all(unsigned *p) { tx_wake[*p]++; }
 static void schedule_work(unsigned *p) { ps[*p]++; }
@@ -50,15 +52,20 @@ static void record(unsigned id,u32 sent,u32 ack) {
  put_unaligned_le32(ack,pe_event_radios[id]->pe.memory+PE_PROBE_MAILBOX+264);
 }
 int main(void) {
- unsigned char memory[2][0x2200]={{0}};
- struct rtl_ax_rx rx[2]={{0},{1}};
+ unsigned char memory[2][0x2200]={{0}}, rx_memory[2][0x2200]={{0}};
+ struct rtl_ax_rx rx[2]={{.id=0,.pe={rx_memory[0],true}},
+  {.id=1,.pe={rx_memory[1],true}}};
  struct rtl_ax_tx tx[2]={ {.pe={memory[0]},.rx=&rx[0],.key_flush_wait=0,.ni={0}},
   {.pe={memory[1]},.rx=&rx[1],.key_flush_wait=1,.ni={1}} };
  pe_event_radios[0]=&tx[0]; pe_event_radios[1]=&tx[1];
  record(0,7,7); record(1,9,9);
+ put_unaligned_le32(1,rx_memory[0]+0x2114);
  assert(pe_event_interrupt(0,0)==IRQ_HANDLED);
- assert(rx_ack[0]==1 && rx_ack[1]==1 && rx_wake[0]==1 && rx_wake[1]==1);
+ assert(get_unaligned_le32(rx_memory[0]+0x2108)==1);
+ assert(rx_wake[0]==1 && rx_wake[1]==0);
  assert(ps[0]==0 && ps[1]==0); /* RX-only event must not queue either TX scan. */
+ pe_event_interrupt(0,0); /* A latched timer with no new generation. */
+ assert(rx_wake[0]==1 && rx_wake[1]==0);
  record(0,8,7); pe_event_interrupt(0,0);
  assert(ps[0]==1 && ps[1]==0);
  assert(get_unaligned_le32(memory[0]+PE_PROBE_MAILBOX+264)==8);
@@ -73,15 +80,16 @@ int main(void) {
         get_unaligned_le32(memory[0]+PE_PROBE_MAILBOX+276));
  pe_event_interrupt(0,0); assert(ps[0]==5); /* Arrival after ACK survives. */
  pe_event_radios[1]=0; record(0,3,2); pe_event_interrupt(0,0); assert(ps[0]==6);
- assert(tx_wake[0]==pe_event_interrupts && rx_wake[0]==pe_event_interrupts);
+ assert(tx_wake[0]==7 && rx_wake[0]==7);
+ assert(tx_wake[1]==2 && rx_wake[1]==2);
  assert(get_unaligned_le32(timer+4)==0 && get_unaligned_le32(timer+12)==0 &&
         get_unaligned_le32(timer+20)==1);
 }
 '''
 with tempfile.TemporaryDirectory(prefix='pe-event-dispatch-') as tmp:
     path = Path(tmp)
-    (path/'test.c').write_text(fixture + source[start:end] + cases)
+    (path/'test.c').write_text(fixture + rx_source[rx_start:rx_end] + source[start:end] + cases)
     subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-unused-parameter',
                     '-fsanitize=address,undefined',str(path/'test.c'),'-o',str(path/'test')],check=True)
     subprocess.run([str(path/'test')],check=True)
-print('Shared PE event: RX-only, TX-only, dual radio, wrap and racing publication PASS')
+print('Shared PE event: RX-only, TX-only, dual radio, empty IRQ, wrap and racing publication PASS')

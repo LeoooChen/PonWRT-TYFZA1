@@ -605,9 +605,16 @@ static int rtl_ax_command_flags(struct rtl_ax_ap *radio, unsigned int buffer_cla
 	if (!ret && (receive_ack || done_ack)) {
 		/* Wait for the requested firmware ACK. A receive-only command
 		 * proves acceptance; done-ACK proves execution. */
-		if (!wait_for_completion_timeout(&radio->command_done, msecs_to_jiffies(1000)))
-			ret = -ETIMEDOUT;
-		else if (radio->command_result)
+		unsigned long timeout = msecs_to_jiffies(1000);
+		unsigned long wake_after = msecs_to_jiffies(25);
+
+		if (!wait_for_completion_timeout(&radio->command_done, wake_after)) {
+			/* RPQ can have a pending ACK after a missed PE notification. */
+			rtl_ax_rx_pe_wake(radio->rx);
+			if (!wait_for_completion_timeout(&radio->command_done, timeout - wake_after))
+				ret = -ETIMEDOUT;
+		}
+		if (!ret && radio->command_result)
 			ret = -EREMOTEIO;
 	}
 	if (receive_ack || done_ack) {

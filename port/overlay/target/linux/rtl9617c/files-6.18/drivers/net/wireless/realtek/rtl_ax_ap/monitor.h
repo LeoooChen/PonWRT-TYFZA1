@@ -163,6 +163,8 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	unsigned long flags;
 	int ret;
 
+	WRITE_ONCE(radio->monitor_started, false);
+	wiphy_work_cancel(hw->wiphy, &radio->offload_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->cleanup_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->ra_work);
 	wiphy_delayed_work_cancel(hw->wiphy, &radio->dm_work);
@@ -175,7 +177,6 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	spin_lock_irqsave(&radio->command_lock, flags);
 	radio->dfs.enabled = false;
 	spin_unlock_irqrestore(&radio->command_lock, flags);
-	WRITE_ONCE(radio->monitor_started, false);
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
 	hrtimer_cancel(&radio->tx_batch_timer);
 	cancel_work_sync(&radio->tx_batch_dispatch);
@@ -404,7 +405,8 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 	unsigned int macid, index;
 	struct ieee80211_vif *vif = radio->sta_vif ? radio->sta_vif : radio->ap_vif;
 	radio->offload_retry = false;
-	if (radio->scanning || (!radio->ap_started && !radio->sta_associated)) return;
+	if (!READ_ONCE(radio->monitor_started) || radio->scanning ||
+	    (!radio->ap_started && !radio->sta_associated)) return;
 	if (vif->type == NL80211_IFTYPE_MESH_POINT) return;
 	if (radio->sta_vif && (radio->sta_4addr || ieee80211_vif_to_wdev(vif)->use_4addr)) return;
 	if (radio->sta_vif && radio->scan_offload_result) {
@@ -459,7 +461,9 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 static void rtl_ax_offload_ready(void *context)
 {
 	struct rtl_ax_ap *radio = context;
-	wiphy_work_queue(radio->hw->wiphy, &radio->offload_work);
+
+	if (READ_ONCE(radio->monitor_started))
+		wiphy_work_queue(radio->hw->wiphy, &radio->offload_work);
 }
 
 static void rtl_ax_sta_set_4addr(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -1196,7 +1200,7 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		WRITE_ONCE(radio->tx_ba[station->macid].aggregation[params->tid], aggregate);
 		rtl_ax_tx_peer_ba(radio->tx, station->macid, params->tid, aggregate);
 		rtl_ax_offload_ready(radio);
-		dev_info(&radio->pdev->dev, "native TX BA MACID%u TID%u size%u operational\n",
+		dev_dbg(&radio->pdev->dev, "native TX BA MACID%u TID%u size%u operational\n",
 			station->macid, params->tid, aggregate);
 		return 0;
 	case IEEE80211_AMPDU_TX_STOP_CONT:

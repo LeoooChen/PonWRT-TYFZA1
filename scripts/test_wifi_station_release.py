@@ -59,6 +59,7 @@ struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);void(*write32)(void*,un
 #define min_t(type,a,b) ((type)(a)<(type)(b)?(type)(a):(type)(b))
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 #define dev_info(...) ((void)0)
+#define dev_dbg(...) ((void)0)
 #define dev_err(...) ((void)0)
 #define RTL_AX_AP_TRANSPORT_H
 static void rtl_ax_store32(u8 *p,unsigned int v){memcpy(p,&v,4);}

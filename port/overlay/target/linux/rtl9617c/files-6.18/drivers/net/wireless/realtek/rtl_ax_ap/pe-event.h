@@ -17,16 +17,21 @@ static irqreturn_t pe_event_interrupt(int irq, void *context)
  for (slot = 0; slot < 2; slot++) {
   struct rtl_ax_tx *tx = READ_ONCE(pe_event_radios[slot]);
   u32 generation, acknowledged;
+  bool rx_event, tx_event;
   if (!tx) continue;
   generation = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 276);
   acknowledged = get_unaligned_le32(tx->pe.memory + PE_PROBE_MAILBOX + 264);
-  put_unaligned_le32(generation,
-   tx->pe.memory + PE_PROBE_MAILBOX + 264);
-  rtl_ax_rx_pe_event_ack(tx->rx);
-  wake_up_all(&tx->key_flush_wait);
-  rtl_ax_rx_pe_wake(tx->rx);
-  /* PE0 RX events share the timer but do not change PE1 TX/PS state. */
-  if (generation != acknowledged) schedule_work(&tx->ni.ps_work);
+  tx_event = generation != acknowledged;
+  if (tx_event)
+   put_unaligned_le32(generation, tx->pe.memory + PE_PROBE_MAILBOX + 264);
+  rx_event = rtl_ax_rx_pe_event_ack(tx->rx);
+  /* This timer is shared by both radios and both PE producers. A PE1
+   * notification can also carry an RPQ completion or firmware C2H. */
+  if (rx_event || tx_event) {
+   wake_up_all(&tx->key_flush_wait);
+   rtl_ax_rx_pe_wake(tx->rx);
+  }
+  if (tx_event) schedule_work(&tx->ni.ps_work);
  }
  return IRQ_HANDLED;
 }

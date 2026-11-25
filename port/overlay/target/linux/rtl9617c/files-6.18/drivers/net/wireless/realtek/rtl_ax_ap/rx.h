@@ -18,7 +18,7 @@ int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *memory, u32 peer_dma,
 void *rtl_ax_rx_pe_memory(struct rtl_ax_rx *rx);
 int rtl_ax_rx_pe_pause(struct rtl_ax_rx *rx);
 void rtl_ax_rx_pe_open(struct rtl_ax_rx *rx);
-void rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx);
+bool rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx);
 int rtl_ax_rx_pe_rpq_stop(struct rtl_ax_rx *rx);
 void rtl_ax_rx_pe_wake(struct rtl_ax_rx *rx);
 void rtl_ax_rx_uapsd(struct rtl_ax_rx *rx, unsigned int macid, u8 queues);
