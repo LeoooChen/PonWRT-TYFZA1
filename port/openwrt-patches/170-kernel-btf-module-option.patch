@@ -1,0 +1,18 @@
+Subject: [PATCH] config: make split kernel module BTF selectable
+
+OpenWrt shares the packaged modules between the regular and initramfs
+kernels. These kernels have different base BTF, so a board can select
+vmlinux BTF without encoding a dependency into the shared module set.
+
+--- a/config/Config-kernel.in
++++ b/config/Config-kernel.in
+@@ -576,7 +576,8 @@ config KERNEL_DEBUG_INFO_BTF
+ 	  Required to run BPF CO-RE applications.
+ 
+ config KERNEL_DEBUG_INFO_BTF_MODULES
+-	def_bool y
++	bool "Generate split BTF for kernel modules"
++	default y
+ 	depends on KERNEL_DEBUG_INFO_BTF
+ 
+ config KERNEL_MODULE_ALLOW_BTF_MISMATCH
