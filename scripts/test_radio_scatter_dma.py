@@ -46,10 +46,10 @@ static u32 rtl_ax_ap_read32(const u8 *p){u32 v;memcpy(&v,p,4);return v;}
 common += header + '\n'
 mapping = r'''
 struct scatterlist {unsigned int length;dma_addr_t dma;};
-struct sk_buff {bool nonlinear;unsigned int len,count,lengths[11];u8 *data;};
+struct sk_buff {bool nonlinear;unsigned int len,count,lengths[14];u8 *data;};
 struct pci_dev {int dev;};
 struct rtl_ax_tx {struct pci_dev *pdev;int *dma_device;};
-struct rtl_ax_tx_mapping {struct scatterlist sg[RTL_AX_TX_WP_ADDRESS_MAX];unsigned int count,dma_count;};
+struct rtl_ax_tx_mapping {struct scatterlist sg[RTL_AX_TX_MAX_DMA_SEGMENTS];unsigned int count,dma_count;};
 struct rtl_ax_tx_slot {dma_addr_t dma;unsigned int bytes;struct rtl_ax_tx_mapping *mapping;};
 static unsigned int allocated,mapped,linearized,unmapped_count;
 static bool fail_alloc,fail_map,merge;
@@ -58,8 +58,8 @@ static void *kmalloc(size_t n,int flags){(void)flags;if(fail_alloc)return NULL;a
 static void kfree(void *p){assert(allocated);allocated--;free(p);}
 static bool skb_is_nonlinear(struct sk_buff *s){return s->nonlinear;}
 static void sg_init_table(struct scatterlist *s,unsigned int n){memset(s,0,n*sizeof(*s));}
-static int skb_to_sgvec(struct sk_buff *s,struct scatterlist *sg,int offset,unsigned int len){
- assert(!offset && len==s->len);if(s->count>10)return -EMSGSIZE;
+static int rtl_ax_tx_sgvec(struct sk_buff *s,struct scatterlist *sg){
+ if(s->count>RTL_AX_TX_MAX_DMA_SEGMENTS)return -EMSGSIZE;
  for(unsigned int i=0;i<s->count;i++)sg[i].length=s->lengths[i];return s->count;
 }
 static unsigned int dma_map_sg(int *dev,struct scatterlist *sg,unsigned int n,int direction){
@@ -92,8 +92,8 @@ int main(void){
   struct rtl_ax_tx_slot slot={.bytes=skb.len};bool compact=false;
   merge=scenario==2;fail_alloc=scenario==5;fail_map=scenario==6;
   if(scenario==3){skb.count=10;for(unsigned int i=0;i<10;i++)skb.lengths[i]=i<5?2048:100;skb.len=10740;slot.bytes=skb.len;}
-  if(scenario==4)skb.count=11;
-  int result=rtl_ax_tx_map(&tx,&skb,&slot,&compact,false);
+  if(scenario==4){skb.count=11;for(unsigned int i=0;i<11;i++)skb.lengths[i]=500;skb.len=5500;slot.bytes=skb.len;}
+  int result=rtl_ax_tx_map(&tx,&skb,&slot,&compact,RTL_AX_TX_WP_ADDRESS_MAX);
   if(scenario>=5){assert(result==-ENOMEM && !allocated && !mapped);continue;}
   assert(result==(scenario==1?4:scenario==3?6:3));
   assert(compact==(scenario==3 || scenario==4));
@@ -109,8 +109,20 @@ int main(void){
   struct sk_buff skb={.nonlinear=true,.len=count*100,.count=count,.data=data};
   for(unsigned i=0;i<count;i++)skb.lengths[i]=100;
   struct rtl_ax_tx_slot slot={.bytes=skb.len};bool compact=false;
-  assert(rtl_ax_tx_map(&tx,&skb,&slot,&compact,true)==(count==9?9:1));
+  assert(rtl_ax_tx_map(&tx,&skb,&slot,&compact,RTL_AX_TX_WP_ADDRESS_MAX-1)==(count==9?9:1));
   assert(compact==(count==10));rtl_ax_tx_unmap(&tx,&slot);
+  assert(!mapped && !allocated);
+ }
+ for (unsigned int count = RTL_AX_TX_MAX_DMA_SEGMENTS;
+      count <= RTL_AX_TX_MAX_DMA_SEGMENTS + 1; count++) {
+  struct sk_buff skb={.nonlinear=true,.len=count*500,.count=count,.data=data};
+  struct rtl_ax_tx_slot slot={.bytes=skb.len};
+  bool linearized=false;
+  for (unsigned int i = 0; i < count; i++) skb.lengths[i]=500;
+  int result=rtl_ax_tx_map(&tx,&skb,&slot,&linearized,RTL_AX_TX_MAX_DMA_SEGMENTS);
+  assert(result==(count==RTL_AX_TX_MAX_DMA_SEGMENTS?13:4));
+  assert(linearized==(count>RTL_AX_TX_MAX_DMA_SEGMENTS));
+  rtl_ax_tx_unmap(&tx,&slot);
   assert(!mapped && !allocated);
  }
 }

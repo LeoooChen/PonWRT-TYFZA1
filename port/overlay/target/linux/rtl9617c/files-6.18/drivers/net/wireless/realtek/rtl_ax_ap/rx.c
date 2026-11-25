@@ -348,11 +348,25 @@ static void rtl_ax_rx_pe_deliver(struct rtl_ax_rx *rx, unsigned int work)
 	struct rtl_ax_rx_buffer payload = queue->payloads[item & ~RTL_AX_RX_WORK_OLD];
 	dma_addr_t dma = payload.dma;
 	u8 *buffer = payload.data;
+	unsigned int synced = dma_get_cache_alignment(), written;
 	int ret;
 
 	rtl_ax_rx_uplink_sync(rx);
-	dma_sync_single_for_cpu(rx->pe_device, dma, queue->buffer_bytes, DMA_BIDIRECTIONAL);
-	ret = rtl_ax_receive_packet(buffer, queue->buffer_bytes, &packet);
+	/* PE has stopped touching this completed buffer. Acquire its RXBD
+	 * length first, then only the cache lines the device actually wrote. */
+	dma_sync_single_for_cpu(rx->pe_device, dma, synced, DMA_BIDIRECTIONAL);
+	written = get_unaligned_le32(buffer) & 0x3fff;
+	if (written > queue->buffer_bytes || written < 20) {
+		ret = -EINVAL;
+	} else {
+		unsigned int span = ALIGN(written, dma_get_cache_alignment());
+		if (span > synced) {
+			dma_sync_single_range_for_cpu(rx->pe_device, dma, synced,
+				span - synced, DMA_BIDIRECTIONAL);
+			synced = span;
+		}
+		ret = rtl_ax_receive_packet(buffer, written, &packet);
+	}
 	if (!ret) {
 
 		rtl_ax_rx_dispatch(rx, !!(item & RTL_AX_RX_WORK_OLD), &packet);
@@ -360,7 +374,7 @@ static void rtl_ax_rx_pe_deliver(struct rtl_ax_rx *rx, unsigned int work)
 		rx->pe_rx_delivered++;
 	} else rx->pe_rx_malformed++;
 	/* Publish PN/SN and discard ARM cache aliases before PE recycles payload. */
-	dma_sync_single_for_device(rx->pe_device, dma, queue->buffer_bytes, DMA_BIDIRECTIONAL);
+	dma_sync_single_for_device(rx->pe_device, dma, synced, DMA_BIDIRECTIONAL);
 	dma_wmb();
 	put_unaligned_le32(BIT(30), rx->pe.memory + RTL_AX_RX_WORK_STATUS + work * 4);
 }

@@ -110,8 +110,7 @@ and sustained bidirectional 2.5G/FE forwarding still require hardware acceptance
 No physical supply-health claim follows from the register-sequence checks.
 
 The production image Makefile always passes both DTs to `make_ubi_fit.py`.
-`build_lan_ui.sh` passes both PCIe DTs to the RAM packager. Manual RAM builds
-can use `--dtb-2p5g`; single-DT diagnostic images remain available.
+Manual RAM builds can pass both PCIe DTs with `--dtb-2p5g`.
 
 ## Physical LAN ports (2026-10-25 correction)
 

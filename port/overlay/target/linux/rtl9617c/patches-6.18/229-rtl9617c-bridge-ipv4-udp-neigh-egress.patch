@@ -1,0 +1,150 @@
+--- a/include/net/neighbour.h
++++ b/include/net/neighbour.h
+@@ -495,7 +495,7 @@
+ }
+ #endif
+ 
+-static inline int neigh_hh_output(const struct hh_cache *hh, struct sk_buff *skb)
++static inline bool neigh_hh_push(const struct hh_cache *hh, struct sk_buff *skb)
+ {
+ 	unsigned int hh_alen = 0;
+ 	unsigned int seq;
+@@ -528,13 +528,25 @@
+ 
+ 	if (WARN_ON_ONCE(skb_headroom(skb) < hh_alen)) {
+ 		kfree_skb(skb);
+-		return NET_XMIT_DROP;
++		return false;
+ 	}
+ 
+ 	__skb_push(skb, hh_len);
++	return true;
++}
++
++static inline int neigh_hh_output(const struct hh_cache *hh, struct sk_buff *skb)
++{
++	if (!neigh_hh_push(hh, skb))
++		return NET_XMIT_DROP;
++
+ 	return dev_queue_xmit(skb);
+ }
+ 
++#if defined(CONFIG_ARCH_RTL9617C) && IS_BUILTIN(CONFIG_BRIDGE)
++int br_local_udp_neigh_xmit(struct sk_buff *skb);
++#endif
++
+ static inline int neigh_output(struct neighbour *n, struct sk_buff *skb,
+ 			       bool skip_cache)
+ {
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -234,6 +234,19 @@
+ 		int res;
+ 
+ 		sock_confirm_neigh(skb, neigh);
++#if defined(CONFIG_ARCH_RTL9617C) && IS_BUILTIN(CONFIG_BRIDGE)
++		if (!is_v6gw && rt->rt_type == RTN_UNICAST &&
++		    sk && sk == skb->sk && sk->sk_type == SOCK_DGRAM &&
++		    sk->sk_protocol == IPPROTO_UDP && !ip_is_fragment(ip_hdr(skb)) &&
++		    skb->dev == dev && netif_is_bridge_master(dev) &&
++		    (READ_ONCE(neigh->nud_state) & NUD_CONNECTED) &&
++		    READ_ONCE(neigh->hh.hh_len) == ETH_HLEN) {
++			res = neigh_hh_push(&neigh->hh, skb) ?
++			      br_local_udp_neigh_xmit(skb) : NET_XMIT_DROP;
++			rcu_read_unlock();
++			return res;
++		}
++#endif
+ 		/* if crossing protocols, can not use the cached header */
+ 		res = neigh_output(neigh, skb, is_v6gw);
+ 		rcu_read_unlock();
+--- a/net/bridge/br_device.c
++++ b/net/bridge/br_device.c
+@@ -16,7 +16,10 @@
+ #include <linux/netfilter_bridge.h>
+ 
+ #include <linux/uaccess.h>
++#include <net/inet_sock.h>
++#include <net/neighbour.h>
+ #include <net/netdev_lock.h>
++#include <net/sch_generic.h>
+ #include <net/sock.h>
+ 
+ #include "br_private.h"
+@@ -121,6 +124,8 @@
+ #define BR_LOCAL_UDP_BURST_NS (64 * NSEC_PER_USEC)
+ #define BR_LOCAL_UDP_BATCH_NS (360 * NSEC_PER_USEC)
+ 
++static DEFINE_PER_CPU(struct sk_buff *, br_resuming_udp_xmit);
++
+ static enum hrtimer_restart br_local_udp_timer(struct hrtimer *timer)
+ {
+ 	struct net_bridge *br = container_of(timer, struct net_bridge, local_udp_timer);
+@@ -142,8 +147,15 @@
+ 	skb_queue_splice_init(&br->local_udp_queue, &batch);
+ 	spin_unlock(&br->local_udp_queue.lock);
+ 
+-	while ((skb = __skb_dequeue(&batch)))
+-		br_dev_xmit_now(skb, br->dev);
++	while ((skb = __skb_dequeue(&batch))) {
++		if (skb_mac_header_was_set(skb)) {
++			br_dev_xmit_now(skb, br->dev);
++		} else {
++			this_cpu_write(br_resuming_udp_xmit, skb);
++			dev_queue_xmit(skb);
++			this_cpu_write(br_resuming_udp_xmit, NULL);
++		}
++	}
+ }
+ 
+ static bool br_local_udp_enqueue(struct net_bridge *br, struct sk_buff *skb)
+@@ -187,6 +199,38 @@
+ 	return true;
+ }
+ 
++int br_local_udp_neigh_xmit(struct sk_buff *skb)
++{
++	struct net_device *dev = skb->dev;
++	const struct Qdisc *qdisc;
++	bool queued = false;
++
++	if (inet_test_bit(RECVERR, skb->sk) ||
++	    skb_mac_header_was_set(skb) || skb_is_gso(skb) ||
++	    skb_cloned(skb) || skb_is_nonlinear(skb) ||
++	    skb_vlan_tag_present(skb) ||
++	    skb_shinfo(skb)->tx_flags)
++		return dev_queue_xmit(skb);
++
++	rcu_read_lock_bh();
++	qdisc = rcu_dereference_bh(netdev_get_tx_queue(dev, 0)->qdisc);
++	if (dev->real_num_tx_queues != 1 || qdisc->enqueue || !(dev->flags & IFF_UP))
++		goto out;
++#ifdef CONFIG_NET_XGRESS
++	if (rcu_access_pointer(dev->tcx_egress))
++		goto out;
++#endif
++#ifdef CONFIG_NETFILTER_EGRESS
++	if (rcu_access_pointer(dev->nf_hooks_egress))
++		goto out;
++#endif
++	skb_dst_force(skb);
++	queued = br_local_udp_enqueue(netdev_priv(dev), skb);
++out:
++	rcu_read_unlock_bh();
++	return queued ? NET_XMIT_SUCCESS : dev_queue_xmit(skb);
++}
++
+ static void br_local_udp_stop(struct net_bridge *br)
+ {
+ 	struct sk_buff_head pending;
+@@ -204,7 +248,9 @@
+ netdev_tx_t br_dev_xmit(struct sk_buff *skb, struct net_device *dev)
+ {
+ #ifdef CONFIG_ARCH_RTL9617C
+-	if (br_local_udp_enqueue(netdev_priv(dev), skb))
++	if (skb_mac_header_was_set(skb) &&
++	    this_cpu_read(br_resuming_udp_xmit) != skb &&
++	    br_local_udp_enqueue(netdev_priv(dev), skb))
+ 		return NETDEV_TX_OK;
+ #endif
+ 	return br_dev_xmit_now(skb, dev);

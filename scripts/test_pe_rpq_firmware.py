@@ -4,13 +4,12 @@ import json
 from pe_tx_ownership_fixture import initialize, map_report
 from pathlib import Path
 import struct
-import subprocess
 
 import sys
 root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(root / 'analysis/python-deps'))
 from unicorn import Uc, UC_ARCH_MIPS, UC_MODE_MIPS32, UC_MODE_LITTLE_ENDIAN, UC_HOOK_MEM_WRITE, UC_HOOK_MEM_READ, UC_HOOK_CODE
-from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC, UC_MIPS_REG_RA
+from unicorn.mips_const import UC_MIPS_REG_A0, UC_MIPS_REG_SP, UC_MIPS_REG_PC
 
 binary = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio-production/pe-tx.bin').read_bytes()
 base, mailbox, ring, payload, bar, ni = (0x04000000, 0x04002000, 0x05000000,
@@ -285,6 +284,10 @@ assert bytes(u.mem_read(forward + slot * 1024, len(raw))) == raw
 
 # The other physical queue sends radar reports through its ARM slow ring.
 # An old report returns its RXBD; the first report on the new channel is kept.
+# Pause before publishing the RX DMA table, then resume to load PE local memory.
+put(mailbox + 3 * 4, 2)
+run()
+assert get(mailbox + 4 * 4) == 2
 rx_addresses = 0x06600000
 u.mem_map(rx_addresses, 4096)
 for id, offset in enumerate((0, 1, 3, 2)):
@@ -299,6 +302,7 @@ put(base + 0x1a404, 3)
 put(base + 0x17400, 0)
 put(base + 0x17404, 1)
 put(mailbox + 172 * 4, 1 | 256)
+put(mailbox + 3 * 4, 3)
 for scan in (0, 1):
     raw = bytearray(20 + len(dfs))
     struct.pack_into('<II', raw, 0, len(raw) | 0xc000 | (scan + 1) << 16,
@@ -307,16 +311,6 @@ for scan in (0, 1):
     u.mem_write(payload + scan * 12288, bytes(raw))
     put(bar + 0x1218, (scan + 1) << 16)
     run()
-    # RX capture and ordered processing now run on separate physical PEs.
-    saved = u.context_save()
-    elf = (Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'artifacts/pe-radio-production/pe-tx.bin').with_name('pe-wd.elf')
-    symbols = {v[2]: int(v[0], 16) for line in subprocess.check_output(['llvm-nm-18', str(elf)], text=True).splitlines() if len(v := line.split()) == 3}
-    u.reg_write(UC_MIPS_REG_A0, mailbox | 0xa0000000)
-    u.reg_write(UC_MIPS_REG_SP, (base + 0x1dff0) | 0xa0000000)
-    u.reg_write(UC_MIPS_REG_RA, 0xbfc0fff0)
-    u.emu_start(symbols['pe_rx_work'], 0xbfc0fff0, count=10000)
-    assert u.reg_read(UC_MIPS_REG_PC) == 0xbfc0fff0
-    u.context_restore(saved)
     assert get(mailbox + 324) == scan + 1
     assert get(mailbox + 376) == scan
 assert get(mailbox + 172 * 4) == 0

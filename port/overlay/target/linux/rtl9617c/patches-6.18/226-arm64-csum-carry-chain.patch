@@ -1,0 +1,65 @@
+--- a/arch/arm64/lib/csum.c
++++ b/arch/arm64/lib/csum.c
+@@ -59,31 +59,37 @@
+ 	 * main loop strictly excludes the tail, so the second loop will always
+ 	 * run at least once.
+ 	 */
+-	while (unlikely(len > 64)) {
+-		__uint128_t tmp1, tmp2, tmp3, tmp4;
+-
+-		tmp1 = *(__uint128_t *)ptr;
+-		tmp2 = *(__uint128_t *)(ptr + 2);
+-		tmp3 = *(__uint128_t *)(ptr + 4);
+-		tmp4 = *(__uint128_t *)(ptr + 6);
+-
+-		len -= 64;
+-		ptr += 8;
+-
+-		/* This is the "don't dump the carry flag into a GPR" idiom */
+-		tmp1 += (tmp1 >> 64) | (tmp1 << 64);
+-		tmp2 += (tmp2 >> 64) | (tmp2 << 64);
+-		tmp3 += (tmp3 >> 64) | (tmp3 << 64);
+-		tmp4 += (tmp4 >> 64) | (tmp4 << 64);
+-		tmp1 = ((tmp1 >> 64) << 64) | (tmp2 >> 64);
+-		tmp1 += (tmp1 >> 64) | (tmp1 << 64);
+-		tmp3 = ((tmp3 >> 64) << 64) | (tmp4 >> 64);
+-		tmp3 += (tmp3 >> 64) | (tmp3 << 64);
+-		tmp1 = ((tmp1 >> 64) << 64) | (tmp3 >> 64);
+-		tmp1 += (tmp1 >> 64) | (tmp1 << 64);
+-		tmp1 = ((tmp1 >> 64) << 64) | sum64;
+-		tmp1 += (tmp1 >> 64) | (tmp1 << 64);
+-		sum64 = tmp1 >> 64;
++	if (unlikely(len > 64)) {
++		unsigned int blocks = (len - 1) / 64;
++		unsigned int remaining = blocks;
++		u64 first, second, third, fourth;
++
++		asm volatile(
++			"adds %x[sum], xzr, xzr\n"
++			"1:\n"
++			"ldp %x[one], %x[two], [%[ptr]]\n"
++			"ldp %x[three], %x[four], [%[ptr], #16]\n"
++			"adcs %x[sum], %x[sum], %x[one]\n"
++			"adcs %x[sum], %x[sum], %x[two]\n"
++			"ldp %x[one], %x[two], [%[ptr], #32]\n"
++			"adcs %x[sum], %x[sum], %x[three]\n"
++			"adcs %x[sum], %x[sum], %x[four]\n"
++			"ldp %x[three], %x[four], [%[ptr], #48]\n"
++			"adcs %x[sum], %x[sum], %x[one]\n"
++			"adcs %x[sum], %x[sum], %x[two]\n"
++			"adcs %x[sum], %x[sum], %x[three]\n"
++			"adcs %x[sum], %x[sum], %x[four]\n"
++			"add %[ptr], %[ptr], #64\n"
++			"sub %w[left], %w[left], #1\n"
++			"cbnz %w[left], 1b\n"
++			"adc %x[sum], %x[sum], xzr\n"
++			: [ptr] "+&r" (ptr), [left] "+&r" (remaining),
++			  [sum] "=&r" (sum64), [one] "=&r" (first),
++			  [two] "=&r" (second), [three] "=&r" (third),
++			  [four] "=&r" (fourth)
++			:
++			: "cc", "memory");
++		len -= blocks * 64;
+ 	}
+ 	while (len > 8) {
+ 		__uint128_t tmp;

@@ -36,12 +36,16 @@ for name in ('rtl_ax_tx_flush_key', 'rtl_ax_tx_key_pending', 'rtl_ax_drop_statio
 common = common.replace(' int tx,rx,cleanup_work;', ' struct rtl_ax_tx *tx;int rx,cleanup_work;')
 common = common.replace('int tx,unsigned', 'struct rtl_ax_tx *tx,unsigned')
 common = common.replace('struct rtl_ax_ap {', 'struct rtl_ax_tx;\nstruct rtl_ax_ap {')
+common = common.replace(' struct {bool short_wd;}tx_ba[128];\n', '')
 common = common.replace('struct rtl_ax_security_role security_roles[128];',
-    'struct rtl_ax_security_role security_roles[128]; unsigned chip; void *ap_vif;'
-    'struct {unsigned stopping,flushing,aggregation[16];u8 address[6];}tx_ba[128];')
+    'struct rtl_ax_security_role security_roles[128]; unsigned chip; void *ap_vif,*sta_vif;'
+    'struct {unsigned stopping,flushing,aggregation[16],short_wd_window;u8 address[6];bool short_wd;}tx_ba[128];')
 preamble = r'''
 #define RTL_AX_TX_ENTRIES 256
 #define RTL_AX_8852C 0x52
+#define min(a,b) ((a)<(b)?(a):(b))
+#define GENMASK(h,l) ((~0U << (l)) & (~0U >> (31-(h))))
+static void rtl_ax_station_cmac_client(u8 *p){(void)p;assert(0);}
 #define max_t(type,a,b) ((type)(a)>(type)(b)?(type)(a):(type)(b))
 static unsigned ba_done;
 static void ieee80211_stop_tx_ba_cb_irqsafe(void *vif,u8 *address,unsigned tid){(void)vif;(void)address;(void)tid;ba_done++;}
@@ -65,24 +69,29 @@ common = common.replace('assert(cat==1 && !receive && done);', 'assert(cat==1 &&
 common = common.replace('if(cls==5){', 'if(cls==5 && func==2)return 0;\n if(cls==5){')
 common = common.replace('if(cls==8||cls==6)return 0;', 'if(cls==8||cls==6||cls==9)return 0;')
 tx, monitor = read('tx.c'), read('monitor.h')
-code = common + preamble
+fixture_owner = "RTL_AX_NI_OWNERS" if "RTL_AX_NI_OWNERS" in tx else "0xc400"
+ownership = driver / 'tx-ownership.h'
+code = common + f'#include "{ownership}"\n#define FIXTURE_NI_OWNERS {fixture_owner}\n' + preamble
 for name in ('rtl_ax_tx_pe_pending', 'rtl_ax_tx_key_pending', 'rtl_ax_tx_waiters',
              'rtl_ax_tx_flush_key', 'rtl_ax_tx_station_pending', 'rtl_ax_tx_wait_station'):
     code += function(tx, name)
 code += function(monitor, 'rtl_ax_drop_station')
+if 'static void rtl_ax_ba_cmac(' in monitor:
+    code += function(monitor, 'rtl_ax_ba_cmac')
 code += function(monitor, 'rtl_ax_tx_ba_finish')
 code += function(monitor, 'rtl_ax_security_cleanup')
 code += function(monitor, 'rtl_ax_set_key')
 code += r'''
 int main(void){
- u8 memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
- struct rtl_ax_ap r={.tx=&tx};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
+ u8 memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
+ struct ieee80211_vif vif={};
+ struct rtl_ax_ap r={.tx=&tx,.ap_vif=&vif};struct ieee80211_hw hw={&r,0};struct ieee80211_sta sta={{{7}}};
  reset();
  /* GTK deletion can fail without an NI peer retirement: keep the real ARM WP. */
  struct ieee80211_key_conf key=new_key(1,false);
- assert(!rtl_ax_set_key(&hw,SET_KEY,0,0,&key));
+ assert(!rtl_ax_set_key(&hw,SET_KEY,&vif,0,&key));
  tx.pending[0]=true;tx.slots[0].encrypted=true;tx.slots[0].key_index=key.hw_key_idx;tx.slots[0].macid=7;
- assert(rtl_ax_set_key(&hw,DISABLE_KEY,0,0,&key)==-ETIMEDOUT);
+ assert(rtl_ax_set_key(&hw,DISABLE_KEY,&vif,0,&key)==-ETIMEDOUT);
  unsigned initial_waits=waits;assert(initial_waits==1 && r.security_deleting[0]);
  for(unsigned i=0;i<100;i++){
   assert(rtl_ax_security_cleanup(&r));
@@ -92,31 +101,31 @@ int main(void){
  assert(waits==initial_waits); // baseline adds 100 seconds under wiphy
  /* Neither an unrelated key nor another station is stalled by that owner. */
  struct ieee80211_key_conf next=new_key(0,true);
- assert(!rtl_ax_set_key(&hw,SET_KEY,0,&sta,&next) && next.hw_key_idx==1);
+ assert(!rtl_ax_set_key(&hw,SET_KEY,&vif,&sta,&next) && next.hw_key_idx==1);
  tx.pending[0]=false;
  assert(!rtl_ax_security_cleanup(&r) && !r.security_ids[0] && !hardware_cam[0]);
  assert(r.security_ids[1] && hardware_cam[1]);
  /* Real PE owner metadata gates key and STA cleanup until its completion bit. */
- put_unaligned_le32(0x6000000,memory+0xc400);
- put_unaligned_le32(7<<8|1<<17,memory+0xc404);
+ put_unaligned_le32(0x6000000,memory+FIXTURE_NI_OWNERS);
+ put_unaligned_le32(7<<8|1<<17,memory+FIXTURE_NI_OWNERS+4);
  assert(rtl_ax_tx_key_pending(&tx,1));
  assert(!rtl_ax_tx_key_pending(&tx,2));
  unsigned before=waits;
  for(unsigned i=0;i<100;i++){
   assert(rtl_ax_drop_station(&r,7,IEEE80211_NUM_TIDS)==-EAGAIN);
-  assert(get_unaligned_le32(memory+0xc400)==0x6000000);
+  assert(get_unaligned_le32(memory+FIXTURE_NI_OWNERS)==0x6000000);
  }
  assert(waits==before && drops==400);
  r.tx_ba[7].stopping=1;
  for(unsigned i=0;i<100;i++)assert(rtl_ax_tx_ba_finish(&r,7,0)==-EAGAIN);
  assert(waits==before && r.tx_ba[7].stopping && !ba_done);
  assert(!rtl_ax_drop_station(&r,8,IEEE80211_NUM_TIDS));
- put_unaligned_le32(BIT(31)|7<<8|1<<17,memory+0xc404);
+ put_unaligned_le32(BIT(31)|7<<8|1<<17,memory+FIXTURE_NI_OWNERS+4);
  assert(!rtl_ax_drop_station(&r,7,IEEE80211_NUM_TIDS));
  assert(!rtl_ax_tx_key_pending(&tx,1));
  assert(!rtl_ax_tx_ba_finish(&r,7,0) && !r.tx_ba[7].stopping && ba_done==1);
  /* Blocking wait API remains for first deletion and BA SSN setup. */
- put_unaligned_le32(7<<8|1<<17,memory+0xc404);
+ put_unaligned_le32(7<<8|1<<17,memory+FIXTURE_NI_OWNERS+4);
  assert(rtl_ax_tx_wait_station(&tx,7,IEEE80211_NUM_TIDS)==-ETIMEDOUT);
  assert(!get_unaligned_le32(memory+PE_PROBE_MAILBOX+312));
  puts("PASS: 100 lost ARM-key, PE-STA and BA completion retries never sleep; ownership and unrelated clients survive; late RPQ resumes cleanup");

@@ -70,6 +70,18 @@ static inline void rtl_ax_station_preload(u8 out[68], unsigned int macid, bool e
 	rtl_ax_store32(out + 44, BIT(15));
 }
 
+/* A 32-byte WD obtains the HE retry floor, density and LDPC from CCTL V1. */
+static inline void rtl_ax_station_short_wd(u8 out[68], bool enable, unsigned int density)
+{
+	rtl_ax_store32(out + 4, density << 28);
+	rtl_ax_store32(out + 8, enable ? 0x180 : 0);
+	rtl_ax_store32(out + 20, enable ? BIT(14) : 0);
+	rtl_ax_store32(out + 36, 0xf0000000);
+	rtl_ax_store32(out + 40, 0x1ff);
+	rtl_ax_store32(out + 44, rtl_ax_ap_read32(out + 44) | BIT(7));
+	rtl_ax_store32(out + 52, BIT(14));
+}
+
 static inline u8 rtl_ax_he_padding(const u8 *phy, const u8 *ppe, unsigned int nss)
 {
 	u8 ru_mask, padding = 0x55;

@@ -12,6 +12,22 @@ esac
 # Keep the NI receive interrupt off the CPU servicing the radio interrupts.
 for irq in $(awk '$NF == "rtl9617c-rx0" { sub(":", "", $1); print $1 }' /proc/interrupts); do
 	echo "$ni_cpus" > "/proc/irq/$irq/smp_affinity"
+	napi=/sys/class/net/lan4/threaded
+	case "$ni_cpus" in
+		4)
+			echo 1 > "$napi"
+			for process in /proc/[0-9]*; do
+				read -r name 2>/dev/null < "$process/comm" || continue
+				case "$name" in
+					napi/lan4-*)
+						taskset -p "$ni_cpus" "${process##*/}" > /dev/null
+						break
+						;;
+				esac
+			done
+			;;
+		*) echo 0 > "$napi" ;;
+	esac
 done
 
 case "$1" in
@@ -19,13 +35,13 @@ case "$1" in
 	*) exit 0 ;;
 esac
 
-# NI RX runs on CPU2. Deliver CPU-bound Wi-Fi misses to CPU3 so socket
-# processing cannot hold up the next EPP drain. PE-forwarded frames bypass RPS.
+# Balance local Wi-Fi ingress across CPU1 and CPU3. CPU2 polls the NI
+# queue and CPU0 services the radio interrupts. PE forwarding bypasses RPS.
 for driver in /sys/class/net/*/device/driver; do
 	case "$(readlink "$driver")" in
 		*/rtl_ax_ap)
 			for queue in "${driver%/device/driver}"/queues/rx-*/rps_cpus; do
-				echo 8 > "$queue"
+				echo a > "$queue"
 			done
 			;;
 	esac

@@ -62,10 +62,10 @@ struct args {struct rtl_ax_tx *tx;bool key;int result;};
 static void *waiter(void *p){struct args *a=p;a->result=a->key?rtl_ax_tx_flush_key(a->tx,43):rtl_ax_tx_wait_station(a->tx,7,0);return 0;}
 static u32 count(struct rtl_ax_tx *tx){pthread_mutex_lock(&tx->lock);u32 n=get_unaligned_le32(tx->pe.memory+0x2138);pthread_mutex_unlock(&tx->lock);return n;}
 int main(void){
- unsigned char memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,
+ unsigned char memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,
  .key_flush_wait={PTHREAD_MUTEX_INITIALIZER,PTHREAD_COND_INITIALIZER},.pe={memory}};
- put_unaligned_le32(0x6000000,memory+0xc400);put_unaligned_le32(7<<8|42<<17,memory+0xc404);
- put_unaligned_le32(0x6001000,memory+0xc408);put_unaligned_le32(8<<8|43<<17,memory+0xc40c);
+ put_unaligned_le32(0x6000000,memory+FIXTURE_NI_OWNERS+0);put_unaligned_le32(7<<8|42<<17,memory+FIXTURE_NI_OWNERS+4);
+ put_unaligned_le32(0x6001000,memory+FIXTURE_NI_OWNERS+8);put_unaligned_le32(8<<8|43<<17,memory+FIXTURE_NI_OWNERS+12);
  put_unaligned_le32(1,memory+0x1101c);
  struct args a={&tx,false,-1},b={&tx,true,-1};pthread_t t1,t2;
  assert(!pthread_create(&t1,0,waiter,&a));assert(!pthread_create(&t2,0,waiter,&b));
@@ -85,10 +85,10 @@ int main(void){
  assert(armed==2);
 #endif
  /* Device owner updates and explicit wake use one modeled waitqueue lock. */
- pthread_mutex_lock(&tx.key_flush_wait.lock);put_unaligned_le32(BIT(31)|7<<8|42<<17,memory+0xc404);
+ pthread_mutex_lock(&tx.key_flush_wait.lock);put_unaligned_le32(BIT(31)|7<<8|42<<17,memory+FIXTURE_NI_OWNERS+4);
  pthread_cond_broadcast(&tx.key_flush_wait.condition);pthread_mutex_unlock(&tx.key_flush_wait.lock);
  assert(!pthread_join(t1,0)&&!a.result);unsigned left=count(&tx);assert(left==1);
- pthread_mutex_lock(&tx.key_flush_wait.lock);put_unaligned_le32(BIT(31)|8<<8|43<<17,memory+0xc40c);
+ pthread_mutex_lock(&tx.key_flush_wait.lock);put_unaligned_le32(BIT(31)|8<<8|43<<17,memory+FIXTURE_NI_OWNERS+12);
  pthread_cond_broadcast(&tx.key_flush_wait.condition);pthread_mutex_unlock(&tx.key_flush_wait.lock);
  assert(!pthread_join(t2,0)&&!b.result);unsigned after=count(&tx);
 #ifdef EXPECT_OLD
@@ -96,14 +96,17 @@ int main(void){
 #else
  assert(after==0);
  /* Timeout must release the host's subscription, too. */
- put_unaligned_le32(8<<8|43<<17,memory+0xc40c);
+ put_unaligned_le32(8<<8|43<<17,memory+FIXTURE_NI_OWNERS+12);
  assert(rtl_ax_tx_flush_key(&tx,43)==-ETIMEDOUT&&count(&tx)==0);
- tx.pe_active=false;put_unaligned_le32(0,memory+0xc408);
+ tx.pe_active=false;put_unaligned_le32(0,memory+FIXTURE_NI_OWNERS+8);
  assert(!rtl_ax_tx_flush_key(&tx,43)&&count(&tx)==0);
 #endif
  printf("{\"armed_waiters\":%u,\"after_first_waiter\":%u,\"after_both_waiters\":%u}\n",armed,left,after);
 }
 '''
+ownership = p.with_name('tx-ownership.h')
+fixture_owner = "RTL_AX_NI_OWNERS" if "RTL_AX_NI_OWNERS" in source else "0xc400"
+common = f'#include "{ownership}"\n#define FIXTURE_NI_OWNERS {fixture_owner}\n' + common
 names = ['rtl_ax_tx_pe_pending', 'rtl_ax_tx_key_pending', 'rtl_ax_tx_station_pending']
 if not args.before:
     names += ['rtl_ax_tx_waiters']

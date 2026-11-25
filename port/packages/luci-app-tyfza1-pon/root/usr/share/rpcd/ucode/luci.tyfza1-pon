@@ -105,6 +105,7 @@ const methods = {
 				traffic: fields(readfile(device + 'traffic')),
 				fe: fields(readfile(device + 'fe')),
 				optical: fields(readfile(device + 'optical')),
+				transceiver: fields(readfile(device + 'transceiver')),
 				fec: fields(readfile(device + 'fec')),
 				puc: readfile(device + 'puc'),
 				pdc: readfile(device + 'pdc'),

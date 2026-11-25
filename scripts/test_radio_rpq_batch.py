@@ -29,7 +29,6 @@ typedef uint8_t u8; typedef uint16_t __le16; typedef uint32_t u32; typedef uint6
 #define RTL_AX_TX_ENTRIES 256
 #define RTL_AX_TX_PAGES 384
 #define RTL_AX_TX_RINGS 6
-#define RTL_AX_NI_PS_WP_GENERATION 0x15000
 #define PE_PROBE_MAILBOX 0x2000
 #define NL80211_BAND_5GHZ 1
 #define IEEE80211_TX_CTL_HW_80211_ENCAP BIT(0)
@@ -49,13 +48,13 @@ struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;};
 struct ieee80211_hdr {__le16 fc,duration;u8 addresses[18];__le16 seq_ctrl;};
 struct ieee80211_sta {int unused;};struct ieee80211_hw {int unused;};
 struct ieee80211_tx_status {struct sk_buff *skb;struct ieee80211_tx_info *info;struct ieee80211_sta *sta;};
-struct rtl_ax_tx_slot {struct sk_buff *skb;unsigned ring,macid;bool pe_sequence,firmware_rate;};
+struct rtl_ax_tx_slot {struct sk_buff *skb;unsigned ring,macid;bool pe_sequence,firmware_rate,quota_counted;};
 struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed;};
 /* The EWMA arithmetic is covered by test_radio_mesh_metric; record each
  * update here to compare RPQ dispatch ordering and ownership. */
 struct ewma_rtl_ax_success {unsigned total,calls;};
 static void ewma_rtl_ax_success_add(struct ewma_rtl_ax_success *p,unsigned value){p->total+=value;p->calls++;}
-struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];int lock,key_flush_wait;struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
+struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];int lock,key_flush_wait;u32 ac_pending[128][6];struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
  bool pe_active,running,queues_paused,queues_stopped,peer_asleep[128],pending[256];
  struct ieee80211_hw *hw;struct rtl_ax_tx_slot slots[256];
  unsigned occupied,last_report,unmatched,completed,completed_ring[6],status_count[8],polluted,queue_wakes;
@@ -73,6 +72,9 @@ static void rcu_read_unlock(void){assert(rcu);rcu--;}
 #define spin_unlock_irqrestore(p,f) ((void)(p),(void)(f),assert(locks),locks--)
 #define test_bit(id,p) ((p)[id])
 #define __clear_bit(id,p) ((p)[id]=false)
+#define dma_wmb() ((void)0)
+static void put_unaligned_le16(__le16 v,void *p){memcpy(p,&v,2);}
+static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 static u32 get_unaligned_le32(const void*p){u32 v;memcpy(&v,p,4);return v;}
 static __le16 get_unaligned(const __le16*p){__le16 v;memcpy(&v,p,2);return v;}
 #define rtl_ax_ap_read32(p) get_unaligned_le32(p)
@@ -97,7 +99,7 @@ struct result {struct ewma_rtl_ax_success peer_success[128];unsigned completed,o
  unsigned completed_ring[6],status_count[8],flags[256],seq[256];
  unsigned wakes,unmaps,returns,raws,pe_done,ps_done,scheduled,waiters,lookups;};
 static struct result run(bool batching,unsigned count,unsigned mode){
- static u8 mem[0x20000],headers[256*128];static struct sk_buff skbs[256];
+ static u8 mem[0x80000],headers[256*128];static struct sk_buff skbs[256];
  static u32 reports[264];struct ieee80211_hw hw={};struct rtl_ax_tx t={.pe_active=true,.running=true,.queues_stopped=true,.hw=&hw,.pe={mem},.headers=headers};
  memset(mem,0,sizeof(mem));memset(headers,0,sizeof(headers));memset(skbs,0,sizeof(skbs));
  bh=rcu=locks=wakes=unmaps=returns=raws=pe_done=ps_done=scheduled=waiters=lookups=dispatches=0;
@@ -110,13 +112,17 @@ static struct result run(bool batching,unsigned count,unsigned mode){
   skbs[n].data[0]=n;
   skbs[n].cb.flags=((mode&32)&&n%2?0:IEEE80211_TX_CTL_HW_80211_ENCAP)|((n%3)?IEEE80211_TX_CTL_AMPDU:0)|((n%5)?0:IEEE80211_TX_CTL_NO_ACK);
   t.slots[n]=(struct rtl_ax_tx_slot){.skb=&skbs[n],.ring=ring,.macid=n%128,.pe_sequence=(n%2)==1};t.pending[n]=true;
+  put_unaligned_le32(n+1,mem+RTL_AX_WP_TAG_MAP+(ring*RTL_AX_WP_TAG_STRIDE+n)*4);
   t.peer_asleep[n%128]=!!(n%3);__le16 seq=0xabc0+n;memcpy(headers+n*128+22,&seq,2);
   u32 ra=BIT(17);memcpy(mem+0xe200+(n%128)*4,&ra,4);
  }
  reports[count]=1|400<<16;reports[count+1]=1|7<<8|254<<16;
  reports[count+2]=count?reports[0]:1; // duplicate or empty pending ID
  unsigned member=127,meta=(3<<8)|BIT(16),generation=77,rate=BIT(20)|0x80;
- memcpy(mem+0xc400+member*8+4,&meta,4);memcpy(mem+RTL_AX_NI_PS_WP_GENERATION+member*4,&generation,4);memcpy(mem+0xe000+member*4,&rate,4);
+ put_unaligned_le32(384,mem+RTL_AX_WP_TAG_MAP+383*4);
+ put_unaligned_le32(meta,mem+RTL_AX_NI_OWNERS+member*8+4);
+ put_unaligned_le32(generation,mem+RTL_AX_NI_GENERATIONS+member*4);
+ put_unaligned_le32(rate,mem+RTL_AX_NI_RATES+member*4);
  reports[count+3]=1|383<<16;
  struct rtl_ax_rx_packet packet={.bytes=(count+4)*4+(mode%4),.payload=(void*)reports};
  assert(!(batching?new_report(&t,&hw,&packet):old_report(&t,&hw,&packet)));
@@ -137,6 +143,6 @@ int main(void){unsigned cases=0;for(unsigned n=0;n<=256;n++)for(unsigned mode=0;
 '''
 with tempfile.TemporaryDirectory(prefix='rpq-batch-') as tmp:
     work=Path(tmp)
-    (work/'test.c').write_text(code)
+    (work/'test.c').write_text(f'#include "{path.with_name('tx-ownership.h')}"\n' + code)
     subprocess.run(['cc','-O1','-g','-Wall','-Wextra','-Werror','-fsanitize=address,undefined',str(work/'test.c'),'-o',str(work/'test')],check=True)
     subprocess.run([str(work/'test')],check=True)

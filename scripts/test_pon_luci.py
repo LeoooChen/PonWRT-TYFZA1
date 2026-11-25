@@ -18,6 +18,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
         "active_serial_number": "414243441234abcd\n",
         "state": "family=epon signal_loss=1 pcs10g_sync=0 pcs1g_sync=0 registered_llids=00000000\n",
         "serdes": "mode=epon-d10g configured=1 error=0 rx_los=1\n",
+        "transceiver": "temperature_raw=8110 voltage_raw=33594 bias_raw=7206 tx_power_raw=25350 rx_power_raw=93 control=00/00/00/00\n",
         "bosa": "configured=0 model=205 eeprom=0 writes=599 error=-6 identity=47/39/37\n",
         "traffic": "enabled=1 rx=0 tx=0 carrier=0\n",
         "mpcp": "registered=00000000 attempts=0\n",
@@ -65,6 +66,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     assert observed["mpcp"]["registered"] == "00000000"
     assert observed["traffic"]["rx"] == "0"
     assert observed["bosa"]["error"] == "-6"
+    assert observed["transceiver"]["rx_power_raw"] == "93" and observed["transceiver"]["tx_power_raw"] == "25350"
     assert observed["lan_rx_errors"] == "0"
     assert observed['deepq']['configured'] == '1' and observed['wan_rx_packets'] == '0'
     assert observed['wan_tx_packets'] == '17'
@@ -115,7 +117,7 @@ with tempfile.TemporaryDirectory(dir=root / "artifacts") as d:
     deepq.unlink()
     absent = json.loads(subprocess.check_output([str(ucode), str(program)], text=True))
     assert absent["state"] is None and absent["serdes"] is None and absent["mpcp"] is None
-    assert absent["bosa"] is None and absent["traffic"] is None
+    assert absent["bosa"] is None and absent["transceiver"] is None and absent["traffic"] is None
     assert absent['fe'] is None
     assert absent['oam_ports'] == []
     assert absent['omci'] is None and absent['data_path_raw'] is None

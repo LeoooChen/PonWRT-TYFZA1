@@ -36,19 +36,31 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define IEEE80211_NUM_TIDS 16
 #define RTL_AX_CLIENT_MACID 1
 #define NL80211_IFTYPE_MESH_POINT 7
-struct ieee80211_vif {int type;};
+struct ieee80211_vif {int type;u8 addr[6];};
 #define min(a,b) ((a)<(b)?(a):(b))
 #define dev_info(...) ((void)0)
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
 struct wiphy {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2];};
-struct rtl_ax_station {unsigned macid;};
+struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
+struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;
+ struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
+static unsigned long jiffies;
+#define time_after_eq(a,b) ((long)((a)-(b))>=0)
+static void rcu_read_lock(void) {}
+static void rcu_read_unlock(void) {}
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *peer,const u8 *self)
+{ (void)hw;(void)peer;(void)self;return NULL; }
+static int ieee80211_start_tx_ba_session(struct ieee80211_sta *sta,unsigned tid,unsigned timeout)
+{ (void)sta;(void)tid;(void)timeout;assert(0);return 0; }
+static u8 rtl_ax_tx_active_tids(int tx,unsigned macid){(void)tx;(void)macid;return 0;}
 struct rtl_ax_ap {
+ struct ieee80211_hw *hw;
  struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];
  unsigned rx_ba_stopped;int rx_ba_result,tx,rx;
  bool ap_started,monitor_started,offload_retry,peer_authorized[128],scanning,sta_associated,sta_4addr;
- struct {unsigned aggregation[16],stopping;}tx_ba[128];
+ struct {unsigned aggregation[16],stopping;u8 address[6];}tx_ba[128];
  struct {bool pending;}retired_stations[128];
  struct rtl_ax_security_role security_roles[128];unsigned security_unlink[128];
  struct ieee80211_vif *ap_vif,*sta_vif;int offload_result,scan_offload_result;unsigned offload_started;
@@ -82,7 +94,7 @@ common += "\nstatic int stop(struct rtl_ax_ap *radio,struct ieee80211_hw *hw,str
 common += function("rtl_ax_cleanup_work") + function("rtl_ax_offload_work")
 common += r"""
 int main(void){
- struct wiphy w={0};struct ieee80211_hw hw={&w};struct rtl_ax_station sta={7};struct params p={3};
+ struct wiphy w={0};struct ieee80211_hw hw={&w};struct rtl_ax_station sta={.macid=7};struct params p={3};
  struct ieee80211_vif vif={};
  struct rtl_ax_ap r={.ap_vif=&vif,.ap_started=true,.monitor_started=true};
  r.rx_ba[0].valid=true;r.rx_ba[0].macid=7;r.rx_ba[0].tid=3;window=64;

@@ -14,7 +14,7 @@
 enum transform { NONE, CLONE, NAT, DODGY, LINEARIZE };
 struct test_case {
 	const char *name;
-	bool random, short_last, bad_checksum, fragment, forged_ids;
+	bool random, short_last, bad_checksum, fragment, forged_ids, wifi_miss;
 	enum transform transform;
 	unsigned int expected_batches, expected_id_changes;
 };
@@ -24,6 +24,21 @@ static const struct test_case cases[] = {
 	{ "sequential-short", .short_last = true, .expected_batches = 1 },
 	{ "random", .random = true, .expected_batches = 4 },
 	{ "random-short", .random = true, .short_last = true, .expected_batches = 4 },
+	{ "wifi-random", .wifi_miss = true, .random = true, .expected_batches = 1 },
+	{ "wifi-random-short", .wifi_miss = true, .random = true, .short_last = true,
+	  .expected_batches = 1 },
+	{ "wifi-random-clone", .wifi_miss = true, .random = true, .transform = CLONE,
+	  .expected_batches = 1 },
+	{ "wifi-random-nat", .wifi_miss = true, .random = true, .transform = NAT,
+	  .expected_batches = 1 },
+	{ "wifi-random-dodgy", .wifi_miss = true, .random = true, .transform = DODGY,
+	  .expected_batches = 1 },
+	{ "wifi-random-linearize", .wifi_miss = true, .random = true, .transform = LINEARIZE,
+	  .expected_batches = 1 },
+	{ "wifi-random-bad-checksum", .wifi_miss = true, .random = true, .bad_checksum = true,
+	  .expected_batches = 4 },
+	{ "wifi-random-fragment", .wifi_miss = true, .random = true, .fragment = true,
+	  .expected_batches = 4 },
 	{ "sequential-clone", .transform = CLONE, .expected_batches = 1 },
 	{ "sequential-nat", .transform = NAT, .expected_batches = 1 },
 	{ "sequential-dodgy", .transform = DODGY, .expected_batches = 1 },
@@ -105,6 +120,7 @@ static struct sk_buff *packet(unsigned int index)
 		data[0] ^= 1;
 	skb->ip_summed = CHECKSUM_NONE;
 	skb->protocol = eth_type_trans(skb, device);
+	skb->rtl9617c_wifi_miss = active->wifi_miss;
 	return skb;
 }
 

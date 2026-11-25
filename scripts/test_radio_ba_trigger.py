@@ -5,8 +5,8 @@ import shutil
 
 work=Path(tempfile.mkdtemp(prefix='wifi-control-'))
 source=(Path(__file__).resolve().parents[1]/'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wireless/realtek/rtl_ax_ap/monitor.h').read_text()
-start=source.index('\t\t\tif (station && station->macid')
-end=source.index('\n\n\t\t\twhile ((skb',start)
+start=source.index('\t\t\t\tif (station && station->macid', source.index('static void rtl_ax_tx_queues('))
+end=source.index('\n\t\t\t\trtl_ax_monitor_tx(',start)
 block=source[start:end]
 code=r'''
 #include <assert.h>

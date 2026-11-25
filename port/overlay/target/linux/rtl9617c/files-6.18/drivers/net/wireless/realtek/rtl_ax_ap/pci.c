@@ -4,6 +4,7 @@
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
 #include <linux/firmware.h>
+#include <linux/hrtimer.h>
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/interrupt.h>
@@ -12,6 +13,7 @@
 #include <linux/pci.h>
 #include <linux/spinlock.h>
 #include <linux/tyfza1-led.h>
+#include <linux/workqueue.h>
 #include <net/mac80211.h>
 #include "fw.h"
 #include "power.h"
@@ -163,7 +165,11 @@ struct rtl_ax_ap {
 	u64 offload_started;
 	int offload_result;
 	spinlock_t pn_lock;
+	struct hrtimer tx_batch_timer;
+	unsigned int tx_batch_cpu;
+	struct work_struct tx_batch_dispatch;
 	struct tasklet_struct tx_tasklet;
+	atomic_t txq_schedule;
 	u64 tim_requests, tim_updates;
 	u64 ps_poll_requests, ps_poll_errors;
 	bool ap_started, mesh_started;
@@ -171,7 +177,12 @@ struct rtl_ax_ap {
 	DECLARE_BITMAP(station_ids, 128);
 	DECLARE_BITMAP(preload_peers, 128);
 	struct { u8 self[6], peer[6]; u16 aid; bool pending, mesh, client; } retired_stations[128];
-	struct { u8 address[6], aggregation[IEEE80211_NUM_TIDS]; u16 stopping, flushing; } tx_ba[128];
+	struct {
+		u8 address[6], aggregation[IEEE80211_NUM_TIDS];
+		u16 stopping, flushing;
+		u8 short_wd_window;
+		bool short_wd;
+	} tx_ba[128];
 	struct wiphy_delayed_work cleanup_work;
 	struct wiphy_delayed_work ra_work;
 	struct wiphy_delayed_work dm_work;
@@ -436,6 +447,10 @@ static int rtl_ax_receive(void *ctx, const struct rtl_ax_rx_packet *packet)
 		if (ra_sample > 0 && radio->ra_registered[sample.macid]) {
 			rtl_ax_ra_rssi_sample(&radio->ra_rssi_state[sample.macid], &sample,
 				radio->ra_rssi[sample.macid]);
+			if (sample.cfo_valid && sample.macid == radio->cfo.sample_peer) {
+				radio->cfo.sum += sample.cfo;
+				radio->cfo.samples++;
+			}
 			radio->ra_rssi_samples[sample.macid]++;
 		}
 		spin_unlock_irqrestore(&radio->command_lock, flags);
@@ -1599,14 +1614,15 @@ static ssize_t radio_cfo_show(struct device *dev,
 		"thresholds=%u,%u,%u,%u steps=%u,%u,%u,%u digital_shift=%u "
 		"timer_ms=%u timer_enabled=%u dynamic_acceleration=%u "
 		"manual_comp=%u valid=%u weight=%u MAC_comp=%u "
-		"cfg=%08x/%08x/%08x periodic_CFO=pending crystal_adjustment=pending\n",
+		"cfg=%08x/%08x/%08x tracked_MACID=%u preamble_CFO_Q2_kHz=%d crystal_cap=%u\n",
 		cfo->initialized ? "applied" : "pending", cfo->crystal_default,
 		cfo->crystal_lower, cfo->crystal_upper,
 		cfo->threshold[0], cfo->threshold[1], cfo->threshold[2], cfo->threshold[3],
 		cfo->step[0], cfo->step[1], cfo->step[2], cfo->step[3], cfo->digital_shift,
 		cfo->timer_period, cfo->timer_enabled, cfo->dynamic_acceleration,
 		rtl_ax_read32(radio, 0x14264) & 255, !!(valid & BIT(29)), (weight >> 24) & 15,
-		power & 7, valid, weight, power);
+		power & 7, valid, weight, power, READ_ONCE(cfo->sample_peer),
+		READ_ONCE(cfo->last), READ_ONCE(cfo->crystal_current));
 }
 static DEVICE_ATTR_RO(radio_cfo);
 

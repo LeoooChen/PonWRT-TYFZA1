@@ -10,7 +10,7 @@ driver = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wirel
 source = (driver / 'monitor.h').read_text()
 
 def function(name):
-    prefix = 'static void ' if name == 'rtl_ax_cleanup_work' else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
+    prefix = 'static void ' if name in ('rtl_ax_cleanup_work', 'rtl_ax_ba_cmac') else 'static bool ' if name == 'rtl_ax_security_cleanup' else 'static int '
     start = re.search(r'^' + prefix + name + r'\([^;]*?\)\s*\{', source, re.M).start()
     end = source.index('{', start) + 1
     depth = 1
@@ -52,7 +52,9 @@ struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);void(*write32)(void*,un
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_H2C_DATA 1
 #define HZ 100
+#define GENMASK(h,l) ((~0U << (l)) & (~0U >> (31-(h))))
 #define WRITE_ONCE(x,v) ((x)=(v))
+#define min(a,b) ((a)<(b)?(a):(b))
 #define max_t(type,a,b) ((type)(a)>(type)(b)?(type)(a):(type)(b))
 #define min_t(type,a,b) ((type)(a)<(type)(b)?(type)(a):(type)(b))
 #define container_of(p,t,m) ((t *)((char *)(p)-offsetof(t,m)))
@@ -75,7 +77,7 @@ struct rtl_ax_ap {unsigned traffic_peer;
  struct rtl_ax_tx *tx;struct ieee80211_vif *ap_vif,*sta_vif;int rx;bool sta_role,sta_associated,sta_4addr,peer_authorized[128],ra_registered[128],offload_retry;unsigned long ra_pending[2],security_aborting[2];u8 security_unlink[128];void *security_keys[128];struct wiphy_work offload_work;unsigned keys_aborted;unsigned int chip;bool monitor_started;
  unsigned long station_ids[2],security_ids[2],security_deleting[2],preload_peers[2];
  struct {u8 self[6],peer[6];u16 aid;bool pending,client,mesh;} retired_stations[128];
- struct {u8 address[6],aggregation[16];u16 stopping,flushing;} tx_ba[128];
+ struct {u8 address[6],aggregation[16];u16 stopping,flushing,short_wd_window;bool short_wd;} tx_ba[128];
  struct {u8 macid,tid,cam;bool valid,deleting;} rx_ba[32];
  struct rtl_ax_security_role security_roles[128];
  struct wiphy_delayed_work cleanup_work;
@@ -219,7 +221,7 @@ int main(void){
 }
 '''
 names = ('rtl_ax_drop_station', 'rtl_ax_rx_ba_remove', 'rtl_ax_station_release',
-         'rtl_ax_monitor_add_interface', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
+         'rtl_ax_monitor_add_interface', 'rtl_ax_ba_cmac', 'rtl_ax_tx_ba_finish', 'rtl_ax_security_cleanup', 'rtl_ax_cleanup_work', 'rtl_ax_station_remove', 'rtl_ax_ampdu_action')
 with tempfile.TemporaryDirectory(prefix='wifi-sta-release-', dir=root / 'artifacts') as directory:
     p = Path(directory)
     (p / 'test.c').write_text(common + ''.join(function(n) for n in names) + test)

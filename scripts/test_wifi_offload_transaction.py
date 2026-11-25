@@ -44,6 +44,7 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define IEEE80211_NUM_TIDS 16
 #define HZ 100
+#define GENMASK(h,l) ((~0U << (l)) & (~0U >> (31-(h))))
 #define RTL_AX_SECURITY_ENTRIES 128
 #define RTL_AX_H2C_DATA 1
 #define RTL_AX_CLIENT_MACID 1
@@ -85,16 +86,28 @@ struct rtl_dq_io {struct rtl_fe *fe;};
 struct wiphy {int unused;};struct work_struct {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
 struct ieee80211_hw {struct wiphy *wiphy;};
-struct rtl_ax_station {unsigned macid;};struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
+struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
+struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;
+ struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
+static unsigned long jiffies;
+#define time_after_eq(a,b) ((long)((a)-(b))>=0)
+static void rcu_read_lock(void) {}
+static void rcu_read_unlock(void) {}
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *peer,const u8 *self)
+{ (void)hw;(void)peer;(void)self;return NULL; }
+static int ieee80211_start_tx_ba_session(struct ieee80211_sta *sta,unsigned tid,unsigned timeout)
+{ (void)sta;(void)tid;(void)timeout;assert(0);return 0; }
+struct rtl_ax_tx;
+static u8 rtl_ax_tx_active_tids(struct rtl_ax_tx *tx,unsigned macid){(void)tx;(void)macid;return 0;}
 enum {IEEE80211_AMPDU_TX_STOP_CONT,IEEE80211_AMPDU_TX_STOP_FLUSH,IEEE80211_AMPDU_TX_STOP_FLUSH_CONT};
 struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
-struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct wireless_dev wdev;int type;};
+struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct wireless_dev wdev;int type;u8 addr[6];};
 struct rtl_ax_tx {int lock;bool pe_active,peer_offloaded[128],peer_authorized[128];unsigned occupied,ni_reports,ni_failed;
  struct {void *memory;}pe;void *rx,*pdev;
  struct {bool active,retire_quiescing,route_peers[128];u8 retire_macid;unsigned cpu,route_macid,route_tim[128];struct net_device *route_dev;struct work_struct ps_work;}ni;};
 struct rtl_ax_ap {struct rtl_ax_tx *tx;struct ieee80211_hw *hw;struct ieee80211_vif *ap_vif,*sta_vif;bool sta_associated,sta_4addr;int scan_offload_result;
  struct wiphy_work offload_work;struct wiphy_delayed_work cleanup_work;bool scanning,ap_started,monitor_started,offload_retry,peer_authorized[128];
- struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing;u8 address[6];}tx_ba[128];
+ struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[6];}security_roles[128];struct {unsigned aggregation[16],stopping,flushing,short_wd_window;u8 address[6];bool short_wd;}tx_ba[128];
  unsigned security_unlink[128];bool ra_registered[128];
  struct {bool deleting;unsigned macid;}rx_ba[8];struct {bool pending;}retired_stations[128];int offload_result;unsigned offload_started,chip;};
 static struct rtl_ax_ap *active_radio;
@@ -230,7 +243,7 @@ code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') +
 code += function(tx, 'rtl_ax_tx_peer_authorized')
 if 'bool rtl_ax_tx_peer_security(' in tx:
     code += function(tx, 'rtl_ax_tx_peer_security')
-code += function(monitor, 'rtl_ax_offload_ready') + function(monitor, 'rtl_ax_tx_ba_finish')
+code += function(monitor, 'rtl_ax_offload_ready') + function(monitor, 'rtl_ax_ba_cmac') + function(monitor, 'rtl_ax_tx_ba_finish')
 action = function(monitor, 'rtl_ax_ampdu_action')
 prefix = action[:action.index('\tswitch (params->action)')]
 stop = action[action.index('\tcase IEEE80211_AMPDU_TX_STOP_CONT:'):action.index('\tcase IEEE80211_AMPDU_RX_START:')]

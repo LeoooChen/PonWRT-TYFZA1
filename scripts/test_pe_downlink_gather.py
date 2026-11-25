@@ -86,8 +86,13 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
             u.mem_write(at + 64, struct.pack('>II', (1 << 31) if ni_header == 16 else 0, (length + ni_header - 8) << 15) + bytes(ni_header - 8))
             u.mem_write(0x10030000 + n * 8, struct.pack('<II', at | 0x50, (1 << 14 if compact_epp else 0) | (length + 16)))
         else:
+            # This fixture bypasses ni_ingest. Prepare the same large-frame
+            # prefix and metadata flag; real EPP cases exercise admission.
+            if length > 1000:
+                u.mem_write(at + 64 + ni_header - 8, frame[:12] +
+                            struct.pack('>H', length - 6) + bytes.fromhex('aaaa03000000'))
             u.mem_write(at, struct.pack('<4I', at + 2048 if n + 1 < len(lengths) else 0,
-                        length | ni_header << 16, 0xdeadbeef, 0xa5a5a5a5))
+                        length | ni_header << 16 | (1 << 24 if length > 1000 else 0), 0xdeadbeef, 0xa5a5a5a5))
     submits, returns = [], []
     u.hook_add(UC_HOOK_MEM_WRITE, lambda uc, access, at, size, value, data:
                submits.extend(range(submits[-1] + 1 if submits else 1, value + 1)),
@@ -99,8 +104,10 @@ def case(lengths, cap, from_epp=False, hw_rts=False, bandwidth=2, rate=0x100, ob
     if observe:
         observe(u)
     u.emu_start(0xbfc00400, 0x9fc0fff0, count=100000)
-    if get(mb + 38 * 4):
-        put(bar + 0xc438, 10001)
+    for timeout in range(1, len(lengths) + 1):
+        if not get(mb + 38 * 4):
+            break
+        put(bar + 0xc438, timeout * 10001)
         u.emu_start(u.reg_read(UC_MIPS_REG_PC), 0x9fc0fff0, count=100000)
     assert get(mb + 28 * 4) == len(lengths) and get(mb + 38 * 4) == 0
     assert get(base + 0x1c020) == len(lengths)

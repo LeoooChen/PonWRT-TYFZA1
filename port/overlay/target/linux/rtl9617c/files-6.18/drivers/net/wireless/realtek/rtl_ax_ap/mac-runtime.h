@@ -251,12 +251,10 @@ static inline void rtl_ax_cmac_receive_filter(const struct rtl_ax_io *io)
 static inline void rtl_ax_hal_start_receive(const struct rtl_ax_io *io,
 	unsigned int rts_time, unsigned int rts_length)
 {
-	/* Actual hal_start_C/XB normal path uses RX_FLTR_MODE_AP_NORMAL4.
-	 * rtw_hal_mac_set_rxfltr_by_mode@1b170c→converter@22fddc produces
-	 * policy value440e/mask47ff. Its flags precede the original explicit
-	 * MPDU limit11264B,represented by22 units of512B. */
+	/* Select AP filtering without shrinking the capacity configured by
+	 * rtl_ax_cmac_receive(). 22 x 512 would reject valid MPDUs up to
+	 * the 11454-byte maximum advertised in our VHT capability. */
 	rtl_ax_update32(io, 0xce20, 0x000047ff, 0x0000440e);
-	rtl_ax_update32(io, 0xce20, 0x003f0000, 22U << 16);
 	/* hw_rts_th@1eb5b8:32us time units/highbyte,16B length units/lowbyte.
 	 * Actual C/XB hw capability defaults both inputs to0. */
 	io->write16(io->ctx, 0xc614, ((rts_time >> 5) << 8) | ((rts_length >> 4) & 255));
@@ -272,7 +270,7 @@ static inline int rtl_ax_receive_mode(const struct rtl_ax_io *io, unsigned int m
 	/* Actual wrapper@1b1514 and converter@22fddc. Restore AP_NORMAL4
 	 * before selecting SCAN1/SNIFFER0 so a previous monitor bit does
 	 * not survive into a different requested operating mode. The explicit
-	 * startup MPDU11264B limit is retained, as after the original wrapper. */
+	 * receive capacity is retained across filter-mode changes. */
 	if (mode != 0 && mode != 1 && mode != 2 && mode != 4)
 		return -EINVAL;
 	rtl_ax_update32(io, 0xce20, 0x47ff, 0x440e);
@@ -440,8 +438,9 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	/* mac_err_imr_ctrl(1),SCC has no CMAC1. */
 	io->write32(io->ctx, 0x8520, 0xffffffff);
 	io->write32(io->ctx, 0xc160, 0xffffffff);
-	/* set_host_rpr: actual PCIe SCC POH defaults enable all four WP
-	 * outcomes, aggregate121 and timeout255. Requests stay owned until RPQ. */
+	/* Match rtw89 set_host_rpr_ax(): release at most 30 WPs per report.
+	 * A 121-WP batch can exhaust a default UDP socket before it fills,
+	 * leaving transmitted skbs charged until the report timeout. */
 	value = io->read32(io->ctx, 0x9408);
 	next = value & ~3U;
 	if (value != next)
@@ -451,7 +450,7 @@ static inline void rtl_ax_mac_trx_registers(const struct rtl_ax_io *io)
 	if (value != next)
 		io->write32(io->ctx, 0x9410, next);
 	value = io->read32(io->ctx, 0x9414);
-	next = (value & 0xff00ff00) | 0x00ff0079;
+	next = (value & 0xff00ff00) | 0x00ff001e;
 	if (value != next)
 		io->write32(io->ctx, 0x9414, next);
 	/* set_l2_status changes a host state byte,not a hardware register.

@@ -42,6 +42,8 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     directory = Path(directory)
     symbols = subprocess.check_output(['llvm-nm-18', str(directory / 'pe-wd.elf')], text=True)
     entry = next(int(s.split()[0], 16) for s in symbols.splitlines() if s.endswith(' rx_uplink'))
+    work_batch = next((int(s.split()[0], 16) for s in symbols.splitlines()
+                       if s.endswith(' pe_rx_work_batch')), None)
     base, states, buf, descriptors = 0x04000000, 0x05000000, 0x06000000, 0x06100000
     mb, vp = base + 0x2000, 0x13001100 + (9 + slot) * 0xa0
     u = Uc(UC_ARCH_MIPS, UC_MODE_MIPS32 | UC_MODE_LITTLE_ENDIAN)
@@ -91,12 +93,19 @@ def case(directory, slot, ipv6, payload_bytes, fe_ready=True, client=False,
     if corrupt == 'admission': put(base + 0x11a08, 0)
     u.mem_write(buf, bytes(raw))
     for reg, value in [(UC_MIPS_REG_A0, mb | 0xa0000000), (UC_MIPS_REG_A1, buf | 0xa0000000),
-                       (UC_MIPS_REG_A2, buf), (UC_MIPS_REG_A3, (base + 0x1d000) | 0xa0000000), (UC_MIPS_REG_SP, (base + 0x17ff0) | 0xa0000000),
+                       (UC_MIPS_REG_A2, buf), (UC_MIPS_REG_A3, (base + 0x1d000) | 0xa0000000),
+                       (UC_MIPS_REG_SP, (base + 0x17ff0) | 0xa0000000),
                        (UC_MIPS_REG_RA, 0x9fc0fff0)]:
         u.reg_write(reg, value)
-    u.emu_start(entry, 0x9fc0fff0, count=100000)
+    if work_batch is not None:
+        table = base + 0x1c000
+        put(table, buf)
+        put(mb + 80 * 4, table)
+        put(mb + 174 * 4, 1)  # One captured work item, payload ID 0.
+        u.reg_write(UC_MIPS_REG_A1, table | 0xa0000000)
+    u.emu_start(work_batch if work_batch is not None else entry, 0x9fc0fff0, count=100000)
     assert u.reg_read(UC_MIPS_REG_PC) == 0x9fc0fff0
-    result = u.reg_read(UC_MIPS_REG_V0)
+    result = get(base + 0xf000) if work_batch is not None else u.reg_read(UC_MIPS_REG_V0)
     if result:
         assert result == 0x80000000 | len(expected) and get(vp + 0x18) == len(expected)
         for i, ethernet in enumerate(expected):

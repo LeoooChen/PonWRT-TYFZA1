@@ -75,7 +75,8 @@ class State(ctypes.Structure):
 
 class Sample(ctypes.Structure):
     _fields_ = [('macid', ctypes.c_uint8), ('rssi', ctypes.c_uint8 * 3),
-                ('paths', ctypes.c_uint8), ('beacon', ctypes.c_bool)]
+                ('paths', ctypes.c_uint8), ('beacon', ctypes.c_bool),
+                ('cfo_valid', ctypes.c_bool), ('cfo', ctypes.c_int)]
 
 
 prefix = '''#include <stdint.h>
@@ -185,6 +186,9 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-rssi-ma-') as temp:
                         raw_ie = bytearray(16 if ie == 0 else 32)
                         raw_ie[0], raw_ie[1] = ie, 155
                         raw_ie[3 if ie else 15] = paths << 4
+                        preamble_cfo = (-128, -1, 0, 124)[paths]
+                        if ie:
+                            struct.pack_into('<I', raw_ie, 4, (preamble_cfo & 0xfff) << 20)
                         phy = bytes([0x80 | bitmap, (8 + len(raw_ie)) // 8, 0, 91, 89, 96, 0, 0]) + raw_ie
                         raw = struct.pack('<II', users, 0)
                         raw += struct.pack('<I', flags | 1 << 8)
@@ -210,6 +214,8 @@ with tempfile.TemporaryDirectory(prefix='tyfza1-rssi-ma-') as temp:
                             native.sample(state, sample, rssi)
                             compare_state(state)
                             assert sample.macid == 1 and sample.paths == paths
+                            assert sample.cfo_valid == bool(ie and flags & 2 and not flags & 16)
+                            assert sample.cfo == (preamble_cfo if sample.cfo_valid else 0)
                         qualification_vectors += 1
 
 result = {'module': str(args.module), 'module_sha256': hashlib.sha256(args.module.read_bytes()).hexdigest(),

@@ -2,7 +2,11 @@
 #ifndef RTL_AX_AP_RATE_H
 #define RTL_AX_AP_RATE_H
 
-struct rtl_ax_ra_sample { u8 macid, rssi[3], paths; bool beacon; };
+struct rtl_ax_ra_sample {
+	u8 macid, rssi[3], paths;
+	bool beacon, cfo_valid;
+	int cfo;
+};
 struct rtl_ax_ra_rssi {
 	u16 ma[2][3], count[2]; /* Data/beacon; overall and independent RF paths. */
 	u8 factor[2];
@@ -82,6 +86,9 @@ static inline int rtl_ax_ppdu_ra_signal(const u8 *data, unsigned int bytes,
 	if ((phy[8] & 31) == 1 && phy[1] < 5) return 0;
 	sample->macid = (user >> 8) & 255;
 	sample->beacon = !!(user & BIT(4));
+	sample->cfo_valid = (phy[8] & 31) == 1 && (user & BIT(1)) && !sample->beacon;
+	/* OFDM IE1 word 1 bits 31:20 carry signed preamble CFO in 0.25 kHz. */
+	sample->cfo = sample->cfo_valid ? (int)get_unaligned_le32(phy + 12) >> 20 : 0;
 	/* IE0 byte15[7:4], IE1 DWORD0[31:28] are rx_path_en. */
 	sample->paths = (phy[8] & 31) ? phy[11] >> 4 : phy[23] >> 4;
 	a = sample->paths & BIT(0) ? phy[4] : 0;

@@ -33,6 +33,8 @@ common = r'''
 #include <string.h>
 #include <stdio.h>
 #include "rx-geometry.h"
+#include "tx-ownership.h"
+#include "traffic-flow.h"
 typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define BIT(n) (1U<<(n))
 #define PE_PROBE_MAILBOX 0x2000
@@ -59,15 +61,20 @@ struct ieee80211_sta {unsigned id;};
 struct ieee80211_local {_Atomic u32 ps_generation;};
 struct sta_info {struct ieee80211_sta sta;struct ieee80211_local *local;pthread_mutex_t ps_lock;_Atomic u32 ps_generation;bool service_period;};
 struct rtl_ax_tx {bool pe_active;pthread_mutex_t lock;void *hw;unsigned ps_releases,ps_eosp;
- bool peer_qos[128],peer_offloaded[128],peer_asleep[128];u32 peer_rates[128];
+ bool peer_qos[128],peer_offloaded[128],peer_asleep[128],peer_preload[128];u32 peer_rates[128];
+ struct rtl_ax_traffic_flow peer_flows[128][8];
+ struct {unsigned long internal;} peer_success[128];
  unsigned peer_sleep_events,peer_wake_events;
  struct {void *memory;}pe;struct {u32 ps_seen[2][128],route_tim[128];bool ps_issued[128];}ni;};
+#define ewma_rtl_ax_success_init(p) ((p)->internal=0)
+#define ewma_rtl_ax_success_add(p,v) ((p)->internal=(v)<<8)
 static void ni_route_sleep(struct rtl_ax_tx *tx,unsigned macid){(void)tx;(void)macid;}
 static struct sta_info *lookup[128];
 static unsigned lookup_calls;
+static _Atomic unsigned pe_reads;
 static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *mac,void *vif){
  (void)hw;(void)vif;lookup_calls++;return lookup[mac[0]]?&lookup[mac[0]]->sta:NULL;}
-static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
+static u32 get_unaligned_le32(const void *p){u32 v;pe_reads++;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 '''
 # Execute the exact MAC start/wakeup publication blocks, not a separate
@@ -92,11 +99,11 @@ static void *wake_sleep(void *p){(void)p;pthread_barrier_wait(&barrier);wake(rac
  rtl_ax_tx_peer_sleep(transition_tx,1,false);rtl_ax_tx_peer_sleep(transition_tx,1,true);return NULL;}
 int main(void){
  struct ieee80211_local local={};struct sta_info sta={.sta={1},.local=&local,.ps_lock=PTHREAD_MUTEX_INITIALIZER};
- u8 memory[0x20000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
+ u8 memory[0x80000]={};struct rtl_ax_tx tx={.pe_active=true,.lock=PTHREAD_MUTEX_INITIALIZER,.pe={memory}};
  lookup[1]=&sta;memory[0xe408]=1;put_unaligned_le32(1,memory+0x2060);
- /* Empty slots and unchanged records must not hash PE-memory MAC addresses. */
+ /* RPQ work with no outstanding grant must not read PE completion tables. */
  for(unsigned id=1;id<128;id++)ni_ps_done(&tx,id);
- assert(lookup_calls==0);
+ assert(pe_reads==0 && lookup_calls==0);
  put_unaligned_le32(1,memory+0x11804);put_unaligned_le32(1,memory+0x13020);
  u32 first=start(&sta);
  rtl_ax_tx_ps_release(&tx,&sta.sta,1,BIT(0),false,false,first);

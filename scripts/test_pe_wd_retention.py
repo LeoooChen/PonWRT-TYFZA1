@@ -46,18 +46,26 @@ submissions = 0
 for number in range(800):
     for channel in range(6):
         # Reuse one completed WP across all six channels, alternating a large
-        # three-address NI aggregate and a short one-address ARM frame.
+        # NI aggregate and ARM frames using both WD layouts.
         ni = number % 2 == 0
+        short_wd = not before and channel == 0 and number % 4 == 1
         wp = 256 if ni else 0
-        count = 3 if ni else 1
-        lengths = [1434] * count if ni else [60]
+        lengths = [1434] * 3 if ni else [500] * 13 if short_wd else [60]
+        count = len(lengths)
         total = 26 + sum(n + 8 for n in lengths) + 2 * (count - 1) if ni else 60
         r = [0] * 32
+        if short_wd:
+            total = sum(lengths)
         r[0], r[1] = wp, channel
         r[2], r[3] = count << 24 | 26 << 16 | total, 4
         r[4] = (1 << 24 | 1 << 18 | 1 << 21) if ni else 0
+        if short_wd:
+            r[3] = 1 << 20 | 0x180
+            r[4] = 1 << 31 | 1 << 24 | 1 << 22 | 1 << 16
+            r[5] = 64
         for i, size in enumerate(lengths):
-            r[8 + i * 2], r[9 + i * 2] = payload + i * 2048 + 80, size
+            address_word = 6 if i == 12 else 8 + i * 2
+            r[address_word], r[address_word + 1] = payload + i * 2048 + 80, size
         u.mem_write(request, struct.pack('<32I', *r))
         slot = get(mb + (32 + channel) * 4)
         for reg, value in ((UC_MIPS_REG_A0, mb | 0xa0000000),
@@ -72,10 +80,19 @@ for number in range(800):
         bd = ring + (channel * 256 + slot) * 8
         used, address = get(bd) & 0xffff, get(bd + 4)
         page = bytes(u.mem_read(address, 128))
-        tag = struct.unpack_from('<I', page, 56)[0] & 0xfff
+        sequence_offset = 32 if short_wd else 56
+        address_offset = sequence_offset + 8
+        tag = struct.unpack_from('<I', page, sequence_offset)[0] & 0xfff
         assert get(base + 0x40000 + (channel * 4096 + tag) * 4) == wp + 1
-        assert used == 64 + count * 6
-        assert sum(struct.unpack_from('<H', page, 64 + i * 6)[0] & 2047
+        if short_wd:
+            word0, word1 = struct.unpack_from('<II', page)
+            assert word0 & (1 << 22 | 1 << 7 | 1 << 6) == (1 << 7 | 1 << 6)
+            assert word1 >> 26 == 14
+            assert struct.unpack_from('<HI', page, address_offset) == (26, headers)
+            assert struct.unpack_from('<HI', page, address_offset + 13 * 6) == (0x8000 | 500, r[6])
+            count += 1
+        assert used == address_offset + count * 6
+        assert sum(struct.unpack_from('<H', page, address_offset + i * 6)[0] & 2047
                    for i in range(count)) == total
         for queue in retained:
             for old_address, old_page in queue:

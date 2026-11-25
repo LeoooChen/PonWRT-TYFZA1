@@ -1,0 +1,191 @@
+--- a/net/ipv4/ip_output.c
++++ b/net/ipv4/ip_output.c
+@@ -84,6 +84,7 @@
+ #include <linux/netfilter_bridge.h>
+ #include <linux/netlink.h>
+ #include <linux/tcp.h>
++#include <linux/udp.h>
+ #include <net/psp.h>
+ 
+ static int
+@@ -1393,17 +1394,10 @@
+ 	cork->dst = NULL;
+ }
+ 
+-/*
+- *	Combined all pending IP fragments on the socket as one IP datagram
+- *	and push them out.
+- */
+-struct sk_buff *__ip_make_skb(struct sock *sk,
+-			      struct flowi4 *fl4,
+-			      struct sk_buff_head *queue,
+-			      struct inet_cork *cork)
++static struct sk_buff *ip_finish_datagram(struct sock *sk, struct flowi4 *fl4,
++					  struct sk_buff *skb,
++					  struct inet_cork *cork)
+ {
+-	struct sk_buff *skb, *tmp_skb;
+-	struct sk_buff **tail_skb;
+ 	struct inet_sock *inet = inet_sk(sk);
+ 	struct net *net = sock_net(sk);
+ 	struct ip_options *opt = NULL;
+@@ -1411,25 +1405,6 @@
+ 	struct iphdr *iph;
+ 	u8 pmtudisc, ttl;
+ 	__be16 df = 0;
+-
+-	skb = __skb_dequeue(queue);
+-	if (!skb)
+-		goto out;
+-	tail_skb = &(skb_shinfo(skb)->frag_list);
+-
+-	/* move skb->data to ip header from ext header */
+-	if (skb->data < skb_network_header(skb))
+-		__skb_pull(skb, skb_network_offset(skb));
+-	while ((tmp_skb = __skb_dequeue(queue)) != NULL) {
+-		__skb_pull(tmp_skb, skb_network_header_len(skb));
+-		*tail_skb = tmp_skb;
+-		tail_skb = &(tmp_skb->next);
+-		skb->len += tmp_skb->len;
+-		skb->data_len += tmp_skb->len;
+-		skb->truesize += tmp_skb->truesize;
+-		tmp_skb->destructor = NULL;
+-		tmp_skb->sk = NULL;
+-	}
+ 
+ 	/* Unless user demanded real pmtu discovery (IP_PMTUDISC_DO), we allow
+ 	 * to fragment the frame generated here. No matter, what transforms
+@@ -1501,8 +1476,41 @@
+ 	}
+ 
+ 	ip_cork_release(cork);
+-out:
+ 	return skb;
++}
++
++/*
++ *	Combined all pending IP fragments on the socket as one IP datagram
++ *	and push them out.
++ */
++struct sk_buff *__ip_make_skb(struct sock *sk,
++			      struct flowi4 *fl4,
++			      struct sk_buff_head *queue,
++			      struct inet_cork *cork)
++{
++	struct sk_buff *skb, *tmp_skb;
++	struct sk_buff **tail_skb;
++
++	skb = __skb_dequeue(queue);
++	if (!skb)
++		return NULL;
++	tail_skb = &(skb_shinfo(skb)->frag_list);
++
++	/* move skb->data to ip header from ext header */
++	if (skb->data < skb_network_header(skb))
++		__skb_pull(skb, skb_network_offset(skb));
++	while ((tmp_skb = __skb_dequeue(queue)) != NULL) {
++		__skb_pull(tmp_skb, skb_network_header_len(skb));
++		*tail_skb = tmp_skb;
++		tail_skb = &(tmp_skb->next);
++		skb->len += tmp_skb->len;
++		skb->data_len += tmp_skb->len;
++		skb->truesize += tmp_skb->truesize;
++		tmp_skb->destructor = NULL;
++		tmp_skb->sk = NULL;
++	}
++
++	return ip_finish_datagram(sk, fl4, skb, cork);
+ }
+ 
+ int ip_send_skb(struct net *net, struct sk_buff *skb)
+@@ -1552,6 +1560,58 @@
+ 	__ip_flush_pending_frames(sk, &sk->sk_write_queue, &inet_sk(sk)->cork.base);
+ }
+ 
++static struct sk_buff *ip_make_udp_linear(struct sock *sk, struct flowi4 *fl4,
++					  struct msghdr *msg, int length,
++					  struct inet_cork *cork,
++					  unsigned int flags)
++{
++	const struct dst_entry *dst = cork->dst;
++	const struct net_device *dev = dst->dev;
++	netdev_features_t features = READ_ONCE(dev->features);
++	unsigned int headroom = LL_RESERVED_SPACE(dev);
++	unsigned int framelen = sizeof(struct iphdr) + length;
++	unsigned int alloclen = framelen + headroom + 15;
++	int headers = sizeof(struct iphdr) + sizeof(struct udphdr);
++	int payload = length - sizeof(struct udphdr);
++	struct sk_buff *skb;
++	char *data;
++	int err;
++
++	if (framelen > cork->fragsize ||
++	    (alloclen >= SKB_MAX_ALLOC && (features & NETIF_F_SG)))
++		return NULL;
++
++	skb = sock_alloc_send_skb(sk, alloclen, flags & MSG_DONTWAIT, &err);
++	if (!skb)
++		goto fail;
++
++	if (features & (NETIF_F_HW_CSUM | NETIF_F_IP_CSUM))
++		skb->ip_summed = CHECKSUM_PARTIAL;
++	skb->csum = 0;
++	skb_reserve(skb, headroom);
++	data = skb_put(skb, framelen);
++	skb_reset_network_header(skb);
++	skb_set_transport_header(skb, sizeof(struct iphdr));
++
++	if (payload && ip_generic_getfrag(msg, data + headers, 0, payload, 0, skb)) {
++		kfree_skb(skb);
++		err = -EFAULT;
++		goto fail;
++	}
++	if (flags & MSG_CONFIRM)
++		skb_set_dst_pending_confirm(skb, 1);
++
++	skb_shinfo(skb)->tx_flags = 0;
++	skb_shinfo(skb)->tskey = 0;
++	cork->length = length;
++	return ip_finish_datagram(sk, fl4, skb, cork);
++
++fail:
++	IP_INC_STATS(sock_net(sk), IPSTATS_MIB_OUTDISCARDS);
++	ip_cork_release(cork);
++	return ERR_PTR(err);
++}
++
+ struct sk_buff *ip_make_skb(struct sock *sk,
+ 			    struct flowi4 *fl4,
+ 			    int getfrag(void *from, char *to, int offset,
+@@ -1561,12 +1621,11 @@
+ 			    struct inet_cork *cork, unsigned int flags)
+ {
+ 	struct sk_buff_head queue;
++	struct sk_buff *skb;
+ 	int err;
+ 
+ 	if (flags & MSG_PROBE)
+ 		return NULL;
+-
+-	__skb_queue_head_init(&queue);
+ 
+ 	cork->flags = 0;
+ 	cork->addr = 0;
+@@ -1575,6 +1634,17 @@
+ 	if (err)
+ 		return ERR_PTR(err);
+ 
++	if (sk->sk_protocol == IPPROTO_UDP &&
++	    getfrag == ip_generic_getfrag && transhdrlen == sizeof(struct udphdr) &&
++	    !cork->opt && !cork->gso_size && !cork->tx_flags &&
++	    !cork->dst->header_len && !cork->dst->trailer_len &&
++	    !(flags & (MSG_MORE | MSG_ZEROCOPY | MSG_SPLICE_PAGES))) {
++		skb = ip_make_udp_linear(sk, fl4, from, length, cork, flags);
++		if (skb)
++			return skb;
++	}
++
++	__skb_queue_head_init(&queue);
+ 	err = __ip_append_data(sk, fl4, &queue, cork,
+ 			       &current->task_frag, getfrag,
+ 			       from, length, transhdrlen, flags);

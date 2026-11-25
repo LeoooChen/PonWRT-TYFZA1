@@ -44,13 +44,15 @@ class Map {
 	constructor() { options = {}; lastMap = this; }
 	chain() {}
 	section() { return { tab() {}, option(type, key) { return this.taboption('', type, key); }, taboption(tab, type, key) {
-		const option = { tab, type, values: {}, dependencies: [], value(k, v) { this.values[k] = v; }, depends(k, v) { this.dependencies.push([k, v]); } };
+		const option = { tab, type, values: {}, descriptions: {}, dependencies: [],
+			value(k, v, desc) { this.values[k] = v; if (desc != null) this.descriptions[k] = desc; },
+			depends(k, v) { this.dependencies.push([k, v]); } };
 		options[key] = option;
 		return option;
 	} }; }
 	render() { return Promise.resolve(E('form')); }
 }
-const form = { Map, NamedSection: 'section', Value: 'value', DummyValue: 'dummy', Flag: 'flag', ListValue: 'list' };
+const form = { Map, NamedSection: 'section', Value: 'value', DummyValue: 'dummy', Flag: 'flag', ListValue: 'list', RichListValue: 'richlist' };
 let polling;
 const ui = load(path.join(resources, 'tyfza1/ui.js'), { baseclass, rpc, poll: { add: f => { polling = f; } }, status, L, E });
 const view = load(path.join(resources, 'view/network/tyfza1-pon.js'), {
@@ -141,6 +143,8 @@ async function main() {
 	assert.notEqual(options.serial_number.rmempty, false);
 	assert.equal(options.serial_number.validate('pon', ''), true);
 	assert.equal(options._network_settings.cfgvalue().attrs.href, '/admin/network/network');
+	assert.equal(options.mode.type, 'richlist');
+	assert.equal(options.omcc_version.type, 'richlist');
 	assert.equal(Object.keys(options.mode.values).length, 6);
 	assert.equal(options.llid_count.datatype, 'and(uinteger,range(1,32))');
 	for (const [value, expected] of [['1', true], ['32', true], ['08', true], ['1.5', false], ['0', false], ['33', false]]) {
@@ -213,6 +217,8 @@ async function main() {
 		assert.ok(rendered);
 		assert.doesNotMatch(text(rendered), /\[object Object\]/, filename + ' must render card children as nodes');
 		if (filename === 'internet') {
+			assert.equal(options.proto.type, 'richlist');
+			assert.equal(options.ipv6.type, 'richlist');
 			assert.equal(options.device.rmempty, false);
 			assert.equal(lastMap.readonly, undefined, 'native Map.load must still check per-config write permission');
 			assert.equal(options.password.password, true);
@@ -273,6 +279,48 @@ async function main() {
 	const acl = JSON.parse(fs.readFileSync(path.join(resources, '../../../root/usr/share/rpcd/acl.d/luci-app-tyfza1-pon.json')));
 	assert.deepEqual(acl['luci-app-tyfza1-pon'].write.uci, ['pon', 'firewall', 'network']);
 	assert.equal(acl['luci-app-tyfza1-pon'].write.ubus, undefined);
+	assert.ok(fs.existsSync(path.join(resources, '../argon/icon/onu.svg')));
+	assert.equal(status.bosaName({ model: '205' }), 'Semtech GN28L97');
+	assert.match(status.formatSerial('414243441234abcd'), /^ABCD1234ABCD（414243441234abcd）$/);
+	assert.equal(status.opticalPower('93'), '-20.32 dBm');
+	assert.equal(status.opticalPower('25350'), '+4.04 dBm');
+	assert.equal(status.opticalPower('0', '待突发'), '待突发');
+	assert.equal(status.opticalTemp('8110'), '31.7 °C');
+	assert.equal(status.opticalTemp('-256'), '-1.0 °C');
+	assert.equal(status.opticalVoltage('33594'), '3.36 V');
+	assert.equal(status.opticalBias('7206'), '14.4 mA');
+	const gemRaw = 'configured=1 error=0 epoch=1 paths=3 session=1 profiles=0\n' +
+		'gem=288 alloc=256 tcont=1 queue=0 vlan=65534 multicast=0 upstream_aes=1\n' +
+		'gem=289 alloc=257 tcont=2 queue=1 vlan=65535 multicast=0 upstream_aes=0\n' +
+		'gem=4095 alloc=65535 tcont=0 queue=0 vlan=85 multicast=1 upstream_aes=0\n';
+	assert.match(text(ui.services({ data_path_raw: gemRaw })), /无标签（Untagged）.*透传（任意）.*仅下行/);
+	assert.doesNotMatch(text(ui.services({ data_path_raw: gemRaw }, true)), /65535 \/ 0/);
+	rpcResults = {
+		'luci-rpc.getWirelessDevices': {
+			radio0: { up: true, config: { band: '5g', htmode: 'HE160' }, interfaces: [{ ifname: 'phy0-sta0', config: { mode: 'sta', ssid: 'Upstream' }, iwinfo: { channel: 36, frequency: 5180, txpower: 20, signal: -54, bitrate: 1201000 } }] },
+			radio1: { up: true, config: { band: '2g' }, interfaces: [{ ifname: 'phy1-mesh0', config: { mode: 'mesh', mesh_id: 'MeshBackhaul' }, iwinfo: { channel: 6, frequency: 2437 } }] }
+		}
+	};
+	snapshot = await ui.snapshot();
+	assert.match(text(ui.wireless(snapshot)), /5 GHz.*STA 客户端.*20 dBm.*-54 dBm.*MeshBackhaul.*2\.4 GHz.*802\.11s Mesh/);
+	const cpuView = load(path.join(resources, 'view/system/tyfza1-cpu.js'), {
+		view: baseclass, form, rpc, poll: { add: f => { polling = f; } }, uci, status, L, E
+	});
+	config();
+	uci.state.values.system = { cpu: { '.name': 'cpu', '.type': 'cpu', frequency: '1000000' } };
+	const cpuOnline = { temperature_mC: 46500, cpu: { available_khz: [400000, 1000000, 1200000], current_khz: 1000000, transition_error: 0, governor: 'userspace' } };
+	let cpuPage = await cpuView.render([null, cpuOnline]);
+	assert.equal(options.frequency.type, 'richlist');
+	assert.match(text(cpuPage), /1000 MHz.*46\.5 °C.*已生效/);
+	rpcResults['luci.tyfza1-system.status'] = { ...cpuOnline, cpu: { ...cpuOnline.cpu, governor: 'schedutil' } };
+	await polling();
+	assert.match(text(cpuPage), /策略未接管/);
+	rpcResults['luci.tyfza1-system.status'] = { ...cpuOnline, cpu: { ...cpuOnline.cpu, transition_error: -16 } };
+	await polling();
+	assert.match(text(cpuPage), /调频失败.*-16/);
+	await cpuView.render([null, { temperature_mC: null, cpu: { available_khz: [] } }]);
+	assert.equal(lastMap.readonly, true);
+	assert.equal(cpuView.handleSaveApply, null);
 	let renderingFails = false;
 	const guardedPage = ui.page('test', '', {}, () => Promise.resolve({}), () => {
 		if (renderingFails) throw new Error('fixture rendering failure');

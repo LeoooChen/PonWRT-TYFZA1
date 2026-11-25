@@ -10,9 +10,9 @@ driver = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wirel
 temporary = tempfile.TemporaryDirectory(prefix='wifi-tx-request-')
 p = Path(temporary.name)
 current = (driver / 'tx.c').read_text()
-old = current.replace('u32 request[8 + RTL_AX_TX_WP_ADDRESS_MAX * 2];\n\t\tu32 *published =', 'u32 *request =')
+old = current.replace('u32 request[8 + RTL_AX_TX_REQ_INLINE_SEGMENTS * 2];\n\t\tu32 *published =', 'u32 *request =')
 assert old != current
-publish = re.search(r'\t\tmemcpy\(published, request, \(8 \+ segments \* 2\) \* sizeof\(\*request\)\);\n', old, re.S)
+publish = re.search(r'\t\tmemcpy\(published, request,.*?sizeof\(\*request\)\);\n', old, re.S)
 assert publish
 old = old[:publish.start()] + old[publish.end():]
 (p / 'old.c').write_text(old)
@@ -40,6 +40,7 @@ typedef uint8_t u8;typedef uint32_t u32;typedef uint64_t u64;
 #define BIT(n) (1U<<(n))
 #define RTL_AX_TX_WP_ADDRESS_MAX 10
 #define READ_ONCE(x) (x)
+#define min(a,b) ((a)<(b)?(a):(b))
 #define ETH_HLEN 14
 #define ETH_ALEN 6
 #define IEEE80211_TX_CTL_NO_ACK 1
@@ -54,10 +55,10 @@ struct info {unsigned flags;struct {struct key *hw_key;unsigned flags;struct vif
 struct hdr {uint16_t frame_control,seq_ctrl;u8 addr1[6];};
 struct skb {u8 *data;unsigned len;struct info *info;};
 struct scatterlist {u32 dma,len;};
-struct mapping {unsigned dma_count;struct scatterlist sg[10];};
+struct mapping {unsigned dma_count;struct scatterlist sg[13];};
 struct slot {struct mapping *mapping;u32 dma;bool firmware_rate;};
 struct tx {bool pe_active,checksum_enabled;struct {void *memory;}pe;u8 *headers;unsigned pe_producer,producer[6];
- bool peer_authorized[128],peer_client[128];u32 peer_rates[128];u64 hardware_pn,encrypted,pe_ethernet,scatter_packets,scatter_segments;
+ bool peer_authorized[128],peer_client[128],peer_preload[128];u32 peer_rates[128];u64 hardware_pn,encrypted,pe_ethernet,scatter_packets,scatter_segments;
  u32 last_eth_dma;u8 last_eth[14];};
 static unsigned get_unaligned_le32(const void*p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void*p){memcpy(p,&v,4);}
@@ -92,6 +93,8 @@ static bool ieee80211_has_tods(unsigned fc){return fc&0x100;}
 #define rtl_ax_tx tx
 '''
 
+code += (driver / 'tx-ownership.h').read_text()
+
 helper_start = current.index('static bool rtl_ax_tx_raw_fw_rate(')
 helper_end = current.index('\nint rtl_ax_tx_submit(', helper_start)
 code += current[helper_start:helper_end]
@@ -102,6 +105,7 @@ static void NAME(struct tx*tx,struct info*info,struct hdr*header,struct skb*skb,
  unsigned rate,unsigned gi,unsigned bandwidth,unsigned tid,unsigned aggregate,unsigned density,
  bool encap,bool pe_sequence,unsigned original_header_bytes,const u8*original_header){
  bool template_ready=false;
+ unsigned int addresses=slot.mapping?slot.mapping->dma_count:1;
  static const u8 tid_indicators[]={0,0,1,1,0,1,0,1};
 '''
 code += signature.replace('NAME', 'old') + branch(p/'old.c') + '\n(void)template_ready;\n}\n'
@@ -111,7 +115,7 @@ int main(void){
  static u8 mem[2][0x20000],headers[2][256*128],payload[2048];
  unsigned vectors=0;
  for(unsigned client=0;client<2;client++)
- for(unsigned layout=0;layout<=10;layout++)
+ for(unsigned layout=0;layout<=13;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)
  for(unsigned keytype=0;keytype<3;keytype++)for(unsigned tid=0;tid<8;tid++)for(unsigned auth=0;auth<2;auth++){
   struct tx a={.pe_active=true,.checksum_enabled=tid&1,.pe={mem[0]},.headers=headers[0],.pe_producer=255};
@@ -127,6 +131,8 @@ int main(void){
   a.peer_authorized[127]=b.peer_authorized[127]=auth;
   unsigned macid=127,ring=tid%6;
   a.peer_client[macid]=b.peer_client[macid]=client;
+  a.peer_preload[macid]=b.peer_preload[macid]=true;
+  if(layout>10 && (encap || !seq || keytype!=2 || tid || !auth))continue;
   a.peer_rates[macid]=b.peer_rates[macid]=(tid&1?BIT(31):0)|BIT(21)|BIT(22)|0x1ff;
   a.producer[ring]=b.producer[ring]=255;
   put_unaligned_le32(BIT(17),mem[0]+0xe200+macid*4);
@@ -138,6 +144,12 @@ int main(void){
    assert(get_unaligned_le32(mem[1]+0xd000+macid*32+8)==26U<<16);
    assert(get_unaligned_le32(mem[1]+0xd000+macid*32+16)==((macid<<24)|BIT(18)|BIT(16)|(client<<23)));
    assert(!memcmp(mem[1]+0xe400+macid*8,hdr.addr1,6));
+  }
+  if(layout==13) {
+   u8 *request=mem[1]+0x4000+255*128;
+   assert(get_unaligned_le32(request+16)&RTL_AX_TX_REQ_SHORT_WD);
+   assert(get_unaligned_le32(request+24)==mapping.sg[12].dma);
+   assert(get_unaligned_le32(request+28)==mapping.sg[12].len);
   }
   assert(!memcmp(mem[0],mem[1],sizeof(mem[0]))&&!memcmp(headers[0],headers[1],sizeof(headers[0])));
   b.pe.memory=a.pe.memory;b.headers=a.headers;assert(!memcmp(&a,&b,sizeof(a))&&!memcmp(&ka,&kb,sizeof(ka)));vectors++;
@@ -159,7 +171,7 @@ int main(void){
  assert(!rtl_ax_tx_raw_fw_rate(&check_tx,&check_skb,1));
  check_tx.peer_authorized[1]=true;check_hdr.addr1[0]=1;
  assert(!rtl_ax_tx_raw_fw_rate(&check_tx,&check_skb,1));
- printf("Actual PE request branch: %u vectors old/cached, DMA layouts0..10, keys/PN carry, raw/encap, sequence, rate overrides, all TIDs and ring wrap PASS\n",vectors);
+ printf("Actual PE request branch: %u vectors old/cached, DMA layouts 0..13, keys/PN carry, raw/encap, sequence, rate overrides, all TIDs and ring wrap PASS\n",vectors);
 }
 '''
 (p/'test_request.c').write_text(code)

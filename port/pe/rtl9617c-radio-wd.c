@@ -9,6 +9,8 @@ struct packed_word { u32 value; } __attribute__((packed));
 #define REQUEST_BASE 0x4000
 #define MAILBOX_OFFSET 0x2000
 #define TX_BURST 8
+/* NI queue metadata and private request lengths: lower16 bits are bytes. */
+#define NI_PREFIX_READY BIT(24)
 #include "rx-geometry.h"
 #include "tx-ownership.h"
 #include "traffic-flow.h"
@@ -325,7 +327,11 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 	);
 	u32 sequence = sequences[macid * 8 + tid];
 	sequences[macid * 8 + tid] = (sequence + 1) & 0xfff;
-	const u32 *ethernet = uncached(request[8]);
+	const u32 *ethernet = uncached(request[8]
+#ifdef PE_UPLINK
+		- (request[9] & NI_PREFIX_READY ? 8 : 0) /* Prepared addresses precede Ethernet. */
+#endif
+	);
 	u32 da0 = ethernet[0], addresses = ethernet[1], sa = ethernet[2];
 	u32 ap0 = mailbox[16], ap1 = mailbox[17];
 	u32 amsdu = !!(flags & BIT(21)), client = !!(flags & BIT(23));
@@ -348,9 +354,13 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 	if (amsdu) {
 		u32 pad = 0;
 		for (u32 n = 0; n < frames; n++) {
-			u32 input = request[8 + n * 2], bytes = request[9 + n * 2];
+			u32 input = request[8 + n * 2], metadata = request[9 + n * 2];
+			u32 bytes = metadata & 65535;
 			u32 output = input - (n ? 8 + pad : 34);
-			amsdu_prefix(uncached(input), bytes);
+#ifdef PE_UPLINK
+			if (!(metadata & NI_PREFIX_READY))
+#endif
+				amsdu_prefix(uncached(input), bytes);
 			if (!n) {
 				u8 *out = uncached(output);
 				/* Headroom puts the WLAN header at word offset two. */
@@ -366,7 +376,8 @@ static u32 ni_build_payload(volatile u32 *mailbox, u8 *memory,
 		u8 *llc = header + header_bytes;
 		llc[0] = llc[1] = 0xaa; llc[2] = 3;
 		llc[3] = llc[4] = llc[5] = 0;
-		llc[6] = ((const u8 *)ethernet)[12]; llc[7] = ((const u8 *)ethernet)[13];
+		const u8 *type = uncached(request[8] + 12);
+		llc[6] = type[0]; llc[7] = type[1];
 		u32 output = request[8] + 14 - header_bytes - 8;
 		header_copy(uncached(output), header, header_bytes + 8);
 		address(page + 64, output, request[2] & 0x3fff, 1);
@@ -387,8 +398,11 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	if (mailbox[24]) { slot = mailbox[32 + ring]; next = (slot + 1) & 255; }
 	u32 wd_slot = mailbox[RTL_AX_TX_WD_NEXT + ring];
 	u32 wd_page = ring * RTL_AX_TX_WD_PER_RING + wd_slot;
-	u32 segments = packet >> 24, count = 0, used = 64;
+	u32 segments = packet >> 24, count = 0, used;
 	u32 aggregate = aggregation & 255;
+	u32 short_wd = !ni_packet && (flags & RTL_AX_TX_REQ_SHORT_WD);
+	flags &= ~RTL_AX_TX_REQ_SHORT_WD;
+	used = short_wd ? 40 : 64;
 	if (ni_packet) *(u32 *)(memory + RTL_AX_NI_RATES + (id - RTL_AX_NI_ID_BASE) * 4) = rate;
 	/* Construct privately, then publish the final DMA image. Neither the
 	 * descriptor nor an in-place NI header needs a DDR scratch round trip. */
@@ -399,8 +413,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 
 	/* All active fields are assigned below. Clear only reserved WD words
 	 * and WP padding, preserving the original descriptor format. */
-	word(page + 24, 0); word(page + 44, 0);
-	word(page + 52, 0); word(page + 60, 0);
+	word(page + 24, 0);
+	if (!short_wd) { word(page + 44, 0); word(page + 52, 0); }
 	if (ni_packet) {
 		sequence = ni_build_payload(mailbox, memory, request, page);
 		count = ni_frames; used = 64 + count * 6;
@@ -469,8 +483,9 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 			mailbox[21] = request[8];
 		}
 		for (u32 segment = 0; segment < segments; segment++) {
-			u32 address = request[8 + segment * 2];
-			u32 bytes = request[9 + segment * 2];
+			u32 index = rtl_ax_tx_req_dma_word(segment);
+			u32 address = request[index];
+			u32 bytes = request[index + 1];
 			if (!segment && flags & BIT(18)) { address += 14; bytes -= 14; }
 			if (!segment && flags & BIT(22)) {
 				u32 header_bytes = (packet >> 16) & 63;
@@ -490,7 +505,8 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	page[used - 5] |= 0x80;
 	/* Address entries are six bytes; keep the rounded final DDR word zero. */
 	page[used] = page[used + 1] = 0;
-	u32 dw0 = BIT(7) | channels[ring] << 16 | BIT(22) |
+	/* WD_PAGE stays set in both layouts, but short WD has no WDINFO. */
+	u32 dw0 = BIT(7) | channels[ring] << 16 | (short_wd ? 0 : BIT(22)) |
 		(((packet >> 16) & 63) / 2) << 11 | ((flags & BIT(13)) ? BIT(31) : 0);
 	u32 dw1 = count << 26, dw4 = 0, dw5 = 0;
 	u32 dw10 = aggregate ? ((aggregation >> 8) & 7) << 18 : 0;
@@ -522,20 +538,24 @@ static u32 __attribute__((section(".rxq"), noinline)) pe_build_tx(
 	word(page + 28, (rate & BIT(20) ? 0 : BIT(31)) | ((rate >> 16) & 3) << 28 |
 		((rate >> 12) & 7) << 25 | (rate & 0x1ff) << 16);
 	/* Original DATA metadata enables fallback for firmware-selected rates. */
-	word(page + 32, (rate & BIT(20) ? 0 : BIT(9) | BIT(10)) |
-		(rate & BIT(21) ? BIT(11) : 0));
-	/* Original TXSC keeps oversized MPDU retries within their PHY family. */
-	word(page + 36, ((flags & BIT(14)) ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 255 : 0) |
-		((packet & 0x3fff) > 2300 ? (rate & 0x180U) << 16 : 0));
-	word(page + 40, dw10);
-	word(page + 48, rate & BIT(22) ? BIT(27) | BIT(31) : 0);
-	if (flags & BIT(17)) {
-		u16 checksum = 0;
+	if (!short_wd) {
+		word(page + 32, (rate & BIT(20) ? 0 : BIT(9) | BIT(10)) |
+			(rate & BIT(21) ? BIT(11) : 0));
+		/* Original TXSC keeps oversized MPDU retries within their PHY family. */
+		word(page + 36, ((flags & BIT(14)) ? BIT(11) : 0) | (aggregate ? (aggregate - 1) & 255 : 0) |
+			((packet & 0x3fff) > 2300 ? (rate & 0x180U) << 16 : 0));
+		word(page + 40, dw10);
+		word(page + 48, rate & BIT(22) ? BIT(27) | BIT(31) : 0);
+		if (flags & BIT(17)) {
+			u16 checksum = 0;
 #pragma clang loop unroll(disable)
-		for (u32 i = 0; i < 14; i++) checksum ^= page_words[i] ^ (page_words[i] >> 16);
-		page[16] = checksum; page[17] = checksum >> 8;
+			for (u32 i = 0; i < 14; i++) checksum ^= page_words[i] ^ (page_words[i] >> 16);
+			page[16] = checksum; page[17] = checksum >> 8;
+		}
 	}
-	word(page + 56, 0x8000 | pe_wp_take(memory, ring, id) | ((flags & BIT(12)) ? BIT(14) : 0));
+	u32 sequence_offset = short_wd ? 32 : 56;
+	word(page + sequence_offset, 0x8000 | pe_wp_take(memory, ring, id) | ((flags & BIT(12)) ? BIT(14) : 0));
+	word(page + sequence_offset + 4, 0);
 	if (!ni_packet && (flags & (BIT(18) | BIT(22))))
 		header_copy(uncached(mailbox[14] + id * 128), header,
 			((packet >> 16) & 63) + (flags & BIT(18) ? 8 : 0));
@@ -707,8 +727,11 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 	u32 contexts[2] = {}, generations[2] = {}, commands[2] = {};
 #ifdef PE_UPLINK
 	u32 rx_poll[2] = {};
-	/* PE1 alone owns selected requests; both radios fit in private DMEM. */
-	u32 tx_requests[2][16][32];
+	/* PE0's RX addresses and PE1's selected requests fit in their private DMEM. */
+	union {
+		u32 tx_requests[2][16][32];
+		u32 rx_addresses[2][RTL_AX_RX_BUFFERS];
+	} local;
 #endif
 #ifndef PE_UPLINK
 	static const u32 indices[] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
@@ -747,11 +770,19 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 #ifdef PE_UPLINK
 		/* PE1 finishes its selected MPDUs before acknowledging a pause. */
 		if (!mailbox[80] && !(command & 1) && command != commands[slot]) {
-			pe_tx_publish(mailbox, 16, tx_requests[slot]);
+			pe_tx_publish(mailbox, 16, local.tx_requests[slot]);
 			if (mailbox[RTL_AX_TX_PUBLISH_READ] != mailbox[RTL_AX_TX_PUBLISH_WRITE]) continue;
 		}
 #endif
 		if (command != commands[slot]) {
+#ifdef PE_UPLINK
+			if ((command & 1) && mailbox[80]) {
+				sync();
+				const u32 *addresses = uncached(mailbox[80]);
+				for (u32 id = 0; id < RTL_AX_RX_BUFFERS; id++)
+					local.rx_addresses[slot][id] = addresses[id];
+			}
+#endif
 			/* Complete the previous turn before acknowledging a pause. */
 			sync();
 			mailbox[4] = command;
@@ -776,13 +807,14 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 		}
 #ifdef PE_UPLINK
 		if (mailbox[80]) {
+			const u32 *addresses = local.rx_addresses[slot];
 			/* PE0 owns capture, ordering, NI submission and payload recycling. */
 			if (mailbox[RTL_AX_RX_WORK_READ] != mailbox[RTL_AX_RX_WORK_WRITE] ||
-			    ((*(volatile u32 *)uncached(rx_buffer_dma(mailbox,
-			        *(u32 *)(memory + RTL_AX_RX_SLOT_MAP + mailbox[81] * 4))) >> 16) & 8191) ==
+			    ((*(volatile u32 *)uncached(addresses[
+			        *(u32 *)(memory + RTL_AX_RX_SLOT_MAP + mailbox[81] * 4)]) >> 16) & 8191) ==
 			        (mailbox[82] == 8191 ? 1 : mailbox[82] + 1) || !(++rx_poll[slot] & 15))
-				pe_rxq_batch(mailbox);
-			pe_rx_work_batch(mailbox);
+				pe_rxq_batch(mailbox, addresses);
+			pe_rx_work_batch(mailbox, addresses);
 			continue;
 		}
 		/* PE1 alone writes the shared timer; PE0 only posts RX events. */
@@ -825,7 +857,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			if (((mailbox[RTL_AX_TX_PUBLISH_WRITE] + 1) & 15) == mailbox[RTL_AX_TX_PUBLISH_READ]) goto publish_tx;
 			/* PE1 is both producer and consumer: build NI requests directly
 			 * in the reserved slot while retaining the publish barrier. */
-			ni_request = tx_requests[slot][mailbox[RTL_AX_TX_PUBLISH_WRITE]];
+			ni_request = local.tx_requests[slot][mailbox[RTL_AX_TX_PUBLISH_WRITE]];
 #endif
 			ni_packet = 0; ni_frames = 1;
 			const u32 *request = (void *)(memory + REQUEST_BASE + consumer * 128);
@@ -924,7 +956,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 			{
 				u32 write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
 				u32 words = 8 + (request[2] >> 24) * 2;
-				u32 *out = tx_requests[slot][write];
+				u32 *out = local.tx_requests[slot][write];
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];
 				mailbox[RTL_AX_TX_PUBLISH_WRITE] = (write + 1) & 15;
@@ -944,7 +976,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 		}
 	publish_tx:
 #ifdef PE_UPLINK
-		pe_tx_publish(mailbox, TX_BURST, tx_requests[slot]);
+		pe_tx_publish(mailbox, TX_BURST, local.tx_requests[slot]);
 #else
 		if (publish) {
 			sync();

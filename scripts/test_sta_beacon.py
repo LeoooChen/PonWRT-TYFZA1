@@ -62,7 +62,17 @@ static u32 rtl_ax_ap_read32(const u8 *p) { u32 v; memcpy(&v, p, sizeof(v)); retu
 static __le16 read_frame_control(const void *p) { __le16 v; memcpy(&v, p, sizeof(v)); return v; }
 #define get_unaligned(p) read_frame_control(p)
 static bool ieee80211_is_beacon(__le16 fc) { return (fc & 0xfc) == 0x80; }
+static bool ieee80211_is_assoc_req(__le16 fc) { return (fc & 0xfc) == 0; }
+static bool ieee80211_is_reassoc_req(__le16 fc) { return (fc & 0xfc) == 0x20; }
 static bool ieee80211_is_probe_resp(__le16 fc) { return (fc & 0xfc) == 0x50; }
+struct rtl_ax_station {unsigned vendor;};
+struct ieee80211_sta {struct rtl_ax_station drv_priv[1];};
+static void rcu_read_lock(void) {}
+static void rcu_read_unlock(void) {}
+static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *peer,const u8 *self)
+{ (void)hw;(void)peer;(void)self;assert(0);return NULL; }
+static unsigned rtl_ax_vendor(const u8 *peer,const u8 *ies,unsigned length)
+{ (void)peer;(void)ies;(void)length;assert(0);return 0; }
 static u64 test_time = 123456;
 static u64 ktime_get_ns(void) { return test_time; }
 static u64 ktime_get_boottime_ns(void) { return 987654; }

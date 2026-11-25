@@ -4,19 +4,15 @@
 #define RX_PEER_CONFIG 0x10000
 #define RX_ARM_DONE BIT(30)
 #define RX_NI_PENDING BIT(31)
+#define RX_MPDU_BATCH 32
 /* Transient return value only; never stored as payload ownership. */
 #define RX_NI_BUSY BIT(29)
 
-static u32 rx_buffer_dma(volatile u32 *mailbox, u32 id)
-{
-	const u32 *addresses = uncached(mailbox[80]);
-	return addresses[id];
-}
-
-static void __attribute__((section(".entry"), noinline)) rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id)
+static void __attribute__((section(".entry"), noinline)) rx_idle_put(volatile u32 *mailbox, u8 *memory, u32 id,
+	const u32 *addresses)
 {
 	u32 count = mailbox[RTL_AX_RX_IDLE_COUNT];
-	volatile u32 *tag = uncached(rx_buffer_dma(mailbox, id));
+	volatile u32 *tag = uncached(addresses[id]);
 	*tag = 0;
 	/* Complete the clear before a new PCIe DMA may write this tag. */
 	(void)*tag;
@@ -24,7 +20,7 @@ static void __attribute__((section(".entry"), noinline)) rx_idle_put(volatile u3
 	mailbox[RTL_AX_RX_IDLE_COUNT] = count + 1;
 }
 
-static void __attribute__((noinline)) rx_buffer_recycle(volatile u32 *mailbox, u8 *memory)
+static void __attribute__((noinline)) rx_buffer_recycle(volatile u32 *mailbox, u8 *memory, const u32 *addresses)
 {
 	u32 *held = (void *)(memory + RTL_AX_RX_NI_TAIL);
 #pragma clang loop unroll(disable)
@@ -32,15 +28,16 @@ static void __attribute__((noinline)) rx_buffer_recycle(volatile u32 *mailbox, u
 		if (!held[i * 2]) continue;
 		/* Stock NI completion retains the last two consumed descriptors. */
 		if ((int)((mailbox[91] - held[i * 2 + 1] - 2) << 1) < 0) continue;
-		rx_idle_put(mailbox, memory, held[i * 2] - 1);
+		rx_idle_put(mailbox, memory, held[i * 2] - 1, addresses);
 		held[i * 2] = 0;
 	}
 }
 
-static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 *memory)
+static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 *memory, const u32 *addresses)
 {
 	u32 read = mailbox[RTL_AX_RX_WORK_READ];
-	while (read != mailbox[RTL_AX_RX_WORK_PROCESS]) {
+	u32 process = mailbox[RTL_AX_RX_WORK_PROCESS], ni_read = mailbox[91];
+	while (read != process) {
 		/* Acquire ARM completion before returning a payload to RXQ. */
 		sync();
 		u32 *status = (void *)(memory + RX_STATUS + read * 4);
@@ -48,16 +45,16 @@ static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 
 		u32 id = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4) & ~RTL_AX_RX_WORK_OLD;
 		if (owner & RX_NI_PENDING) {
 			u32 end = owner & ~RX_NI_PENDING;
-			if ((int)((mailbox[91] - end) << 1) < 0) break;
-			if ((int)((mailbox[91] - end - 2) << 1) < 0) {
+			if ((int)((ni_read - end) << 1) < 0) break;
+			if ((int)((ni_read - end - 2) << 1) < 0) {
 				u32 *held = (void *)(memory + RTL_AX_RX_NI_TAIL);
 				u32 index = held[0] ? 1 : 0;
 				held[index * 2] = id + 1;
 				held[index * 2 + 1] = end;
-			} else rx_idle_put(mailbox, memory, id);
+			} else rx_idle_put(mailbox, memory, id, addresses);
 		} else {
 			if (!(owner & RX_ARM_DONE)) break;
-			rx_idle_put(mailbox, memory, id);
+			rx_idle_put(mailbox, memory, id, addresses);
 		}
 		*status = 0;
 		read = (read + 1) & 255;
@@ -65,13 +62,23 @@ static void __attribute__((noinline)) rx_work_recycle(volatile u32 *mailbox, u8 
 	mailbox[RTL_AX_RX_WORK_READ] = read;
 }
 
-static u8 *__attribute__((section(".entry"), noinline)) rx_prefix(u32 *out, const u8 *data, u32 words)
+static inline u8 *__attribute__((always_inline)) rx_prefix(u32 *out, const u8 *data, u32 words)
 {
 	/* DMA payload stays uncached. Parse its small prefix in private DMEM,
 	 * using aligned DDR reads even when the WLAN header is only 2-aligned. */
 	const u32 *in = (const void *)((u32)data & ~3U);
+#pragma clang loop unroll(full)
 	for (u32 i = 0; i < words; i++) out[i] = in[i];
 	return (u8 *)out + ((u32)data & 3);
+}
+
+/* Admission compares the staged WLAN prefix with eight-byte aligned
+ * address records. Read each reference word once, ignoring record padding.
+ * The staged prefix includes the two bytes after each six-byte address. */
+static inline u32 __attribute__((always_inline)) rx_address_equal(const u8 *frame, const u32 *address)
+{
+	return ((const struct packed_word *)frame)->value == address[0] &&
+		!((((const struct packed_word *)(frame + 4))->value ^ address[1]) & 0xffff);
 }
 
 static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
@@ -98,7 +105,7 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	else for (u32 id = 1; id < 128; id++) {
 		if (!(*(u32 *)(states + RX_PEER_CONFIG + id * 4) & BIT(31))) continue;
 		u8 *address = memory + 0xe400 + id * 8;
-		if (mac_equal(data + 10, address)) { macid = id; break; }
+		if (rx_address_equal(data + 10, (const u32 *)address)) { macid = id; break; }
 	}
 	if (macid >= 128) return 0;
 	if (!*(volatile u32 *)(memory + 0x11a00 + macid * 4)) return 0;
@@ -108,7 +115,8 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_frame(
 	if ((fc & 0x0300) != (client ? 0x0200 : 0x0100)) return 0;
 	u8 *peer = memory + 0xe400 + macid * 8;
 	u8 *ap = memory + MAILBOX_OFFSET + 64;
-	if (!mac_equal(data + 4, ap) || !mac_equal(data + 10, peer)) return 0;
+	if (!rx_address_equal(data + 4, (const u32 *)ap) ||
+	    !rx_address_equal(data + 10, (const u32 *)peer)) return 0;
 	u32 header = fc & 0x80 ? 26 : 24;
 	if (fc & 0x8000) header += 4;
 	/* mac80211 handles PS transitions and trigger-enabled U-APSD frames. */
@@ -133,8 +141,85 @@ static u32 __attribute__((section(".entry"), noinline)) rx_protocol(const u8 *ll
 	return type == 0xdd860000 && (llc[8] >> 4) == 6 && (llc[14] == 6 || llc[14] == 17);
 }
 
+/* RXBD shift and A-MSDU padding keep Ethernet headers halfword aligned.
+ * Avoid split-word stores to uncached payload memory. Read all source words
+ * first so the exact twelve-byte move also preserves overlapping headers. */
+static inline void __attribute__((always_inline)) rx_ethernet_move(u8 *out, const u32 *in)
+{
+	u32 a = in[0], b = in[1], c = in[2];
+	if (!((u32)out & 3)) {
+		((u32 *)out)[0] = a; ((u32 *)out)[1] = b; ((u32 *)out)[2] = c;
+	} else if (!((u32)out & 1)) {
+		*(u16 *)out = a;
+		*(u32 *)(out + 2) = (a >> 16) | (b << 16);
+		*(u32 *)(out + 6) = (b >> 16) | (c << 16);
+		*(u16 *)(out + 10) = c >> 16;
+	} else {
+		unaligned_word(out, a); unaligned_word(out + 4, b);
+		unaligned_word(out + 8, c);
+	}
+}
+
+static inline u32 __attribute__((always_inline)) rx_cpu_epp_peak(volatile u32 *ni)
+{
+	u32 peak = 0;
+	/* Stock ca_ni_rx_poll uses STATUS0's CPU0 byte to skip empty COS queues. */
+	u32 active = ni[0x659c / 4] & 255;
+#pragma clang loop unroll(disable)
+	for (u32 cos = 0; cos < 8; cos++) {
+		if (!(active & BIT(cos))) continue;
+		u32 wr = ni[0x7000 / 4 + cos];
+		u32 rd = ni[0x7100 / 4 + cos];
+		u32 used = ((wr - rd) & 1023) / 8;
+		if (used > peak) peak = used;
+	}
+	return peak;
+}
+
+static u32 __attribute__((section(".rxq"), noinline)) rx_epp_retry(
+	volatile u32 *mailbox, volatile u32 *ni, u32 write, u32 frames)
+{
+	volatile u32 *vp = (void *)mailbox[88];
+	u32 read = mailbox[91];
+	u32 completed = (vp[0x1c / 4] - read) & RTL_AX_NI_TX_MASK;
+
+	if (!completed) return 0;
+	read += completed;
+	mailbox[91] = read;
+	/* Sample EPP after VP completion. The batch snapshot can count
+	 * consumed descriptors both in flight and in the published EPPs. */
+	return rx_cpu_epp_peak(ni) + ((write - read) & RTL_AX_NI_TX_MASK) + frames <= 96;
+}
+
+/* PE0 keeps the latest PN/SN for one TID locally until it publishes the
+ * batch. ARM only sees complete records and their matching global count. */
+struct rx_uplink_batch {
+	volatile u32 *state;
+	u32 next, pn_low, pn_high;
+	u32 mpdus, msdus, rx_bytes, ni_bytes;
+};
+
+static void __attribute__((section(".rxq"), noinline)) rx_uplink_publish(
+	volatile u32 *mailbox, struct rx_uplink_batch *batch)
+{
+	volatile u32 *state = batch->state;
+	if (!state) return;
+
+	u32 generation = state[6] + 1, previous = state[3];
+	u32 accepted = previous + batch->mpdus;
+	state[6] = generation; sync();
+	state[1] = batch->pn_low; state[2] = batch->pn_high;
+	state[0] = BIT(31) | batch->next;
+	state[3] = accepted; state[4] += batch->rx_bytes; state[5] += batch->msdus;
+	sync(); state[6] = generation + 1;
+	mailbox[96] += batch->msdus; mailbox[97] += batch->ni_bytes;
+	if ((previous ^ accepted) & ~1023U) pe_event(mailbox);
+	batch->state = 0;
+}
+
 static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
-	volatile u32 *mailbox, u8 *buffer, u32 buffer_dma, u32 *reorder)
+	volatile u32 *mailbox, u8 *buffer, u32 buffer_dma, u32 *reorder,
+	struct rx_uplink_batch *batch)
 {
 	if (!mailbox[88] || !mailbox[93]) return 0;
 	/* With FE off, Linux owns TCP/UDP too; leave the original MPDU intact. */
@@ -154,18 +239,22 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	u8 *iv = frame + header, *data = wire + header + 8;
 	u32 pn_low = iv[0] | (u32)iv[1] << 8 | (u32)iv[4] << 16 | (u32)iv[5] << 24;
 	u32 pn_high = iv[6] | (u32)iv[7] << 8;
-	if (!(state[0] & BIT(31))) { mailbox[108]++; return 0; }
-	u32 expected = state[0] & 4095, out_of_order = expected != sequence;
+	u32 pending = batch->state == state;
+	u32 ba = pending ? BIT(31) | batch->next : state[0];
+	if (!(ba & BIT(31))) { mailbox[108]++; return 0; }
+	u32 expected = ba & 4095, out_of_order = expected != sequence;
+	u32 last_high = pending ? batch->pn_high : state[2];
+	u32 replay = pn_high < last_high ||
+		(pn_high == last_high && pn_low <= (pending ? batch->pn_low : state[1]));
 	if (out_of_order) {
 		mailbox[109]++;
 		/* A retried MPDU already behind the BA head and accepted PN is
 		 * a duplicate. Recycle it without serializing fresh RX through ARM. */
-		if ((frame[1] & 8) && ((sequence - expected) & 4095) >= 2048 &&
-		    (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])))
+		if ((frame[1] & 8) && ((sequence - expected) & 4095) >= 2048 && replay)
 			return RX_ARM_DONE;
 		if (((sequence - expected) & 4095) >= state[7]) return 0;
 	}
-	if (pn_high < state[2] || (pn_high == state[2] && pn_low <= state[1])) { mailbox[110]++; return 0; }
+	if (replay) { mailbox[110]++; return 0; }
 	if (out_of_order) {
 		u32 order = ((macid * 16 + tid) << 12) | expected;
 		u32 key = BIT(23) | (mailbox[RTL_AX_RX_WORK_PROCESS] << 24) | order;
@@ -177,7 +266,7 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 			return 0;
 		}
 	}
-	struct { u8 addresses[12]; u32 range; } plan[63];
+	struct { u32 addresses[3]; u32 range; } plan[63];
 	/* Stock retains two completed descriptors and requires more than two
 	 * free slots before each submission. The hardware read cursor alone
 	 * does not release those prefetched descriptors. */
@@ -193,8 +282,9 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		const u8 *destination = frame + (client ? 4 : 16);
 		if (body < 36 || body + 6 > 2048 || (destination[0] & 1) ||
 		    !rx_protocol(rx_prefix(sub_prefix, data, 5))) return 0;
-		header_copy(plan[0].addresses, destination, 6);
-		header_copy(plan[0].addresses + 6, frame + (client ? 16 : 10), 6);
+		u8 *addresses = (u8 *)plan[0].addresses;
+		header_copy(addresses, destination, 6);
+		header_copy(addresses + 6, frame + (client ? 16 : 10), 6);
 		plan[0].range = (u32)(data - 6 - buffer) | (body + 6) << 16;
 	} else {
 		frames = 0;
@@ -209,7 +299,9 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 			if (bytes < 36 || bytes + 6 > 2048 || bytes > body - offset - 14 || (sub[0] & 1) || !rx_protocol(sub + 14)) return 0;
 			/* Three-address STA receives sources behind the AP, addressed to self. */
 			if (client ? !mac_equal(sub, frame + 4) : !mac_equal(sub + 6, frame + 10)) return 0;
-			header_copy(plan[frames].addresses, sub, 12);
+			plan[frames].addresses[0] = ((const struct packed_word *)sub)->value;
+			plan[frames].addresses[1] = ((const struct packed_word *)(sub + 4))->value;
+			plan[frames].addresses[2] = ((const struct packed_word *)(sub + 8))->value;
 			plan[frames].range = (u32)(data + offset + 8 - buffer) | (bytes + 6) << 16;
 			frames++;
 			offset += bytes + 14;
@@ -222,54 +314,39 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 		*reorder = ((macid * 16 + tid) << 12) | expected;
 		return 0;
 	}
-	/* The CPU EPP can fill before CB occupancy asserts NI backpressure.
-	 * Count published EPPs and this VP's in-flight descriptors before
-	 * modifying payload/PN/SN. Leave 32 entries for fabric/other ingress. */
-	{
-		u32 peak = 0;
-		/* Stock ca_ni_rx_poll uses STATUS0's CPU0 byte to skip empty
-		 * COS queues. Take a fresh snapshot for each complete MPDU. */
-		u32 active = ni[0x659c / 4] & 255;
-#pragma clang loop unroll(disable)
-		for (u32 cos = 0; cos < 8; cos++) {
-			if (!(active & BIT(cos))) continue;
-			u32 wr = ni[0x7000 / 4 + cos];
-			u32 rd = ni[0x7100 / 4 + cos];
-			u32 used = ((wr - rd) & 1023) / 8;
-			if (used > peak) peak = used;
-		}
-		if (peak + ((write - read) & RTL_AX_NI_TX_MASK) + frames > 96)
-			return RX_NI_BUSY;
-	}
+	/* Leave 32 EPP entries for fabric and other ingress. */
+	if (rx_cpu_epp_peak(ni) + ((write - read) & RTL_AX_NI_TX_MASK) + frames > 96 &&
+	    !rx_epp_retry(mailbox, ni, write, frames))
+		return RX_NI_BUSY;
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
+	u32 descriptor_base = mailbox[89];
 	u32 total_bytes = 0;
 	/* Commit only after every subframe and the NI allowance are valid.
 	 * The plan avoids a second traversal of uncached A-MSDU headers. */
 	for (u32 n = 0; n < frames; n++) {
 		u32 bytes = plan[n].range >> 16;
 		u8 *ethernet = buffer + (plan[n].range & 65535);
-		header_copy(ethernet, plan[n].addresses, 12);
+		rx_ethernet_move(ethernet, plan[n].addresses);
 		/* Stock Wi-Fi lookup maps the actual length (minimum 34), not
 		 * ETH_ZLEN. Padding here would overwrite the next A-MSDU header. */
-		u32 *descriptor = uncached(mailbox[89] + ((write + n) & RTL_AX_NI_TX_MASK) * 8);
+		u32 *descriptor = uncached(descriptor_base + ((write + n) & RTL_AX_NI_TX_MASK) * 8);
 		descriptor[0] = buffer_dma + (u32)(ethernet - buffer);
 		descriptor[1] = 0xa5000001U | bytes << 8 | ((config >> 8) & 63) << 1;
 		total_bytes += bytes;
 	}
-	state[6]++; sync();
-	state[1] = pn_low; state[2] = pn_high;
-	state[0] = BIT(31) | ((sequence + 1) & 4095);
-	state[3]++; state[4] += length - 4; state[5] += frames;
-	sync(); state[6]++;
-	if (!(state[3] & 1023)) pe_event(mailbox);
-	mailbox[96] += frames; mailbox[97] += total_bytes;
+	if (!pending) {
+		rx_uplink_publish(mailbox, batch);
+		batch->state = state;
+		batch->mpdus = batch->msdus = batch->rx_bytes = batch->ni_bytes = 0;
+	}
+	batch->next = (sequence + 1) & 4095;
+	batch->pn_low = pn_low; batch->pn_high = pn_high;
+	batch->mpdus++; batch->msdus += frames;
+	batch->rx_bytes += length - 4; batch->ni_bytes += total_bytes;
 	(*(u32 *)((u8 *)mailbox - MAILBOX_OFFSET + RTL_AX_RX_PEER_BYTES + macid * 4)) += length - 4;
 	if (amsdu) mailbox[113]++;
-	/* The state release also published all packet and NI descriptor writes. */
+	/* The batch publishes PN/SN before ringing the NI doorbell. */
 	mailbox[90] = write + frames;
-	volatile u32 *vp = (void *)mailbox[88];
-	vp[0x18 / 4] = (write + frames) & RTL_AX_NI_TX_MASK;
-	vp[0x68 / 4] = 1;
 	return RX_NI_PENDING | ((write + frames) & ~RX_NI_PENDING);
 }
 
@@ -281,13 +358,19 @@ static u32 __attribute__((section(".rxq"), noinline, minsize)) rx_needs_arm_barr
 	u32 offset = 4 + (wd & BIT(31) ? 32 : 16) + ((wd >> 14) & 3) * 2 +
 		((wd >> 28) & 7) * 16 + (wd & BIT(23) ? 4 : 0);
 	u32 fc = buffer[offset] & 0xfc;
+	/* Complete, unprotected group Beacons neither enter QoS reorder nor
+	 * change unicast peer PS. Leave fragments and other management fenced. */
+	if (fc == 0x80 && (wd & 0x3fff) >= 40 &&
+	    (buffer[offset + 4] & 1) && !(buffer[offset + 1] & 0x47) &&
+	    !(buffer[offset + 22] & 15)) return 0;
 	/* Stock control dispatch handles BAR/PS-Poll separately. These four
 	 * control subtypes do not advance receive PN/SN or peer PS state. */
 	return fc != 0xb4 && fc != 0xc4 && fc != 0xd4 && fc != 0x94;
 }
 
 static inline u32 __attribute__((always_inline)) rx_reorder(
-	volatile u32 *mailbox, u8 *memory, u32 read, u32 order)
+	volatile u32 *mailbox, u8 *memory, u32 read, u32 order, struct rx_uplink_batch *batch,
+	const u32 *addresses)
 {
 	u32 write = mailbox[RTL_AX_RX_WORK_WRITE];
 	u32 *search = (void *)(memory + RTL_AX_RX_REORDER_SEARCH);
@@ -312,7 +395,7 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		if (hint && (hint >> 23) == read && !((hint ^ order) & 0x7ff000) &&
 		    (hint & 4095) != (order & 4095)) continue;
 		u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + scan * 4);
-		u32 dma = rx_buffer_dma(mailbox, item & ~RTL_AX_RX_WORK_OLD);
+		u32 dma = addresses[item & ~RTL_AX_RX_WORK_OLD];
 		u8 *buffer = uncached(dma), *wire;
 		u32 wd = *(u32 *)(buffer + 4);
 		if (!rx_needs_arm_barrier(buffer, wd)) continue;
@@ -328,7 +411,7 @@ static inline u32 __attribute__((always_inline)) rx_reorder(
 		}
 		/* Each station/TID has independent reorder state. Commit an unrelated
 		 * frame only through its complete NI/PN/SN validation. */
-		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused);
+		u32 unused = 0, owner = rx_uplink(mailbox, buffer, dma, &unused, batch);
 		if (owner == RX_NI_BUSY) {
 			/* Retry this untouched slot, not the previous head's cursor. */
 			search[1] = scan;
@@ -369,18 +452,18 @@ static void __attribute__((noinline)) rx_status_poll(volatile u32 *mailbox)
 	}
 }
 
-static void __attribute__((noinline)) rx_completion_poll(volatile u32 *mailbox)
+static void __attribute__((noinline)) rx_completion_poll(volatile u32 *mailbox, const u32 *addresses)
 {
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	if (mailbox[88]) {
 		volatile u32 *vp = (void *)mailbox[88];
 		mailbox[91] += ((vp[0x1c / 4] - mailbox[91]) & RTL_AX_NI_TX_MASK);
 	}
-	rx_buffer_recycle(mailbox, memory);
-	rx_work_recycle(mailbox, memory);
+	rx_buffer_recycle(mailbox, memory, addresses);
+	rx_work_recycle(mailbox, memory, addresses);
 }
 
-void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox, u32 budget)
+void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox, u32 budget, const u32 *addresses)
 {
 	if (!mailbox[80]) return;
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
@@ -396,7 +479,7 @@ void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox, u3
 		u32 next = (write + 1) & 255;
 		if (next == read || mailbox[RTL_AX_RX_HW_PRODUCER] == slot) break;
 		u32 id = map[slot];
-		u32 info = *(volatile u32 *)uncached(rx_buffer_dma(mailbox, id));
+		u32 info = *(volatile u32 *)uncached(addresses[id]);
 		u32 next_tag = tag == 8191 ? 1 : tag + 1;
 		if (((info >> 16) & 8191) != next_tag) {
 			/* RDU remains observable even inside a cached producer batch. */
@@ -408,7 +491,7 @@ void __attribute__((section(".rxq"), noinline)) pe_rxq(volatile u32 *mailbox, u3
 		u32 replacement = *(u32 *)(memory + RTL_AX_RX_IDLE_IDS + --count * 4);
 		map[slot] = replacement;
 		volatile u32 *descriptor = uncached(descriptors + slot * 8);
-		descriptor[1] = rx_buffer_dma(mailbox, replacement);
+		descriptor[1] = addresses[replacement];
 		/* Drain the DDR address update before returning this RXBD to PCIe. */
 		(void)descriptor[1];
 		write = next;
@@ -434,44 +517,58 @@ static void __attribute__((noinline)) rx_notify_done(volatile u32 *mailbox)
 	mailbox[83] = mailbox[81];
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rxq_batch(volatile u32 *mailbox)
+static void __attribute__((section(".rxq"), noinline)) pe_rxq_batch(volatile u32 *mailbox, const u32 *addresses)
 {
 	/* Capture does not process work. One completion snapshot supplies the
 	 * entire batch; newer NI/ARM releases are collected on the next turn. */
-	rx_completion_poll(mailbox);
-	pe_rxq(mailbox, 16);
+	rx_completion_poll(mailbox, addresses);
+	pe_rxq(mailbox, RX_MPDU_BATCH, addresses);
 	rx_notify_done(mailbox);
 }
 
-static void __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(volatile u32 *mailbox)
+static u32 __attribute__((section(".rxq"), noinline, minsize)) pe_rx_work(
+	volatile u32 *mailbox, struct rx_uplink_batch *batch, const u32 *addresses)
 {
 	u8 *memory = (u8 *)mailbox - MAILBOX_OFFSET;
 	/* Only receive-state handlers serialize subsequent WLAN data. Factory
 	 * paths separate reports; native PHY/DFS/C2H and ordinary control
 	 * handlers do not update receive PN/SN or PS. */
-	if (mailbox[94] == mailbox[95]) mailbox[RTL_AX_RX_ARM_BARRIER] = 0;
-	if (mailbox[RTL_AX_RX_ARM_BARRIER]) return;
+	u32 software_only = 0;
+	if (mailbox[RTL_AX_RX_ARM_BARRIER]) {
+		if (mailbox[94] == mailbox[95]) {
+			mailbox[RTL_AX_RX_ARM_BARRIER] = 0;
+		} else {
+			volatile u32 *ni = (void *)0xb0000000;
+			/* With FE disabled, the ARM ring preserves the order. Keep
+			 * the barrier set so re-enabling FE waits for its entire prefix. */
+			if ((ni[0x2300 / 4] & (BIT(31) | BIT(13))) == (BIT(31) | BIT(13)) &&
+			    (ni[0x38c4 / 4] & BIT(31))) return 0;
+			software_only = 1;
+		}
+	}
 	u32 read = mailbox[RTL_AX_RX_WORK_PROCESS];
-	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return;
+	if (read == mailbox[RTL_AX_RX_WORK_WRITE]) return 0;
 	/* Capture publishes the payload ID before the write cursor. */
 	sync();
 	/* Lookahead may forward a frame or finish discarding an old retry. */
 	u32 completed = *(u32 *)(memory + RX_STATUS + read * 4);
 	if ((completed & RX_NI_PENDING) || completed == RX_ARM_DONE) goto advance;
 	u32 item = *(u32 *)(memory + RTL_AX_RX_WORK_IDS + read * 4), id = item & ~RTL_AX_RX_WORK_OLD;
-	u32 buffer_dma = rx_buffer_dma(mailbox, id);
+	u32 buffer_dma = addresses[id];
 	u8 *buffer = uncached(buffer_dma);
 	u32 wd = *(u32 *)(buffer + 4), type = (wd >> 24) & 15;
 	u32 reorder = 0, owner = (item & RTL_AX_RX_WORK_OLD) && type == 8 ?
-		RX_ARM_DONE : rx_uplink(mailbox, buffer, buffer_dma, &reorder);
+		RX_ARM_DONE : software_only ? 0 : rx_uplink(mailbox, buffer, buffer_dma, &reorder, batch);
 	/* NI congestion retains the untouched head until the next completion
 	 * poll, rather than feeding the same congested path through ARM. */
-	if (owner == RX_NI_BUSY) return;
-	if (reorder && rx_reorder(mailbox, memory, read, reorder)) return;
+	if (owner == RX_NI_BUSY) return 0;
+	if (reorder && rx_reorder(mailbox, memory, read, reorder, batch, addresses)) return 0;
 	*(u32 *)(memory + RX_STATUS + read * 4) = owner;
 	if (!owner) {
 		u32 producer = mailbox[94];
-		if (((producer + 1) & 255) == mailbox[95]) return;
+		if (((producer + 1) & 255) == mailbox[95]) return 0;
+		/* The ARM exception handler synchronizes PN/SN before dispatch. */
+		rx_uplink_publish(mailbox, batch);
 		u32 stateful = rx_needs_arm_barrier(buffer, wd);
 		*(u32 *)(memory + RX_SLOW_RING + producer * 4) = read;
 		sync();
@@ -484,16 +581,29 @@ advance:
 	*(u32 *)(memory + RTL_AX_RX_REORDER_SEARCH) = 0;
 	sync();
 	mailbox[RTL_AX_RX_WORK_PROCESS] = (read + 1) & 255;
+	return 1;
 }
 
-static void __attribute__((section(".rxq"), noinline)) pe_rx_work_batch(volatile u32 *mailbox)
+/* A batch owns all newly prepared NI descriptors until this publication.
+ * Its exit also publishes a short tail before waiting for ARM/NI/reorder. */
+static void __attribute__((section(".rxq"), noinline)) rx_ni_publish(volatile u32 *mailbox)
+{
+	volatile u32 *vp = (void *)mailbox[88];
+	sync();
+	vp[0x18 / 4] = mailbox[90] & RTL_AX_NI_TX_MASK;
+	vp[0x68 / 4] = 1;
+}
+
+static void __attribute__((section(".rxq"), noinline)) pe_rx_work_batch(volatile u32 *mailbox, const u32 *addresses)
 {
 	/* A queued packet checks the ARM acknowledgement before use. */
 	if (mailbox[RTL_AX_RX_WORK_PROCESS] == mailbox[RTL_AX_RX_WORK_WRITE]) return;
+	struct rx_uplink_batch batch;
+	batch.state = 0;
+	u32 submitted = mailbox[90];
 #pragma clang loop unroll(disable)
-	for (u32 budget = 0; budget < 16; budget++) {
-		u32 before = mailbox[RTL_AX_RX_WORK_PROCESS];
-		pe_rx_work(mailbox);
-		if (before == mailbox[RTL_AX_RX_WORK_PROCESS]) break;
-	}
+	for (u32 budget = 0; budget < RX_MPDU_BATCH; budget++)
+		if (!pe_rx_work(mailbox, &batch, addresses)) break;
+	rx_uplink_publish(mailbox, &batch);
+	if (submitted != mailbox[90]) rx_ni_publish(mailbox);
 }

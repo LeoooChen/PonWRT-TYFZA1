@@ -35,7 +35,6 @@ static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw){return hw
 static int rtl_ax_tx_ni_retire_peer(int tx,unsigned id){(void)tx;assert(id==1&&active->scanning&&!active->command_mutex);retired++;return error;}
 static void mutex_lock(int *p){assert(!*p);*p=1;}
 static void mutex_unlock(int *p){assert(*p);*p=0;}
-static void rtl_ax_update32(int *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;assert(active->command_mutex);}
 static void rtl_ax_receive_mode(int *io,unsigned mode){(void)io;assert(mode==2&&!active->scanning);}
 static unsigned ieee80211_frequency_to_channel(unsigned freq){return freq;}
 static int rtl_ax_receive_configure(struct rtl_ax_ap *r,unsigned chan,unsigned center,unsigned bw){(void)chan;(void)center;(void)bw;moved++;r->dfs.error=channel_error;return channel_error;}

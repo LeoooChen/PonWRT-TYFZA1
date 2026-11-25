@@ -113,6 +113,7 @@ static inline int rtl_ax_c_iqk_thermal(const struct rtl_ax_io *io, unsigned int 
 static inline int rtl_ax_c_iqk_prepare(const struct rtl_ax_io *io, unsigned int path)
 {
 	u32 clock = 0x12a0 + path * 0x2000, control = 0x5670 + path * 0x2000;
+	u32 adc = 0xc000 + path * 0x100;
 	int ret;
 
 	C_IQK_RF(0x10005, 1, 0);
@@ -130,6 +131,9 @@ static inline int rtl_ax_c_iqk_prepare(const struct rtl_ax_io *io, unsigned int 
 	rtl_ax_channel_field(io, control, BIT(13), 1);
 	rtl_ax_c_iqk_rxclock(io, path, 3);
 	rtl_ax_channel_field(io, control, 0x60000000, 2);
+	/* LOK and TX IQK use the ADC timing from iqk_macbb_setting_8852c. */
+	rtl_ax_channel_field(io, adc + 0xd4, 0x0c000000, 1);
+	rtl_ax_channel_field(io, adc + 0xd8, 0x1e0, 11);
 	rtl_ax_channel_field(io, 0x12b8 + path * 0x2000, BIT(30), 1);
 	rtl_ax_channel_field(io, 0x30c, 0xff000000, 31);
 	rtl_ax_channel_field(io, 0x30c, 0xff000000, 19);

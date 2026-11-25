@@ -56,7 +56,7 @@ static int rtl9617c_ni_wifi_detach(void *ni,unsigned id){
 }
 static void rtl9617c_ni_fe_remove_port(void *ni,struct net_device *dev){(void)ni;dev->fe=false;}
 static void list_del(int *list){assert(list==&owner->list);owner=NULL;}
-#define kfree(p) free(p)
+#define kvfree_rcu_mightsleep(p) free(p)
 '''
 code += function('wifi_del') + function('wifi_event')
 code += r'''

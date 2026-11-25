@@ -36,7 +36,7 @@ static const u8 rtl_ax_tx_channels[RTL_AX_TX_RINGS] = { 0, 1, 2, 3, 8, 9 };
 static const u16 rtl_ax_tx_indices[RTL_AX_TX_RINGS] = { 0x1058, 0x105c, 0x1060, 0x1064, 0x1078, 0x107c };
 
 struct rtl_ax_tx_mapping {
-	struct scatterlist sg[RTL_AX_TX_WP_ADDRESS_MAX];
+	struct scatterlist sg[RTL_AX_TX_MAX_DMA_SEGMENTS];
 	unsigned int count, dma_count;
 };
 
@@ -370,8 +370,38 @@ static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx, const struct rtl_ax_tx_slot *s
 		dma_unmap_single(&tx->pdev->dev, slot->dma, slot->bytes, DMA_TO_DEVICE);
 }
 
+static int rtl_ax_tx_sgvec(struct sk_buff *skb, struct scatterlist *sg)
+{
+	const struct sk_buff *part = skb;
+	unsigned int count = 0;
+
+	do {
+		const struct skb_shared_info *shared = skb_shinfo(part);
+		unsigned int head = skb_headlen(part), i;
+
+		/* mac80211 A-MSDUs have a flat list of subframes. Use the
+		 * generic traversal for nested lists or sets exceeding the WP. */
+		if ((part != skb && shared->frag_list) ||
+		    count + !!head + shared->nr_frags > RTL_AX_TX_MAX_DMA_SEGMENTS)
+			return skb_to_sgvec(skb, sg, 0, skb->len);
+		if (head)
+			sg_set_buf(&sg[count++], part->data, head);
+		for (i = 0; i < shared->nr_frags; i++) {
+			const skb_frag_t *frag = &shared->frags[i];
+			unsigned int length = skb_frag_size(frag);
+
+			if (length)
+				sg_set_page(&sg[count++], skb_frag_page(frag), length, skb_frag_off(frag));
+		}
+		part = part == skb ? shared->frag_list : part->next;
+	} while (part);
+
+	sg_mark_end(&sg[count - 1]);
+	return count;
+}
+
 static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
-	struct rtl_ax_tx_slot *slot, bool *linearized, bool separate_header)
+	struct rtl_ax_tx_slot *slot, bool *linearized, unsigned int max_addresses)
 {
 	struct scatterlist *sg;
 	unsigned int i, addresses = 0;
@@ -381,8 +411,8 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 		slot->mapping = kmalloc(sizeof(*slot->mapping), GFP_ATOMIC);
 		if (!slot->mapping)
 			return -ENOMEM;
-		sg_init_table(slot->mapping->sg, RTL_AX_TX_WP_ADDRESS_MAX);
-		count = skb_to_sgvec(skb, slot->mapping->sg, 0, skb->len);
+		sg_init_table(slot->mapping->sg, RTL_AX_TX_MAX_DMA_SEGMENTS);
+		count = rtl_ax_tx_sgvec(skb, slot->mapping->sg);
 		if (count > 0) {
 			slot->mapping->count = count;
 			slot->mapping->dma_count = dma_map_sg(&tx->pdev->dev, slot->mapping->sg, count, DMA_TO_DEVICE);
@@ -393,14 +423,13 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 			}
 			for_each_sg(slot->mapping->sg, sg, slot->mapping->dma_count, i)
 				addresses += DIV_ROUND_UP(sg_dma_len(sg), RTL_AX_TX_WP_FRAGMENT_BYTES);
-			if (addresses <= RTL_AX_TX_WP_ADDRESS_MAX - separate_header)
+			if (addresses <= max_addresses)
 				return addresses;
 			rtl_ax_tx_unmap(tx, slot);
 		} else
 			kfree(slot->mapping);
 		slot->mapping = NULL;
-		/* The fixed128-byte WP has ten address entries. Compact only an
-		 * skb whose fragment layout exceeds that hardware descriptor. */
+		/* Coalesce only if the fragments exceed this descriptor's address space. */
 		ret = skb_linearize(skb);
 		if (ret)
 			return ret;
@@ -446,7 +475,7 @@ void rtl_ax_tx_peer_qos(struct rtl_ax_tx *tx, unsigned int macid, bool qos, unsi
 		memset(tx->pe.memory + RTL_AX_NI_PS_DONE + macid * 8, 0, 8);
 		put_unaligned_le32(0, tx->pe.memory + RTL_AX_NI_PS_VERSION + macid * 4);
 		tx->ni.ps_seen[0][macid] = tx->ni.ps_seen[1][macid] = 0;
-		tx->ni.ps_issued[macid] = false;
+		WRITE_ONCE(tx->ni.ps_issued[macid], false);
 		put_unaligned_le32(ps_timeout, tx->pe.memory + RTL_AX_NI_PS_TIMEOUT + macid * 4);
 		memset(tx->pe.memory + 0x18000 + macid * 32, 0, 32);
 		put_unaligned_le32(0, tx->pe.memory + 0xe200 + macid * 4);
@@ -584,7 +613,7 @@ void rtl_ax_tx_ps_release(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 	put_unaligned_le32(uapsd | more_data << 1 | (u32)tids << 16, ps + 3);
 	dma_wmb();
 	put_unaligned_le32(generation, ps + 1);
-	tx->ni.ps_issued[macid] = true;
+	WRITE_ONCE(tx->ni.ps_issued[macid], true);
 	dma_wmb();
 	put_unaligned_le32(get_unaligned_le32(version) + 1, version);
 	tx->ps_releases++;
@@ -616,14 +645,19 @@ static bool rtl_ax_tx_raw_fw_rate(struct rtl_ax_tx *tx, struct sk_buff *skb,
 		(get_unaligned_le32(tx->pe.memory + 0xe200 + macid * 4) & BIT(17));
 }
 
+bool rtl_ax_tx_short_wd_enabled(struct rtl_ax_tx *tx)
+{
+	return tx->pe_active && !tx->checksum_enabled;
+}
+
 int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	struct sk_buff *skb, unsigned int rate, unsigned int gi, unsigned int bandwidth, unsigned int macid,
-	unsigned int aggregate, unsigned int density)
+	unsigned int aggregate, unsigned int density, bool short_wd)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *header = (void *)skb->data;
 	static const u8 tid_indicators[] = { 0, 0, 1, 1, 0, 1, 0, 1 };
-	unsigned int id, next, addresses, length, ring, tid = 0, qsel;
+	unsigned int id, next, addresses, length, ring, tid = 0, qsel, max_addresses;
 	unsigned long flags;
 	struct rtl_ax_tx_slot slot = {.skb = skb, .bytes = skb->len};
 	bool linearized = false;
@@ -662,8 +696,15 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		ring = rtl_ax_tx_dma_channel(tid, 0);
 		qsel = ring;
 	}
+	max_addresses = RTL_AX_TX_WP_ADDRESS_MAX - (encap || pe_sequence);
+	if (short_wd && pe_sequence && aggregate && !tid && packet_bytes > 2300 &&
+	    info->control.hw_key &&
+	    (info->control.hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
+	    !(READ_ONCE(tx->peer_rates[macid]) & BIT(22)) &&
+	    rtl_ax_tx_raw_fw_rate(tx, skb, macid))
+		max_addresses = RTL_AX_TX_MAX_DMA_SEGMENTS;
 	if (original_header_bytes) memcpy(original_header, skb->data, original_header_bytes);
-	ret = rtl_ax_tx_map(tx, skb, &slot, &linearized, encap || pe_sequence);
+	ret = rtl_ax_tx_map(tx, skb, &slot, &linearized, max_addresses);
 	if (ret < 0)
 		return ret;
 	addresses = ret;
@@ -694,7 +735,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	if (encap || ieee80211_is_data(header->frame_control))
 		rate |= tx->peer_rates[macid] & BIT(22);
 	if (tx->pe_active) {
-		u32 request[8 + RTL_AX_TX_WP_ADDRESS_MAX * 2];
+		u32 request[8 + RTL_AX_TX_REQ_INLINE_SEGMENTS * 2];
 		u32 *published = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
 		u32 request_flags = (encap ? tid : ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
@@ -731,14 +772,18 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 		if (rtl_ax_tx_raw_fw_rate(tx, skb, macid))
 			request[3] = tx->peer_rates[macid] | BIT(20);
 		slot.firmware_rate = !!(request[3] & BIT(20));
+		if (addresses + (encap || pe_sequence) > RTL_AX_TX_WP_ADDRESS_MAX)
+			request_flags |= RTL_AX_TX_REQ_SHORT_WD;
 		request[4] = request_flags; request[5] = aggregate | density << 8 | key |
 			(tx->peer_preload[macid] ? RTL_AX_TX_AGG_PRELOAD : 0);
 		request[6] = pn; request[7] = pn >> 32;
 		if (slot.mapping) {
 			struct scatterlist *sg; unsigned int i;
 			for_each_sg(slot.mapping->sg, sg, segments, i) {
-				request[8 + i * 2] = lower_32_bits(sg_dma_address(sg));
-				request[9 + i * 2] = sg_dma_len(sg);
+				unsigned int word = rtl_ax_tx_req_dma_word(i);
+
+				request[word] = lower_32_bits(sg_dma_address(sg));
+				request[word + 1] = sg_dma_len(sg);
 			}
 			tx->scatter_packets++; tx->scatter_segments += segments;
 		} else { request[8] = lower_32_bits(slot.dma); request[9] = skb->len; }
@@ -774,7 +819,9 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			memcpy(tx->pe.memory + 0xe400 + macid * 8, header->addr1, ETH_ALEN);
 			template_ready = true;
 		}
-		memcpy(published, request, (8 + segments * 2) * sizeof(*request));
+		memcpy(published, request,
+			(8 + min(segments, (unsigned int)RTL_AX_TX_REQ_INLINE_SEGMENTS) * 2) *
+			sizeof(*request));
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {
@@ -868,13 +915,13 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	}
 	if (tx->pe_active) {
 		tx->pe_producer = (tx->pe_producer + 1) & 255;
-		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
+		/* PE polls this index: publish the complete request and header first. */
 		dma_wmb();
+		put_unaligned_le32(tx->pe_producer, tx->pe.memory + PE_PROBE_MAILBOX + 32);
 	} else
 		tx->io->write16(tx->io->ctx, rtl_ax_tx_indices[ring], next);
 	/* ARM request IDs are shared by all six rings but independent of NI
 	 * owners and hardware tags. Leave 32 slots for in-flight submitters.
-	 * The old PE limit96 stalls before the factory121-report batch fills.
 	 * RPQ release owns the matching wake after half the pool is free. */
 	if (tx->occupied >= (RTL_AX_TX_ENTRIES - 32) && !tx->queues_stopped) {
 		tx->queues_stopped = true;
@@ -913,7 +960,7 @@ static void ni_ps_complete(struct rtl_ax_tx *tx, struct ieee80211_sta *sta,
 	tx->ps_eosp += ieee80211_sta_eosp_generation(sta, generation);
 	spin_lock_irqsave(&tx->lock, flags);
 	if (get_unaligned_le32(tx->pe.memory + 0xe800 + macid * 16 + 4) == generation)
-		tx->ni.ps_issued[macid] = false;
+		WRITE_ONCE(tx->ni.ps_issued[macid], false);
 	spin_unlock_irqrestore(&tx->lock, flags);
 }
 

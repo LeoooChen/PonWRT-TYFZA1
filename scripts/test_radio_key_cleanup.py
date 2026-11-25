@@ -30,6 +30,7 @@ static void rtl_ax_store32(u8 *p,u32 v){memcpy(p,&v,4);}
 #define RTL_AX_H2C_CMD 0
 #define RTL_AX_H2C_DATA 1
 #define HZ 100
+#define WRITE_ONCE(v,x) ((v)=(x))
 #define WLAN_CIPHER_SUITE_CCMP 4
 #define IEEE80211_KEY_FLAG_PAIRWISE BIT(0)
 #define IEEE80211_KEY_FLAG_SW_MGMT_TX BIT(4)
@@ -55,6 +56,7 @@ struct rtl_ax_ap {unsigned traffic_peer;struct rtl_ax_security_role security_rol
  bool sta_role,sta_associated;int io;
  bool security_ids[128],security_deleting[128],security_aborting[128];u8 security_unlink[128];
  int tx,rx,cleanup_work;unsigned keys_installed,keys_removed,keys_aborted;int key_result;
+ struct {bool short_wd;}tx_ba[128];
  struct {bool valid;unsigned macid;} rx_ba[8];
  struct {u8 self[6],peer[6];unsigned aid;bool pending,client,mesh;} retired_stations[128];
  bool ra_registered[128],ra_pending[128],station_ids[128],preload_peers[128];unsigned station_removed;
@@ -109,6 +111,8 @@ static int rtl_ax_command(struct rtl_ax_ap *r,unsigned q,unsigned cat,unsigned c
  const u8 *data,unsigned len,bool done){return rtl_ax_command_flags(r,q,cat,cls,fn,data,len,false,done);}
 static int rtl_ax_drop_station(struct rtl_ax_ap *r,unsigned id,unsigned tid){(void)r;(void)id;(void)tid;return 0;}
 static int rtl_ax_rx_ba_remove(struct rtl_ax_ap *r,unsigned i){r->rx_ba[i].valid=false;return 0;}
+static void rtl_ax_station_short_wd(u8 *out,bool enable,unsigned density)
+{(void)out;(void)enable;(void)density;assert(0);}
 static void rtl_ax_peer_cam(u8 *out,unsigned id,const u8 *self,const u8 *peer,unsigned aid,bool valid){
  (void)out;(void)id;(void)self;(void)peer;(void)aid;(void)valid;}
 static void rtl_ax_tx_peer_preload(int tx,unsigned id,bool enable){(void)tx;(void)id;(void)enable;}

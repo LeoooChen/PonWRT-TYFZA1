@@ -1,0 +1,35 @@
+--- a/net/ipv6/udp.c
++++ b/net/ipv6/udp.c
+@@ -1534,6 +1534,11 @@
+ 	if (daddr) {
+ 		if (ipv6_addr_v4mapped(daddr)) {
+ 			struct sockaddr_in sin;
++
++			if (!sin6 && !ipv6_only_sock(sk) &&
++			    !cgroup_bpf_enabled(CGROUP_UDP4_SENDMSG))
++				return udp_sendmsg(sk, msg, len);
++
+ 			sin.sin_family = AF_INET;
+ 			sin.sin_port = sin6 ? sin6->sin6_port : inet->inet_dport;
+ 			sin.sin_addr.s_addr = daddr->s6_addr32[3];
+--- a/net/ipv4/udp.c
++++ b/net/ipv4/udp.c
+@@ -1440,8 +1440,16 @@
+ 		}
+ 	}
+ 
+-	if (connected)
+-		rt = dst_rtable(sk_dst_check(sk, 0));
++	if (connected) {
++		struct dst_entry *dst = sk_dst_check(sk, 0);
++
++		if (IS_ENABLED(CONFIG_IPV6) && sk->sk_family == AF_INET6 &&
++		    dst && dst->ops->family != AF_INET) {
++			dst_release(dst);
++			dst = NULL;
++		}
++		rt = dst_rtable(dst);
++	}
+ 
+ 	if (!rt) {
+ 		struct net *net = sock_net(sk);

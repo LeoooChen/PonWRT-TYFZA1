@@ -51,8 +51,12 @@ static void ni_ps_done(struct rtl_ax_tx *tx, unsigned int macid)
 	static const u32 tables[] = { RTL_AX_NI_PS_CANCEL, RTL_AX_NI_PS_DONE };
 	unsigned int i;
 
-	/* Most event passes have no PS completion, including unused MACIDs.
-	 * Avoid hashing an uncached PE MAC address until a record changes. */
+	/* Ordinary TX reports also wake this worker. Poll PE completion records
+	 * only for MACIDs with an outstanding NI power-save grant. */
+	if (!READ_ONCE(tx->ni.ps_issued[macid]))
+		return;
+
+	/* Avoid hashing an uncached PE MAC address until a record changes. */
 	if (get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_CANCEL + macid * 8 + 4) == tx->ni.ps_seen[0][macid] &&
 	    get_unaligned_le32(tx->pe.memory + RTL_AX_NI_PS_DONE + macid * 8 + 4) == tx->ni.ps_seen[1][macid])
 		return;
@@ -83,7 +87,7 @@ static void ni_ps_retire(struct rtl_ax_tx *tx)
 			tx->pe.memory + 0xe400 + macid * 8, NULL);
 		if (sta) ni_ps_complete(tx, sta, macid,
 			get_unaligned_le32(tx->pe.memory + 0xe800 + macid * 16 + 4));
-		tx->ni.ps_issued[macid] = false;
+		WRITE_ONCE(tx->ni.ps_issued[macid], false);
 	}
 	rcu_read_unlock(); local_bh_enable();
 }

@@ -31,6 +31,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;
 #define spin_lock_irqsave(p,f) ((void)(p),(f)=0)
 #define spin_unlock_irqrestore(p,f) ((void)(p),(void)(f))
 #define dma_wmb() ((void)0)
+#define WRITE_ONCE(p,v) ((p)=(v))
 static u32 get_unaligned_le32(const void *p){u32 v;memcpy(&v,p,4);return v;}
 static void put_unaligned_le32(u32 v,void *p){memcpy(p,&v,4);}
 struct ieee80211_sta {bool service_period;u16 buffered;unsigned eosp;};

@@ -6,7 +6,7 @@ import hashlib,json,random,struct,subprocess,sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'analysis/python-deps'))
 from unicorn import Uc,UC_ARCH_MIPS,UC_MODE_MIPS32,UC_MODE_LITTLE_ENDIAN,UC_HOOK_MEM_WRITE,UC_HOOK_MEM_READ,UC_HOOK_CODE
-from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_A1,UC_MIPS_REG_SP,UC_MIPS_REG_RA,UC_MIPS_REG_PC
+from unicorn.mips_const import UC_MIPS_REG_A0,UC_MIPS_REG_A1,UC_MIPS_REG_A2,UC_MIPS_REG_SP,UC_MIPS_REG_RA,UC_MIPS_REG_PC
 P=Path(sys.argv[1]);binary=(P/'pe-tx.bin').read_bytes()
 symbols={s[2]:int(s[0],16) for l in subprocess.check_output(['llvm-nm-18',str(P/'pe-wd.elf')],text=True).splitlines() if len(s:=l.split())==3}
 B,MB,BAR,RX,BD,ST,VP,NI,TABLE=0x04000000,0x04002000,0x12000000,0x0a000000,0x07000000,0x08000000,0x13001000,0x09000000,0x07100000
@@ -32,15 +32,25 @@ class Machine:
  def payload_dma(self,id):return RX+((id*73)%514)*16384
  def put(self,a,v):self.u.mem_write(a,struct.pack('<I',v))
  def get(self,a):return struct.unpack('<I',self.u.mem_read(a,4))[0]
- def execute(self,name):
-  for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_A1,1),(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):self.u.reg_write(reg,v)
+ def execute(self,name,a1=1):
+  addresses=self.get(MB+80*4)|0xa0000000
+  if name in ('rx_completion_poll','pe_rxq_batch','pe_rx_work_batch'):a1=addresses
+  for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_A1,a1),(UC_MIPS_REG_A2,addresses),(UC_MIPS_REG_SP,(B+0x1fff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):self.u.reg_write(reg,v)
   self.u.emu_start(symbols[name],0x9fc0fff0,count=100000)
   assert self.u.reg_read(UC_MIPS_REG_PC)==0x9fc0fff0
  def capture(self):
   if 'rx_completion_poll' in symbols:self.execute('rx_completion_poll')
   self.execute('pe_rxq')
   if 'rx_notify_done' in symbols:self.execute('rx_notify_done')
- def process(self):self.execute('pe_rx_work')
+ def process(self):
+  before=self.get(MB+90*4)
+  if 'rx_uplink_publish' in symbols:
+   batch=B+0x17900
+   self.put(batch,0)
+   self.execute('pe_rx_work',batch|0xa0000000)
+   self.execute('rx_uplink_publish',batch|0xa0000000)
+  else:self.execute('pe_rx_work')
+  if self.get(MB+90*4)!=before:self.execute('rx_ni_publish')
  def call(self):self.capture();self.process()
  def arrive(self,frame=b'control-payload',data=False):
   at=self.payload_dma(self.get(B+MAP+self.slot*4));self.tag=self.tag%8191+1
@@ -120,9 +130,9 @@ batch=Machine();batch.put(MB+88*4,VP|0xa0000000);completion_reads=[]
 batch.u.hook_add(UC_HOOK_MEM_READ,
  lambda uc,access,at,size,value,data:completion_reads.append(at),
  begin=VP+0x1c,end=VP+0x1f)
-for _ in range(16):batch.arrive()
+for _ in range(32):batch.arrive()
 batch.execute('pe_rxq_batch')
-assert batch.get(MB+174*4)==16 and len(completion_reads)==1
+assert batch.get(MB+174*4)==32 and len(completion_reads)==1
 batch.inventory()
 
 # A recycled tag and replacement RXBD must be read back before publication.
@@ -153,6 +163,96 @@ def reorder_peer(start=0x123,window=64):
  r.put(ST+1024,1<<31|start);r.put(ST+1028,1);r.put(ST+1024+28,window)
  for j,v in ((88,VP|0xa0000000),(89,NI),(93,1),(106,ST)):r.put(MB+j*4,v)
  return r
+
+if 'rx_uplink_publish' in symbols:
+ # The replay needs the staged PN. ARM must see the complete accepted prefix
+ # before it can consume the replay exception.
+ r=reorder_peer()
+ r.put(ST+1024+12,1023)
+ for seq,pn in ((0x123,2),(0x124,3),(0x125,3)):
+  r.arrive(data_frame(seq,pn),True)
+  r.capture()
+ publications=[]
+ def observe_arm(uc,access,a,size,value,data):
+  publications.append((r.get(ST+1024),r.get(ST+1028),r.get(ST+1024+12),
+                       r.get(ST+1024+24),r.get(MB+96*4)))
+ r.u.hook_add(UC_HOOK_MEM_WRITE,observe_arm,begin=MB+94*4,end=MB+94*4+3)
+ r.execute('pe_rx_work_batch')
+ assert publications==[(1<<31|0x125,3,1025,2,2)]
+ assert r.get(MB+90*4)==2 and r.get(MB+67*4)==2
+ r.inventory()
+
+# NI can finish a published batch after PE samples VP_READ. Recheck EPP
+# usage when the stale in-flight count would otherwise block an MPDU.
+for epp_used,admitted in ((32,True),(96,False)):
+ r=reorder_peer()
+ r.put(MB+90*4,80);r.put(VP+0x18,80)
+ r.put(0x1000659c,1);r.put(0x10007000,epp_used*8)
+ at,raw=r.arrive(data_frame(0x123,2),True);r.capture()
+ r.put(VP+0x1c,64);r.process();r.inventory()
+ assert r.get(MB+91*4)==64
+ assert r.get(MB+90*4)==80+admitted
+ assert r.get(MB+175*4)==admitted
+ assert r.get(ST+1024)==(1<<31)|(0x123+admitted)
+ assert r.get(ST+1028)==1+admitted and not r.get(MB+94*4)
+ if not admitted:assert bytes(r.u.mem_read(at,len(raw)))==raw
+
+# A complete group Beacon is discovery traffic, not a pairwise PN/SN or
+# unicast peer-PS transition. ARM latency must not stall following data.
+# Other management frames, including unicast Beacons with PM, stay fenced.
+for fc,group,fragment,length,independent in (
+ (0x0080,True,0,40,True), (0x1080,True,0,40,True),
+ (0x1080,False,0,40,False), (0x1050,False,0,40,False),
+ (0x10d0,False,0,40,False), (0x00c0,True,0,40,False),
+ (0x4080,True,0,40,False), (0x0480,True,0,40,False),
+ (0x0080,True,1,40,False), (0x0080,True,0,39,False)):
+ r=reorder_peer()
+ header=struct.pack('<HH',fc,0)+(b'\xff'*6 if group else ap)+peer+peer+struct.pack('<H',fragment)
+ r.arrive(header+bytes(length-24));r.call()
+ for i in range(16):
+  r.arrive(data_frame(0x123+i,2+i),True);r.capture();r.process()
+ assert r.get(MB+94*4)==1 and r.get(MB+95*4)==0
+ assert r.get(MB+90*4)==(16 if independent else 0),(hex(fc),group,fragment,length)
+ assert r.get(ST+1024)==(1<<31)|(0x133 if independent else 0x123)
+ r.inventory();r.arm_ack()
+ for _ in range(17):r.process()
+ assert r.get(MB+90*4)==16
+ r.inventory()
+print('RX group Beacon: 16 following data frames bypass delayed ARM; unicast PS, robust management, fragments and short frames retain the barrier')
+
+# Disabled FE cannot race ARM for RX state. Queue its entire software
+# prefix, but fence hardware re-enable until ARM has consumed that prefix.
+for reg in (0x10002300, 0x100038c4):
+ r=reorder_peer();saved=r.get(reg);r.put(reg,0)
+ for seq in range(3):r.arrive(data_frame(0x123+seq,2+seq),True);r.capture()
+ r.execute('pe_rx_work_batch')
+ assert r.get(MB+94*4)==3 and r.get(MB+175*4)==3
+ assert not r.get(MB+90*4) and r.get(MB+180*4)==1
+ r.put(reg,saved)
+ r.arrive(data_frame(0x126,5),True);r.capture();r.process()
+ assert r.get(MB+175*4)==3 and not r.get(MB+90*4)
+ r.arm_ack();r.process();assert r.get(MB+175*4)==3
+ r.arm_ack();r.arm_ack()
+ r.put(ST+1024,1<<31|0x126);r.put(ST+1028,4)
+ r.process();assert r.get(MB+90*4)==1 and r.get(MB+175*4)==4
+ r.put(VP+0x1c,1);r.capture();r.inventory()
+
+# FE can turn on between the barrier check and descriptor parsing. The
+# current frame must still join ARM's prefix; subsequent frames must wait.
+r=reorder_peer();r.arrive(data_frame(0x123,2),True);r.capture()
+r.put(MB+180*4,1);r.put(MB+94*4,1);r.put(MB+95*4,0)
+r.put(0x100038c4,0)
+changed=[]
+def enable_after_snapshot(uc,access,at,size,value,data):
+ if not changed:
+  r.put(0x100038c4,0xa0000000);changed.append(True)
+hook=r.u.hook_add(UC_HOOK_MEM_READ,enable_after_snapshot,begin=TABLE,end=TABLE+4095)
+r.process();r.u.hook_del(hook)
+assert changed and not r.get(MB+90*4)
+assert r.get(MB+94*4)==2 and r.get(MB+175*4)==1
+assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+r.arrive(data_frame(0x124,3),True);r.capture();r.process()
+assert r.get(MB+175*4)==1 and not r.get(MB+90*4)
 
 # Old Retry duplicates must not serialize subsequent fresh frames through ARM.
 for start in (0x123, 0):
@@ -595,6 +695,60 @@ for identity in range(21):
  assert bytes(r.u.mem_read(address,len(expected_payloads[identity])))==expected_payloads[identity]
 r.put(VP+0x1c,1042&1023);r.capture();r.inventory()
 
+# Admission must compare all six bytes while ignoring two padding bytes
+# in the aligned peer/AP record. Exercise descriptor MACID and peer search.
+for direct_macid in (False, True):
+ for shift in (0, 2):
+  for field in ('ap', 'peer', 'ap_padding', 'peer_padding'):
+   for byte in range(2 if 'padding' in field else 6):
+    r=reorder_peer();frame=data_frame(0x123,2)
+    at,raw=r.arrive(frame,True);raw=bytearray(raw[:36]+bytes(shift)+frame)
+    struct.pack_into('<I',raw,0,(struct.unpack_from('<I',raw)[0]&~0x3fff)|len(raw))
+    struct.pack_into('<I',raw,4,struct.unpack_from('<I',raw,4)[0]|(shift//2)<<14)
+    if not direct_macid: struct.pack_into('<I',raw,24,0)
+    r.u.mem_write(at,bytes(raw))
+    address=(B+0x2040 if field.startswith('ap') else B+0xe410)+(6 if 'padding' in field else 0)+byte
+    original=bytes(r.u.mem_read(address,1));r.u.mem_write(address,bytes([original[0]^0x80]))
+    r.capture();r.process()
+    if 'padding' in field:
+     assert r.get(MB+90*4)==1 and not r.get(MB+94*4),(direct_macid,shift,field,byte)
+    else:
+     assert not r.get(MB+90*4) and r.get(MB+94*4)==1,(direct_macid,shift,field,byte)
+     assert bytes(r.u.mem_read(at,len(raw)))==bytes(raw)
+     assert r.get(ST+1024)==1<<31|0x123 and r.get(ST+1028)==1
+
+# RX shift may put the decapsulated Ethernet address on either halfword
+# alignment. Move exactly its twelve address bytes, preserving LLC type,
+# payload, neighbouring subframes and outer headers after full admission.
+for shift in (0, 2, 4, 6):
+ for aggregate in (False, True):
+  r=reorder_peer(); header=bytearray(data_frame(0x123,2)[:34])
+  llc=data_frame(0x123,2)[34:-12]+bytes(range(32))
+  if aggregate:
+   header[24]=0x80
+   sub=dst+peer+struct.pack('!H',len(llc))+llc
+   frame=bytes(header)+sub+bytes((-len(sub))&3)+sub+bytes(12)
+  else: frame=bytes(header)+llc+bytes(12)
+  at,raw=r.arrive(frame,True)
+  raw=bytearray(raw[:36]+bytes(shift)+frame)
+  struct.pack_into('<I',raw,0,(struct.unpack_from('<I',raw)[0]&~0x3fff)|len(raw))
+  struct.pack_into('<I',raw,4,struct.unpack_from('<I',raw,4)[0]|(shift//2)<<14)
+  r.u.mem_write(at,bytes(raw));r.capture();stores=[]
+  hook=r.u.hook_add(UC_HOOK_MEM_WRITE,lambda uc,access,a,size,value,data:stores.append((a&0x1fffffff,size)),begin=at,end=at+len(raw)-1)
+  r.process();r.u.hook_del(hook)
+  count=2 if aggregate else 1
+  assert r.get(MB+90*4)==count and not r.get(MB+94*4)
+  expected=bytearray(raw)
+  for i in range(count):
+   address=r.get(NI+i*8);offset=address-at
+   expected[offset:offset+12]=dst+peer
+   assert bytes(r.u.mem_read(address,12+len(llc)-6))==dst+peer+llc[6:]
+   writes=[(a,size) for a,size in stores if address<=a<address+12]
+   assert len(writes)==(3 if not(address&3) else 4),writes
+   assert sum(size for a,size in writes)==12,writes
+  assert bytes(r.u.mem_read(at,len(raw)))==bytes(expected)
+  r.put(VP+0x1c,count);r.capture();r.inventory()
+
 # No BA, an outside-window SN, replay PN, or a BAR retain ARM ownership.
 for case in ('no_ba','outside_window','replay','BAR','PS_Poll','other_tid','bad_LLC'):
  r=reorder_peer(window=0 if case=='no_ba' else 64)
@@ -688,6 +842,70 @@ pipeline.u.emu_start(symbols['pe_main'],0xbfc0fff0,count=10000)
 assert pipeline.get(MB+90*4)==1 and pipeline.get(ST+1024)==1<<31|0x124
 assert pipeline.get(MB+81*4)==pipeline.slot and pipeline.get(MB+175*4)==1
 pipeline.inventory()
+pipeline.put(MB+3*4,2)
+pipeline.u.emu_start(pipeline.u.reg_read(UC_MIPS_REG_PC),0xbfc0fff0,count=10000)
+assert pipeline.get(MB+4*4)==2
+slot=pipeline.slot
+id=pipeline.get(B+MAP+slot*4)
+old,raw=pipeline.arrive(data_frame(0x124,3),True)
+replacement=old+512
+pipeline.put(old,0)
+pipeline.u.mem_write(replacement,raw)
+pipeline.put(TABLE+id*4,replacement)
+pipeline.put(BD+slot*8+4,replacement)
+pipeline.put(MB+3*4,3)
+pipeline.u.emu_start(pipeline.u.reg_read(UC_MIPS_REG_PC),0xbfc0fff0,count=10000)
+assert pipeline.get(MB+4*4)==3
+assert pipeline.get(MB+81*4)==pipeline.slot and pipeline.get(MB+90*4)==2
+assert pipeline.get(ST+1024)==1<<31|0x125
+# A normal full batch publishes one doorbell, including a descriptor wrap.
+# Early ARM and NI-credit exits publish the prepared prefix before waiting.
+for blocked in (None, 'ARM', 'NI', 'reorder'):
+ r=reorder_peer();r.put(MB+90*4,1020);r.put(MB+91*4,1020);r.put(VP+0x1c,1020)
+ count=16 if blocked is None else 3
+ for i in range(count):r.arrive(data_frame(0x123+i,2+i),True);r.capture()
+ if blocked=='ARM':r.arrive(bytes(60));r.capture()
+ if blocked=='NI':
+  for i in range(3,8):r.arrive(data_frame(0x123+i,2+i),True);r.capture()
+  r.put(0x1000659c,1);r.put(0x10007000,93*8);r.put(0x10007100,0)
+ if blocked=='reorder':r.arrive(data_frame(0x127,6),True);r.capture()
+ writes=[]
+ def published(uc,access,a,size,value,data):
+  if (a&0x1fffffff)==VP+0x68:
+   assert value==1
+   end=r.get(MB+90*4)
+   assert r.get(VP+0x18)==end&1023
+   for i in range(end-1020):
+    address=r.get(NI+((1020+i)&1023)*8)
+    assert bytes(uc.mem_read(address,12))==dst+peer
+   writes.append(end)
+ hook=r.u.hook_add(UC_HOOK_MEM_WRITE,published,begin=VP+0x68,end=VP+0x6b)
+ r.execute('pe_rx_work_batch')
+ assert writes==[1020+count],(blocked,writes)
+ if blocked is not None:
+  r.execute('pe_rx_work_batch')
+  assert writes==[1023],(blocked,writes)
+ r.u.hook_del(hook)
+
+# A pause arriving after descriptor preparation must be acknowledged only
+# after the current batch's pending NI prefix has reached the doorbell.
+paused=reorder_peer();paused.u.mem_map(0x10020000,4096)
+for i in range(4):paused.arrive(data_frame(0x123+i,2+i),True);paused.capture()
+for j,v in ((0,0x50455744),(3,1),(140,MB|0xa0000000),(142,1)):paused.put(MB+j*4,v)
+publication=[];changed=[False];acknowledged=[False]
+def pause_after_prepare(uc,access,a,size,value,data):
+ if (a&0x1fffffff)==MB+90*4 and not changed[0]:
+  changed[0]=True;paused.put(MB+3*4,2)
+ if (a&0x1fffffff)==VP+0x68:publication.append(paused.get(VP+0x18))
+ if (a&0x1fffffff)==MB+4*4 and value==2:
+  assert publication==[4] and paused.get(MB+90*4)==4
+  acknowledged[0]=True;uc.emu_stop()
+paused.u.hook_add(UC_HOOK_MEM_WRITE,pause_after_prepare,begin=MB,end=MB+1023)
+paused.u.hook_add(UC_HOOK_MEM_WRITE,pause_after_prepare,begin=VP,end=VP+4095)
+for reg,v in ((UC_MIPS_REG_A0,MB|0xa0000000),(UC_MIPS_REG_SP,(B+0xfff0)|0xa0000000),(UC_MIPS_REG_RA,0x9fc0fff0)):paused.u.reg_write(reg,v)
+paused.u.emu_start(symbols['pe_main'],0x9fc0fff0,count=20000)
+assert changed[0] and acknowledged[0]
+
 # An empty capture queue needs no worker, while a later packet still waits
 # for the outstanding ARM state handler before its PN/SN can advance.
 idle=Machine();idle.put(MB+180*4,1)

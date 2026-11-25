@@ -67,17 +67,75 @@ static int rtl_ax_chandef_locked(struct rtl_ax_ap *radio, const struct cfg80211_
 		ieee80211_frequency_to_channel(def->center_freq1), bandwidth);
 }
 
+/* With the shared crystal, starting 2.4 GHz returns ownership to the
+ * board's factory trim before that radio calibrates or receives traffic. */
+static DEFINE_MUTEX(rtl_ax_shared_crystal_lock);
+static struct rtl_ax_ap *rtl_ax_shared_crystal_ap;
+static unsigned int rtl_ax_shared_crystal_2g;
+
+static int rtl_ax_cfo_radio_start(struct rtl_ax_ap *radio)
+{
+	struct rtl_ax_ap *ap;
+	unsigned long flags;
+	int ret = 0;
+
+	if (independent_xtal)
+		return 0;
+	mutex_lock(&rtl_ax_shared_crystal_lock);
+	if (radio->chip == RTL_AX_8852C) {
+		rtl_ax_shared_crystal_ap = radio;
+	} else {
+		ap = rtl_ax_shared_crystal_ap;
+		if (ap) {
+			ret = rtl_ax_cfo_set_cap(&ap->io, &ap->cfo, ap->cfo.crystal_default);
+			spin_lock_irqsave(&ap->command_lock, flags);
+			ap->cfo.sample_peer = 0;
+			ap->cfo.samples = ap->cfo.sum = 0;
+			spin_unlock_irqrestore(&ap->command_lock, flags);
+		}
+		if (!ret)
+			rtl_ax_shared_crystal_2g++;
+	}
+	mutex_unlock(&rtl_ax_shared_crystal_lock);
+	return ret;
+}
+
+static void rtl_ax_cfo_radio_stop(struct rtl_ax_ap *radio)
+{
+	unsigned long flags;
+	int ret;
+
+	mutex_lock(&rtl_ax_shared_crystal_lock);
+	if (radio->chip == RTL_AX_8852C) {
+		ret = rtl_ax_cfo_set_cap(&radio->io, &radio->cfo, radio->cfo.crystal_default);
+		if (ret)
+			dev_err(&radio->pdev->dev, "CFO trim reset failed: %d\n", ret);
+		spin_lock_irqsave(&radio->command_lock, flags);
+		radio->cfo.sample_peer = 0;
+		radio->cfo.samples = radio->cfo.sum = 0;
+		spin_unlock_irqrestore(&radio->command_lock, flags);
+		if (rtl_ax_shared_crystal_ap == radio)
+			rtl_ax_shared_crystal_ap = NULL;
+	} else if (!independent_xtal) {
+		rtl_ax_shared_crystal_2g--;
+	}
+	mutex_unlock(&rtl_ax_shared_crystal_lock);
+}
+
 static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
 	int ret;
 
 	mutex_lock(&radio->command_mutex);
+	ret = rtl_ax_cfo_radio_start(radio);
+	if (ret)
+		goto unlock;
 	radio->radar_required = hw->conf.radar_enabled;
 	ret = rtl_ax_chandef_locked(radio, &hw->conf.chandef);
 	if (ret) {
-		mutex_unlock(&radio->command_mutex);
-		return ret;
+		rtl_ax_cfo_radio_stop(radio);
+		goto unlock;
 	}
 	rtl_ax_receive_mode(&radio->io, radio->ap_started ? 4 : radio->sta_vif ? 2 : 0);
 	radio->dig.fahm_triggered = radio->dig.fahm_configured = false;
@@ -93,6 +151,10 @@ static int rtl_ax_monitor_start(struct ieee80211_hw *hw)
 	wiphy_delayed_work_queue(hw->wiphy, &radio->ra_work, HZ);
 	wiphy_delayed_work_queue(hw->wiphy, &radio->dm_work, 2 * HZ);
 	return 0;
+
+unlock:
+	mutex_unlock(&radio->command_mutex);
+	return ret;
 }
 
 static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
@@ -115,12 +177,17 @@ static void rtl_ax_monitor_stop(struct ieee80211_hw *hw, bool suspend)
 	spin_unlock_irqrestore(&radio->command_lock, flags);
 	WRITE_ONCE(radio->monitor_started, false);
 	rtl_ax_update32(&radio->io, 0xce40, BIT(0), 0);
+	hrtimer_cancel(&radio->tx_batch_timer);
+	cancel_work_sync(&radio->tx_batch_dispatch);
 	tasklet_kill(&radio->tx_tasklet);
+	/* tasklet_kill may have suppressed a running callback's rerun. */
+	atomic_set(&radio->txq_schedule, 0);
 	rtl_ax_update32(&radio->io, 0xc400, BIT(12), 0);
 	radio->beacon_enabled = false;
 	ret = rtl_ax_tx_pause(radio->tx);
 	if (ret) dev_err(&radio->pdev->dev, "TX pause on radio stop failed: %d\n", ret);
 	rtl_ax_rx_close(radio->rx);
+	rtl_ax_cfo_radio_stop(radio);
 	rtl_ax_scan_complete_frame(radio, NULL);
 	radio->dfs.error = rtl_ax_dfs_stop_locked(radio);
 	if (radio->dfs.error)
@@ -630,9 +697,12 @@ static int rtl_ax_station_release(struct rtl_ax_ap *radio, unsigned int macid)
 	 * disable. A failed command can be retried without reusing the slot. */
 	if (test_bit(macid, radio->preload_peers)) {
 		rtl_ax_station_preload(dctl, macid, false);
+		if (radio->tx_ba[macid].short_wd)
+			rtl_ax_station_short_wd(dctl, false, 0);
 		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, dctl, sizeof(dctl), true);
 		if (ret) return ret;
 		rtl_ax_tx_peer_preload(radio->tx, macid, false);
+		WRITE_ONCE(radio->tx_ba[macid].short_wd, false);
 		__clear_bit(macid, radio->preload_peers);
 	}
 	for (i = 0; i < RTL_AX_SECURITY_ENTRIES; i++)
@@ -711,6 +781,42 @@ static void rtl_ax_client_release(struct rtl_ax_ap *radio)
 		wiphy_delayed_work_queue(radio->hw->wiphy, &radio->cleanup_work, HZ);
 }
 
+static void rtl_ax_ba_cmac(struct rtl_ax_ap *radio, u8 cmac[68],
+	unsigned int macid, unsigned int aggregate, unsigned int tid, bool starting)
+{
+	/* TID0 descriptors already in flight still need their CCTL window. */
+	unsigned int tid0 = !tid ? (starting ? aggregate : 0) : radio->tx_ba[macid].short_wd_window;
+	bool short_wd = radio->tx_ba[macid].short_wd && tid0;
+
+	if (short_wd) {
+		/* CCTL is shared by all TIDs. Keep its window within each session. */
+		for (unsigned int i = 1; i < IEEE80211_NUM_TIDS; i++) {
+			unsigned int window = starting && i == tid ? aggregate :
+				radio->tx_ba[macid].aggregation[i];
+
+			if (window)
+				tid0 = min(tid0, window);
+		}
+	}
+	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C,
+		short_wd ? tid0 : aggregate);
+	if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
+	/* Keep firmware RA and the negotiated HE packet-extension padding. */
+	rtl_ax_store32(cmac + 60, rtl_ax_ap_read32(cmac + 60) & ~0xffU);
+	if (radio->ra_registered[macid])
+		rtl_ax_store32(cmac + 36, rtl_ax_ap_read32(cmac + 36) & ~0x1ffU);
+	if (short_wd) {
+		/* The short TID0 WD inherits the BA window and enables fallback. */
+		rtl_ax_store32(cmac + 4, rtl_ax_ap_read32(cmac + 4) & ~GENMASK(26, 25));
+		rtl_ax_store32(cmac + 12, rtl_ax_ap_read32(cmac + 12) | BIT(7));
+		rtl_ax_store32(cmac + 16, (rtl_ax_ap_read32(cmac + 16) & ~0xffU) | (tid0 - 1));
+	}
+	if (radio->tx_ba[macid].short_wd)
+		rtl_ax_store32(cmac + 44, rtl_ax_ap_read32(cmac + 44) | BIT(7));
+	if (!aggregate)
+		rtl_ax_store32(cmac + 48, 0x3ff);
+}
+
 static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsigned int tid)
 {
 	u8 cmac[68];
@@ -726,17 +832,12 @@ static int rtl_ax_tx_ba_finish(struct rtl_ax_ap *radio, unsigned int macid, unsi
 		return ret;
 	for (i = 0; i < IEEE80211_NUM_TIDS; i++)
 		aggregate = max_t(unsigned int, aggregate, radio->tx_ba[macid].aggregation[i]);
-	rtl_ax_station_cmac_connected(cmac, macid, radio->chip == RTL_AX_8852C, aggregate);
-	if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
-	/* BA changes retain the peer's negotiated HE packet-extension padding. */
-	rtl_ax_store32(cmac + 60, rtl_ax_ap_read32(cmac + 60) & ~0xffU);
-	if (radio->ra_registered[macid])
-		rtl_ax_store32(cmac + 36, rtl_ax_ap_read32(cmac + 36) & ~0x1ffU);
-	if (!aggregate)
-		rtl_ax_store32(cmac + 48, 0x3ff);
+	rtl_ax_ba_cmac(radio, cmac, macid, aggregate, tid, false);
 	ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
 	if (ret)
 		return ret;
+	if (!tid)
+		radio->tx_ba[macid].short_wd_window = 0;
 	radio->tx_ba[macid].stopping &= ~BIT(tid);
 	radio->tx_ba[macid].flushing &= ~BIT(tid);
 	if (!flush)
@@ -998,10 +1099,17 @@ connected:
 	 * after the hardware accepted it. Removal owns the reservation then. */
 	if (vif->type == NL80211_IFTYPE_AP && radio->chip == RTL_AX_8852C &&
 	    bitmap_weight(radio->preload_peers, 128) < 4) {
+		const struct ieee80211_sta_he_cap *he = &sta->deflink.he_cap;
+		bool short_wd = rtl_ax_tx_short_wd_enabled(radio->tx) &&
+			radio->traffic[id].bandwidth == 3 && he->has_he &&
+			(he->he_cap_elem.phy_cap_info[1] & IEEE80211_HE_PHY_CAP1_LDPC_CODING_IN_PAYLOAD);
 		u8 preload[68];
 
 		__set_bit(id, radio->preload_peers);
 		rtl_ax_station_preload(preload, id, true);
+		WRITE_ONCE(radio->tx_ba[id].short_wd, short_wd);
+		if (short_wd)
+			rtl_ax_station_short_wd(preload, true, sta->deflink.ht_cap.ampdu_density);
 		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, preload, sizeof(preload), true);
 		if (ret) goto remove;
 		rtl_ax_tx_peer_preload(radio->tx, id, true);
@@ -1079,15 +1187,12 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		rtl_ax_update8(&radio->io, 0xc604, 7, 0);
 		rtl_ax_update32(&radio->io, 0xc610, 0xff0000ff,
 			0xa0000000 | (hw->max_tx_aggregation_subframes - 1));
-		rtl_ax_station_cmac_connected(cmac, station->macid, radio->chip == RTL_AX_8852C, aggregate);
-		if (radio->sta_vif) rtl_ax_station_cmac_client(cmac);
-		rtl_ax_store32(cmac + 60, rtl_ax_ap_read32(cmac + 60) & ~0xffU);
-		/* The stock VW_NO_WDINFO default must not overwrite firmware RA. */
-		if (radio->ra_registered[station->macid])
-			rtl_ax_store32(cmac + 36, rtl_ax_ap_read32(cmac + 36) & ~0x1ffU);
+		rtl_ax_ba_cmac(radio, cmac, station->macid, aggregate, params->tid, true);
 		ret = rtl_ax_command(radio, RTL_AX_H2C_DATA, 1, 5, 2, cmac, sizeof(cmac), true);
 		if (ret)
 			return ret;
+		if (!params->tid && radio->tx_ba[station->macid].short_wd)
+			radio->tx_ba[station->macid].short_wd_window = aggregate;
 		WRITE_ONCE(radio->tx_ba[station->macid].aggregation[params->tid], aggregate);
 		rtl_ax_tx_peer_ba(radio->tx, station->macid, params->tid, aggregate);
 		rtl_ax_offload_ready(radio);
@@ -1288,12 +1393,19 @@ static void rtl_ax_monitor_tx(struct ieee80211_hw *hw,
 			aggregate = READ_ONCE(radio->tx_ba[macid].aggregation[tid]);
 			density = control->sta->deflink.ht_cap.ampdu_density;
 		}
-		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, gi, bandwidth, macid, aggregate, density))
+		if (!rtl_ax_tx_submit(radio->tx, hw, skb, rate, gi, bandwidth, macid, aggregate, density,
+		    READ_ONCE(radio->tx_ba[macid].short_wd)))
 			return;
 	} else
 		radio->tx_unimplemented++;
 	ieee80211_free_txskb(hw, skb);
 }
+
+#define RTL_AX_TXQ_OWNED BIT(0)
+#define RTL_AX_TXQ_RERUN BIT(1)
+#define RTL_AX_HE160_TX_BATCH_US 240
+#define RTL_AX_HE160_TX_BATCH_CPU 1
+#define RTL_AX_HE160_TX_BATCH_ALT_CPU 3
 
 static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 {
@@ -1302,8 +1414,11 @@ static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 	struct ieee80211_txq *queue;
 	unsigned int ac;
 
+	/* Keep ownership while running: another CPU records a rerun instead
+	 * of scheduling this busy tasklet on its own softirq queue. */
+	atomic_andnot(RTL_AX_TXQ_RERUN, &radio->txq_schedule);
 	if (!READ_ONCE(radio->monitor_started))
-		return;
+		goto complete;
 	rcu_read_lock();
 	for (ac = 0; ac < hw->queues; ac++) {
 		ieee80211_txq_schedule_start(hw, ac);
@@ -1312,21 +1427,23 @@ static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 			struct sk_buff *skb;
 			struct rtl_ax_station *station = queue->sta ? (void *)queue->sta->drv_priv : NULL;
 
-			/* Hardware RC replaces Minstrel's BA trigger, not mac80211's
-			 * negotiated session lifecycle. Retry rejection at most once/sec. */
-			if (station && station->macid && queue->tid < 8 && ac != IEEE80211_AC_VO &&
-			    queue->sta->wme && READ_ONCE(radio->peer_authorized[station->macid]) &&
-			    (queue->sta->deflink.ht_cap.ht_supported || queue->sta->deflink.vht_cap.vht_supported ||
-			     queue->sta->deflink.he_cap.has_he) &&
-			    !READ_ONCE(radio->tx_ba[station->macid].aggregation[queue->tid]) &&
-			    !(READ_ONCE(radio->tx_ba[station->macid].stopping) & BIT(queue->tid)) &&
-			    (!station->ba_retry[queue->tid] || time_after_eq(jiffies, station->ba_retry[queue->tid]))) {
-				station->ba_retry[queue->tid] = jiffies + HZ;
-				ieee80211_start_tx_ba_session(queue->sta, queue->tid, 0);
-			}
-
-			while ((skb = ieee80211_tx_dequeue(hw, queue)))
+			/* A stop/wake can schedule an empty TXQ. Start BA only for a
+			 * dequeued packet, otherwise an idle timeout restarts itself. */
+			while ((skb = ieee80211_tx_dequeue(hw, queue))) {
+				/* Hardware RC replaces Minstrel's BA trigger, not mac80211's
+				 * negotiated session lifecycle. Retry rejection at most once/sec. */
+				if (station && station->macid && queue->tid < 8 && ac != IEEE80211_AC_VO &&
+				    queue->sta->wme && READ_ONCE(radio->peer_authorized[station->macid]) &&
+				    (queue->sta->deflink.ht_cap.ht_supported || queue->sta->deflink.vht_cap.vht_supported ||
+				     queue->sta->deflink.he_cap.has_he) &&
+				    !READ_ONCE(radio->tx_ba[station->macid].aggregation[queue->tid]) &&
+				    !(READ_ONCE(radio->tx_ba[station->macid].stopping) & BIT(queue->tid)) &&
+				    (!station->ba_retry[queue->tid] || time_after_eq(jiffies, station->ba_retry[queue->tid]))) {
+					station->ba_retry[queue->tid] = jiffies + HZ;
+					ieee80211_start_tx_ba_session(queue->sta, queue->tid, 0);
+				}
 				rtl_ax_monitor_tx(hw, &control, skb);
+			}
 			ieee80211_return_txq(hw, queue, false);
 			if (ieee80211_queue_stopped(hw, ac))
 				break;
@@ -1334,16 +1451,61 @@ static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 		ieee80211_txq_schedule_end(hw, ac);
 	}
 	rcu_read_unlock();
+complete:
+	/* Atomically retire ownership only when no wake raced this pass.
+	 * A requested rerun stays on the current CPU, after this callback. */
+	if (atomic_cmpxchg(&radio->txq_schedule, RTL_AX_TXQ_OWNED, 0) !=
+	    RTL_AX_TXQ_OWNED)
+		tasklet_schedule(&radio->tx_tasklet);
+}
+
+static void rtl_ax_tx_batch_dispatch(struct work_struct *work)
+{
+	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, tx_batch_dispatch);
+
+	tasklet_schedule(&radio->tx_tasklet);
+}
+
+static enum hrtimer_restart rtl_ax_tx_batch_timer(struct hrtimer *timer)
+{
+	struct rtl_ax_ap *radio = container_of(timer, struct rtl_ax_ap, tx_batch_timer);
+	unsigned int cpu = READ_ONCE(radio->tx_batch_cpu);
+
+	/* Both TX CPUs avoid the radio IRQ on CPU0 and the NI poller on CPU2. */
+	if (cpu_online(cpu))
+		queue_work_on(cpu, system_bh_wq, &radio->tx_batch_dispatch);
+	else
+		tasklet_schedule(&radio->tx_tasklet);
+	return HRTIMER_NORESTART;
 }
 
 static void rtl_ax_wake_tx_queue(struct ieee80211_hw *hw, struct ieee80211_txq *queue)
 {
 	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct rtl_ax_station *sta = queue->sta ? (void *)queue->sta->drv_priv : NULL;
 
-	/* Let one NI/NAPI batch reach mac80211 before draining its queues,
-	 * so A-MSDU can retain the payloads as separate DMA segments. */
-	if (READ_ONCE(radio->monitor_started))
-		tasklet_schedule(&radio->tx_tasklet);
+	if (READ_ONCE(radio->monitor_started) &&
+	    !(atomic_fetch_or(RTL_AX_TXQ_OWNED | RTL_AX_TXQ_RERUN,
+			      &radio->txq_schedule) & RTL_AX_TXQ_OWNED)) {
+		/* Let successive local sends form A-MSDUs before softirq drains BE. */
+		if (sta && !queue->tid && queue->vif->type == NL80211_IFTYPE_AP &&
+		    READ_ONCE(radio->channel.bandwidth) == 3 &&
+		    READ_ONCE(radio->tx_ba[sta->macid].aggregation[0])) {
+			unsigned int cpu = RTL_AX_HE160_TX_BATCH_CPU;
+
+			/* Keep batches already in the alternate TX softirq
+			 * on that CPU so the sender's CPU stays available. */
+			if (in_serving_softirq() &&
+			    smp_processor_id() == RTL_AX_HE160_TX_BATCH_ALT_CPU)
+				cpu = RTL_AX_HE160_TX_BATCH_ALT_CPU;
+			WRITE_ONCE(radio->tx_batch_cpu, cpu);
+			hrtimer_start(&radio->tx_batch_timer,
+				      ns_to_ktime(RTL_AX_HE160_TX_BATCH_US * NSEC_PER_USEC),
+				      HRTIMER_MODE_REL_PINNED_SOFT);
+		} else {
+			tasklet_schedule(&radio->tx_tasklet);
+		}
+	}
 }
 
 static int rtl_ax_net_setup_tc(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -1635,6 +1797,50 @@ static void rtl_ax_traffic_update(struct rtl_ax_ap *radio)
 	}
 }
 
+static void rtl_ax_cfo_watchdog(struct rtl_ax_ap *radio)
+{
+	struct rtl_ax_cfo *cfo = &radio->cfo;
+	unsigned int peer = 0, count;
+	unsigned long flags;
+	int average = 0, cap, step, ret;
+
+	if (radio->ap_started && !radio->mesh_started && radio->channel.bandwidth == 3 &&
+	    !radio->scanning && bitmap_weight(radio->station_ids, 128) == 1) {
+		peer = find_first_bit(radio->station_ids, 128);
+		if (!radio->peer_authorized[peer])
+			peer = 0;
+	}
+
+	mutex_lock(&rtl_ax_shared_crystal_lock);
+	if (!independent_xtal && rtl_ax_shared_crystal_2g)
+		peer = 0;
+	spin_lock_irqsave(&radio->command_lock, flags);
+	count = cfo->sample_peer == peer ? cfo->samples : 0;
+	if (count)
+		average = cfo->sum / (int)count;
+	cfo->sample_peer = peer;
+	cfo->samples = cfo->sum = 0;
+	spin_unlock_irqrestore(&radio->command_lock, flags);
+
+	cap = cfo->crystal_current;
+	if (!peer) {
+		cap = cfo->crystal_default;
+	} else if (count >= 8) {
+		cfo->last = average;
+		/* A TYFZA1 trim step is about 6 kHz. A 4 kHz deadband
+		 * keeps a settled oscillator between adjacent cap values. */
+		if (abs(average) >= 16) {
+			step = abs(average) > cfo->threshold[2] ? cfo->step[2] : cfo->step[0];
+			cap = clamp_t(int, cap + (average < 0 ? -step : step),
+				cfo->crystal_lower, cfo->crystal_upper);
+		}
+	}
+	ret = rtl_ax_cfo_set_cap(&radio->io, cfo, cap);
+	mutex_unlock(&rtl_ax_shared_crystal_lock);
+	if (ret)
+		dev_err_ratelimited(&radio->pdev->dev, "CFO trim failed: %d\n", ret);
+}
+
 static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct rtl_ax_ap *radio = container_of(work, struct rtl_ax_ap, dm_work.work);
@@ -1696,6 +1902,8 @@ static void rtl_ax_dm_work(struct wiphy *wiphy, struct wiphy_work *work)
 			radio->chip == RTL_AX_8852C ? rtl_ax_environment_loss(
 				radio->channel.external_loss[0], radio->channel.external_loss[1]) : 0);
 	}
+	if (radio->chip == RTL_AX_8852C)
+		rtl_ax_cfo_watchdog(radio);
 	if (radio->ap_started && !radio->mesh_started) rtl_ax_traffic_update(radio);
 	mutex_unlock(&radio->command_mutex);
 	wiphy_delayed_work_queue(wiphy, &radio->dm_work, 2 * HZ);
@@ -1836,7 +2044,42 @@ found:
 	for (i = 0; i < 6; i++) seq->ccmp.pn[i] = pn >> (i * 8);
 }
 
+static bool rtl_ax_can_aggregate_in_amsdu(struct ieee80211_hw *hw,
+	struct sk_buff *head, struct sk_buff *skb)
+{
+	struct rtl_ax_ap *radio = rtl_ax_monitor_radio(hw);
+	struct ieee80211_hdr *header = (void *)head->data;
+	struct ieee80211_vif *vif = IEEE80211_SKB_CB(head)->control.vif;
+	unsigned int segments = 2 + skb_shinfo(head)->nr_frags + skb_shinfo(skb)->nr_frags;
+	struct ieee80211_sta *sta;
+	struct sk_buff *part;
+	unsigned int macid;
+	bool short_wd = false;
+
+	if (radio->chip != RTL_AX_8852C)
+		return true;
+	skb_walk_frags(head, part)
+		segments += 1 + skb_shinfo(part)->nr_frags;
+	if (segments < RTL_AX_TX_WP_ADDRESS_MAX)
+		return true;
+	if (!vif || vif->type != NL80211_IFTYPE_AP || !ieee80211_has_protected(header->frame_control) ||
+	    head->len + skb->len <= 2300 || (skb->priority & IEEE80211_QOS_CTL_TID_MASK))
+		return false;
+
+	rcu_read_lock();
+	sta = ieee80211_find_sta_by_ifaddr(hw, header->addr1, vif->addr);
+	if (sta) {
+		macid = ((struct rtl_ax_station *)sta->drv_priv)->macid;
+		short_wd = READ_ONCE(radio->tx_ba[macid].short_wd) &&
+			READ_ONCE(radio->tx_ba[macid].aggregation[0]) &&
+			sta->deflink.smps_mode != IEEE80211_SMPS_DYNAMIC;
+	}
+	rcu_read_unlock();
+	return short_wd;
+}
+
 static const struct ieee80211_ops rtl_ax_monitor_ops = {
+	.can_aggregate_in_amsdu = rtl_ax_can_aggregate_in_amsdu,
 	.set_rts_threshold = rtl_ax_set_rts_threshold,
 	.tx = rtl_ax_monitor_tx,
 	.wake_tx_queue = rtl_ax_wake_tx_queue,
@@ -2149,7 +2392,8 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	/* mac80211 assembles host A-MSDUs; NI retains its PE encapsulation. */
 	ieee80211_hw_set(hw, TX_AMSDU);
 	ieee80211_hw_set(hw, TX_FRAG_LIST);
-	hw->max_tx_fragments = RTL_AX_TX_WP_ADDRESS_MAX - 1;
+	hw->max_tx_fragments = radio->chip == RTL_AX_8852C ?
+		RTL_AX_TX_MAX_DMA_SEGMENTS : RTL_AX_TX_WP_ADDRESS_MAX - 1;
 	hw->max_tx_aggregation_subframes = 128;
 	hw->max_rx_aggregation_subframes = 256;
 	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_MONITOR) | BIT(NL80211_IFTYPE_AP) |
@@ -2227,6 +2471,10 @@ static int rtl_ax_monitor_register(struct rtl_ax_ap *radio)
 	wiphy_work_init(&radio->offload_work, rtl_ax_offload_work);
 	wiphy_work_init(&radio->ra_update_work, rtl_ax_ra_update_work);
 	rtl_ax_tx_bind_ready(radio->tx, rtl_ax_offload_ready, radio);
+	atomic_set(&radio->txq_schedule, 0);
+	INIT_WORK(&radio->tx_batch_dispatch, rtl_ax_tx_batch_dispatch);
+	hrtimer_setup(&radio->tx_batch_timer, rtl_ax_tx_batch_timer, CLOCK_MONOTONIC,
+		      HRTIMER_MODE_REL_PINNED_SOFT);
 	tasklet_setup(&radio->tx_tasklet, rtl_ax_tx_queues);
 	wiphy_delayed_work_init(&radio->cleanup_work, rtl_ax_cleanup_work);
 	wiphy_delayed_work_init(&radio->ra_work, rtl_ax_ra_work);
@@ -2246,6 +2494,8 @@ static void rtl_ax_monitor_unregister(struct rtl_ax_ap *radio)
 		return;
 	WRITE_ONCE(radio->monitor_started, false);
 	ieee80211_unregister_hw(radio->hw);
+	hrtimer_cancel(&radio->tx_batch_timer);
+	cancel_work_sync(&radio->tx_batch_dispatch);
 	tasklet_kill(&radio->tx_tasklet);
 	rtl_ax_tx_bind_hw(radio->tx, NULL);
 }

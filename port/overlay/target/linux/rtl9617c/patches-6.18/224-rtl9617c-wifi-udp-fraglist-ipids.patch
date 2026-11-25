@@ -1,0 +1,149 @@
+--- a/include/linux/skbuff.h
++++ b/include/linux/skbuff.h
+@@ -4921,8 +4921,9 @@
+ #ifdef CONFIG_SKB_EXTENSIONS
+ enum skb_ext_id {
+ #ifdef CONFIG_ARCH_RTL9617C
+ 	SKB_EXT_RTL9617C_BRIDGE,
++	SKB_EXT_RTL9617C_UDP_IPIDS,
+ #endif
+ #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+ 	SKB_EXT_BRIDGE_NF,
+ #endif
+--- a/include/linux/udp.h
++++ b/include/linux/udp.h
+@@ -19,4 +19,12 @@
+ #include <uapi/linux/udp.h>
+ 
++#define UDP_GRO_CNT_MAX 64
++
++#ifdef CONFIG_ARCH_RTL9617C
++struct rtl9617c_udp_ipids {
++	__be16 ids[UDP_GRO_CNT_MAX];
++};
++#endif
++
+ static inline struct udphdr *udp_hdr(const struct sk_buff *skb)
+ {
+--- a/net/core/skbuff.c
++++ b/net/core/skbuff.c
+@@ -5106,8 +5106,9 @@
+ 
+ static const u8 skb_ext_type_len[] = {
+ #ifdef CONFIG_ARCH_RTL9617C
+ 	[SKB_EXT_RTL9617C_BRIDGE] = SKB_EXT_CHUNKSIZEOF(struct rtl9617c_bridge_frame),
++	[SKB_EXT_RTL9617C_UDP_IPIDS] = SKB_EXT_CHUNKSIZEOF(struct rtl9617c_udp_ipids),
+ #endif
+ #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+ 	[SKB_EXT_BRIDGE_NF] = SKB_EXT_CHUNKSIZEOF(struct nf_bridge_info),
+ #endif
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -3837,6 +3837,11 @@
+ 	netdev_features_t features = dev->features;
+ 
+-	if (skb_is_gso(skb))
++	if (skb_is_gso(skb)) {
+ 		features = gso_features_check(skb, dev, features);
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_SKB_EXTENSIONS)
++		if (skb_ext_exist(skb, SKB_EXT_RTL9617C_UDP_IPIDS))
++			features &= ~NETIF_F_GSO_MASK;
++#endif
++	}
+ 
+ 	/* If encapsulation offload request, verify we are testing
+--- a/net/ipv4/udp_offload.c
++++ b/net/ipv4/udp_offload.c
+@@ -699,6 +699,29 @@
+ 
+ 
+-#define UDP_GRO_CNT_MAX 64
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_SKB_EXTENSIONS)
++static bool udp4_wifi_gro_flush(struct sk_buff *head, const struct udphdr *udp,
++			       const struct udphdr *head_udp)
++{
++	const struct iphdr *ip = (const struct iphdr *)udp - 1;
++	const struct iphdr *head_ip = (const struct iphdr *)head_udp - 1;
++	struct rtl9617c_udp_ipids *ipids;
++
++	if ((ip->ttl ^ head_ip->ttl) | (ip->tos ^ head_ip->tos) |
++	    ((ip->frag_off ^ head_ip->frag_off) & htons(IP_DF)))
++		return true;
++
++	ipids = skb_ext_find(head, SKB_EXT_RTL9617C_UDP_IPIDS);
++	if (!ipids) {
++		ipids = skb_ext_add(head, SKB_EXT_RTL9617C_UDP_IPIDS);
++		if (!ipids)
++			return true;
++		*ipids = (struct rtl9617c_udp_ipids){ .ids = { head_ip->id } };
++	}
++	ipids->ids[NAPI_GRO_CB(head)->count] = ip->id;
++	return false;
++}
++#endif
++
+ static struct sk_buff *udp_gro_receive_segment(struct list_head *head,
+ 					       struct sk_buff *skb)
+ {
+@@ -743,5 +766,12 @@
+ 		}
+ 
+-		flush = gro_receive_network_flush(uh, uh2, p);
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_SKB_EXTENSIONS)
++		if (p->rtl9617c_wifi_miss && NAPI_GRO_CB(skb)->is_flist &&
++		    !(NAPI_GRO_CB(skb)->encap_mark | NAPI_GRO_CB(p)->encap_mark) &&
++		    skb->protocol == htons(ETH_P_IP))
++			flush = udp4_wifi_gro_flush(p, uh, uh2);
++		else
++#endif
++			flush = gro_receive_network_flush(uh, uh2, p);
+ 
+ 		/* Terminate the flow on len mismatch or if it grow "too much".
+--- a/net/ipv4/af_inet.c
++++ b/net/ipv4/af_inet.c
+@@ -1363,5 +1363,9 @@
+ 	int ihl;
+ 	int id;
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_SKB_EXTENSIONS)
++	struct rtl9617c_udp_ipids ipids;
++	unsigned int ipid_index = 0, ipid_count = 0;
++#endif
+ 
+ 	skb_reset_network_header(skb);
+ 	nhoff = skb_network_header(skb) - skb_mac_header(skb);
+@@ -1394,6 +1398,19 @@
+ 
+ 	if (!skb->encapsulation || encap)
+ 		udpfrag = !!(skb_shinfo(skb)->gso_type & SKB_GSO_UDP);
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_SKB_EXTENSIONS)
++	if (proto == IPPROTO_UDP && (!skb->encapsulation || encap)) {
++		const struct rtl9617c_udp_ipids *saved;
++
++		saved = skb_ext_find(skb, SKB_EXT_RTL9617C_UDP_IPIDS);
++		if (saved) {
++			ipids = *saved;
++			ipid_count = min_t(unsigned int, skb_shinfo(skb)->gso_segs,
++					   ARRAY_SIZE(ipids.ids));
++			features &= ~NETIF_F_GSO_MASK;
++		}
++	}
++#endif
+ 
+ 	ops = rcu_dereference(inet_offloads[proto]);
+ 	if (likely(ops && ops->callbacks.gso_segment)) {
+@@ -1430,7 +1447,13 @@
+ 				tot_len = skb->len - nhoff;
+ 		} else {
+-			if (!fixedid)
+-				iph->id = htons(id++);
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_SKB_EXTENSIONS)
++			if (ipid_index < ipid_count) {
++				iph->id = ipids.ids[ipid_index++];
++				skb_ext_del(skb, SKB_EXT_RTL9617C_UDP_IPIDS);
++			} else
++#endif
++				if (!fixedid)
++					iph->id = htons(id++);
+ 			tot_len = skb->len - nhoff;
+ 		}
+ 		iph->tot_len = htons(tot_len);

@@ -3,6 +3,15 @@
 #define RTL_AX_TX_OWNERSHIP_H
 /* Request word5 bit15 is independent of word4 bit23 (STA addressing). */
 #define RTL_AX_TX_AGG_PRELOAD (1U << 15)
+/* Request word4 bit31 is above the seven-bit MACID. Pairwise TX leaves
+ * the two software PN words free for the thirteenth DMA segment. */
+#define RTL_AX_TX_REQ_SHORT_WD (1U << 31)
+#define RTL_AX_TX_REQ_INLINE_SEGMENTS 12
+
+static inline unsigned int rtl_ax_tx_req_dma_word(unsigned int segment)
+{
+	return segment == RTL_AX_TX_REQ_INLINE_SEGMENTS ? 6 : 8 + segment * 2;
+}
 /* PE-visible DDR tables. Software request IDs and PCIe WP tags are separate. */
 #define RTL_AX_NI_REQUESTS 2048
 #define RTL_AX_NI_DISCARD RTL_AX_NI_REQUESTS

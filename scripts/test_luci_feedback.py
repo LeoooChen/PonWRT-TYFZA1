@@ -63,7 +63,7 @@ assert.deepEqual(results.map(r=>r.bssid), ['b','c','a','unknown-zero',
         assert "if (!singleRole) mode.value('" + mode + "'" in wireless
     assert "replace.default = '1';\n\t\t\t\treplace.readonly = true;" in wireless
     header = (luci / 'modules/luci-base/ucode/template/header.ut').read_text()
-    assert '-tyfza1-r4' in header
+    assert '-tyfza1-r5' in header
     backend = (luci / 'modules/luci-base/root/usr/share/rpcd/ucode/luci').read_text()
     start = backend.index('result.wifi_single_role = {};')
     capability = backend[start:backend.index('const wifi_features', start)]

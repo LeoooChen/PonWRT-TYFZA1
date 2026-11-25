@@ -1,0 +1,95 @@
+--- a/include/net/netdev_rx_queue.h
++++ b/include/net/netdev_rx_queue.h
+@@ -30,6 +30,9 @@
+ 	struct napi_struct		*napi;
+ 	struct netdev_queue_config	qcfg;
+ 	struct pp_memory_provider_params mp_params;
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_RFS_ACCEL)
++	struct rps_dev_flow_table __rcu	*rtl9617c_wifi_rps;
++#endif
+ } ____cacheline_aligned_in_smp;
+ 
+ /*
+--- a/include/net/rps.h
++++ b/include/net/rps.h
+@@ -43,6 +43,9 @@
+  */
+ struct rps_dev_flow_table {
+ 	u8			log;
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_RFS_ACCEL)
++	u8			wifi_next_cpu;
++#endif
+ 	struct rcu_head		rcu;
+ 	struct rps_dev_flow	flows[];
+ };
+--- a/net/core/dev.c
++++ b/net/core/dev.c
+@@ -5036,6 +5036,52 @@
+ 	return rflow;
+ }
+ 
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_RFS_ACCEL)
++static s32 rtl9617c_wifi_rps_pending(unsigned int cpu)
++{
++	struct softnet_data *sd = &per_cpu(softnet_data, cpu);
++	u32 head = READ_ONCE(sd->input_queue_head);
++
++	return max_t(s32, READ_ONCE(sd->input_queue_tail) - head, 0);
++}
++
++/* NI misses for a VIF are handed off by the same serialized NAPI poll. */
++static int rtl9617c_wifi_rps_cpu(struct rps_dev_flow_table *table,
++				const struct rps_map *map, u32 hash,
++				struct rps_dev_flow **rflowp)
++{
++	struct rps_dev_flow *flow = &table->flows[rfs_slot(hash, table)];
++	unsigned int cpu = READ_ONCE(flow->cpu);
++	unsigned int index, other;
++
++	if (cpu < nr_cpu_ids && cpu_online(cpu) &&
++	    ((READ_ONCE(flow->hash) == hash &&
++	      (cpu == map->cpus[0] || cpu == map->cpus[1])) ||
++	     (s32)(READ_ONCE(per_cpu(softnet_data, cpu).input_queue_head) -
++		   READ_ONCE(flow->last_qtail)) < 0))
++		goto assigned;
++
++	/* Give new flows alternate CPUs unless one backlog is already busy. */
++	index = table->wifi_next_cpu++ & 1;
++	cpu = map->cpus[index];
++	other = map->cpus[index ^ 1];
++	if (!cpu_online(cpu) ||
++	    (cpu_online(other) && rtl9617c_wifi_rps_pending(cpu) >
++	     NAPI_POLL_WEIGHT + rtl9617c_wifi_rps_pending(other)))
++		cpu = other;
++	if (!cpu_online(cpu))
++		return -1;
++
++	WRITE_ONCE(flow->hash, hash);
++	rps_input_queue_tail_save(&flow->last_qtail,
++				  READ_ONCE(per_cpu(softnet_data, cpu).input_queue_head));
++	WRITE_ONCE(flow->cpu, cpu);
++assigned:
++	*rflowp = flow;
++	return cpu;
++}
++#endif
++
+ /*
+  * get_rps_cpu is called from netif_receive_skb and returns the target
+  * CPU from the RPS map of the receiving queue for a given skb.
+@@ -5078,6 +5124,15 @@
+ 		goto done;
+ 
+ 	sock_flow_table = rcu_dereference(net_hotdata.rps_sock_flow_table);
++#if defined(CONFIG_ARCH_RTL9617C) && defined(CONFIG_RFS_ACCEL)
++	if (skb->rtl9617c_wifi_miss && !sock_flow_table && map && map->len == 2) {
++		struct rps_dev_flow_table *wifi_table;
++
++		wifi_table = rcu_dereference(rxqueue->rtl9617c_wifi_rps);
++		if (wifi_table)
++			return rtl9617c_wifi_rps_cpu(wifi_table, map, hash, rflowp);
++	}
++#endif
+ 	if (flow_table && sock_flow_table) {
+ 		struct rps_dev_flow *rflow;
+ 		u32 next_cpu;

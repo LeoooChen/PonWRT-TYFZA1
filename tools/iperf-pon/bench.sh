@@ -47,10 +47,8 @@ status)
 	[ ! -e /sys/class/net/ponfeed0 ] || "$BASE/queue" ponfeed0
 	if [ -r "$STATE/output" ]; then
 		output=$(cat "$STATE/output")
-		case "$output" in
-		ap5|ap2) [ ! -r "/sys/class/net/$output/device/radio_tx" ] ||
-			grep -E 'PE_NI_sent=|PE_Cause=' "/sys/class/net/$output/device/radio_tx";;
-		esac
+		[ ! -r "/sys/class/net/$output/device/radio_tx" ] ||
+			grep -E 'PE_NI_sent=|PE_Cause=' "/sys/class/net/$output/device/radio_tx"
 	fi
 	[ ! -e /sys/class/net/ponsink0/queues/rx-0/rps_cpus ] || {
 		printf "sink_rps_cpus="; cat /sys/class/net/ponsink0/queues/rx-0/rps_cpus
@@ -58,12 +56,15 @@ status)
 	}
 	exit 0;;
 start) ;;
-*) echo "Usage: $0 start tcp|udp ap5|ap2|lan1|lan2|lan3|lan4 PEER_IP PEER_MAC | stop | status" >&2; exit 2;;
+*) echo "Usage: $0 start tcp|udp INTERFACE PEER_IP PEER_MAC | stop | status" >&2; exit 2;;
 esac
 [ "$#" = 5 ] || exit 2
 protocol=$2 output=$3 peer_ip=$4 peer_mac=$5
 case "$protocol" in tcp) udp=0;; udp) udp=1;; *) exit 2;; esac
-case "$output" in ap5|ap2|lan1|lan2|lan3|lan4) ;; *) exit 2;; esac
+# Queue the source when the radio EQ is short of buffers.
+eq_backpressure=${EQ_BACKPRESSURE:-1}
+# A live OpenWrt AP is typically phyN-apM; do not tie the endpoint to an alias.
+case "$output" in ''|*[!a-zA-Z0-9_.:-]*) echo 'Invalid output interface name' >&2; exit 2;; esac
 [ -d "/sys/class/net/$output" ] || { echo "Output $output unavailable" >&2; exit 1; }
 [ "$(cat "/sys/class/net/$output/carrier")" = 1 ] || { echo "Output $output has no link" >&2; exit 1; }
 if ip rule list | grep -q '^22000:'; then echo 'IP rule priority 22000 already in use' >&2; exit 1; fi
@@ -75,14 +76,14 @@ trap 'stop' EXIT HUP INT TERM
 printf '%s\n' "$output" > "$STATE/output"
 insmod "$BASE/iperf_pon_flow.ko" peer_ip="$peer_ip" peer_mac="$peer_mac" output="$output" udp="$udp"
 touch "$STATE/iperf_pon_flow"
-insmod "$BASE/iperf_pon_feed.ko" output="$output" udp="$udp" eq_backpressure="${EQ_BACKPRESSURE:-0}"
+insmod "$BASE/iperf_pon_feed.ko" output="$output" udp="$udp" eq_backpressure="$eq_backpressure"
 touch "$STATE/iperf_pon_feed"
 if [ "$(cat /sys/module/iperf_pon_feed/parameters/init_error)" != 0 ]; then
 	echo "PON feed initialization failed; releasing DMA" >&2; exit 1
 fi
 sysctl -w net.ipv6.conf.ponfeed0.disable_ipv6=1 >/dev/null
 ip link set ponfeed0 up
-[ "${EQ_BACKPRESSURE:-0}" != 1 ] || "$BASE/queue" ponfeed0 bfifo
+[ "$eq_backpressure" != 1 ] || "$BASE/queue" ponfeed0 bfifo
 ip addr add 198.18.255.1/32 dev ponfeed0
 ip route add table 220 "$peer_ip/32" dev ponfeed0 src 198.18.255.1
 ip rule add from 198.18.255.1/32 table 220 priority 22000

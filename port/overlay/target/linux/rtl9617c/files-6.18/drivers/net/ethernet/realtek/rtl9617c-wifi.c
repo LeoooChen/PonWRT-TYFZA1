@@ -13,8 +13,12 @@
 #include <linux/slab.h>
 #include <linux/unaligned.h>
 #include <net/cfg80211.h>
+#include <net/netdev_rx_queue.h>
+#include <net/rps.h>
 #include "rtl9617c-ni.h"
 #include <linux/rtl9617c-wifi.h>
+
+#define RTL_WIFI_RPS_LOG 10
 
 struct rtl_wifi_port {
 	struct list_head list;
@@ -22,6 +26,9 @@ struct rtl_wifi_port {
 	struct nf_hook_ops hook;
 	unsigned int id;
 	bool hooked;
+#ifdef CONFIG_RFS_ACCEL
+	struct rps_dev_flow_table rps;
+#endif
 };
 static LIST_HEAD(wifi_ports);
 static struct device *wifi_ni;
@@ -112,38 +119,56 @@ static struct rtl_wifi_port *wifi_port(struct net_device *netdev)
 	return NULL;
 }
 
+static int wifi_hook(struct rtl_wifi_port *port)
+{
+	struct net_device *netdev = port->endpoint.netdev;
+	int ret = nf_register_net_hook(dev_net(netdev), &port->hook);
+
+	if (ret)
+		return ret;
+	port->hooked = true;
+#ifdef CONFIG_RFS_ACCEL
+	rcu_assign_pointer(netdev->_rx->rtl9617c_wifi_rps, &port->rps);
+#endif
+	return 0;
+}
+
 static int wifi_add(struct net_device *netdev)
 {
 	struct rtl_wifi_port *port;
+	size_t size = sizeof(*port);
 	int ret;
 
 	port = wifi_port(netdev);
-	if (port) {
-		if (port->hooked) return 0;
-		ret = nf_register_net_hook(dev_net(netdev), &port->hook);
-		port->hooked = !ret;
-		return ret;
-	}
-	port = kzalloc(sizeof(*port), GFP_KERNEL);
+	if (port)
+		return port->hooked ? 0 : wifi_hook(port);
+#ifdef CONFIG_RFS_ACCEL
+	size = struct_size(port, rps.flows, BIT(RTL_WIFI_RPS_LOG));
+#endif
+	port = kvzalloc(size, GFP_KERNEL);
 	if (!port) return -ENOMEM;
+#ifdef CONFIG_RFS_ACCEL
+	port->rps.log = RTL_WIFI_RPS_LOG;
+	for (unsigned int i = 0; i < BIT(RTL_WIFI_RPS_LOG); i++)
+		port->rps.flows[i].cpu = RPS_NO_CPU;
+#endif
 	port->endpoint.netdev = netdev;
 	port->endpoint.receive = wifi_receive;
 	ret = rtl9617c_ni_wifi_attach(wifi_ni, &port->endpoint);
-	if (ret < 0) { kfree(port); return ret; }
+	if (ret < 0) { kvfree(port); return ret; }
 	port->id = ret;
 	port->hook = (struct nf_hook_ops){.hook = wifi_ingress, .priv = port,
 		.dev = netdev, .pf = NFPROTO_NETDEV, .hooknum = NF_NETDEV_INGRESS, .priority = INT_MIN};
-	ret = nf_register_net_hook(dev_net(netdev), &port->hook);
+	ret = wifi_hook(port);
 	if (ret) {
 		if (rtl9617c_ni_wifi_detach(wifi_ni, port->id)) {
 			list_add_tail(&port->list, &wifi_ports);
 			return ret;
 		}
 		rtl9617c_ni_fe_remove_port(wifi_ni, netdev);
-		kfree(port);
+		kvfree(port);
 		return ret;
 	}
-	port->hooked = true;
 	list_add_tail(&port->list, &wifi_ports);
 	netdev_info(netdev, "native NE Wi-Fi interface ID%u registered\n", port->id);
 	return 0;
@@ -161,8 +186,11 @@ static void wifi_del(struct rtl_wifi_port *port)
 		netdev_err(port->endpoint.netdev, "NI queue drain failed: %d; interface ID%u retained\n", ret, port->id);
 		return;
 	}
+#ifdef CONFIG_RFS_ACCEL
+	rcu_assign_pointer(port->endpoint.netdev->_rx->rtl9617c_wifi_rps, NULL);
+#endif
 	list_del(&port->list);
-	kfree(port);
+	kvfree_rcu_mightsleep(port);
 }
 
 static int wifi_event(struct notifier_block *notifier, unsigned long event, void *ptr)

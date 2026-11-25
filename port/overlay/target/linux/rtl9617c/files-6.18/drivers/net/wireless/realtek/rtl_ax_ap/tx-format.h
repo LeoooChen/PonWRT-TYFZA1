@@ -11,6 +11,8 @@
 #define RTL_AX_TX_WP_FRAGMENT_BYTES 2047
 #define RTL_AX_TX_WP_BYTES 128
 #define RTL_AX_TX_WP_ADDRESS_MAX ((RTL_AX_TX_WP_BYTES - 56 - RTL_AX_TX_WP_SEQUENCE_BYTES) / RTL_AX_TX_WP_ADDRESS_BYTES)
+#define RTL_AX_TX_WP_SHORT_ADDRESS_MAX ((RTL_AX_TX_WP_BYTES - 32 - RTL_AX_TX_WP_SEQUENCE_BYTES) / RTL_AX_TX_WP_ADDRESS_BYTES)
+#define RTL_AX_TX_MAX_DMA_SEGMENTS (RTL_AX_TX_WP_SHORT_ADDRESS_MAX - 1)
 
 static inline unsigned int rtl_ax_tx_dma_channel(unsigned int category, unsigned int mac_band)
 {

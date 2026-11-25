@@ -5,6 +5,7 @@
 
 struct rtl_ax_cfo {
 	bool initialized, adjusting, timer_enabled, manual_tolerance, dynamic_acceleration, track_data;
+	bool trim_incomplete;
 	u8 crystal_default, crystal_current, crystal_upper, crystal_lower;
 	s8 crystal_offset;
 	u8 threshold[4], step[4], enable_threshold, stop_threshold;
@@ -12,7 +13,26 @@ struct rtl_ax_cfo {
 	u8 multi_station_mode, source, acceleration_mode, state;
 	u16 timer_period, trigger_frame_threshold;
 	u8 damping[16], divergence[8];
+	u8 sample_peer;
+	unsigned int samples;
+	int sum, last;
 };
+
+static inline int rtl_ax_cfo_set_cap(const struct rtl_ax_io *io,
+	struct rtl_ax_cfo *cfo, u8 cap)
+{
+	int ret;
+
+	if (cfo->crystal_current == cap && !cfo->trim_incomplete)
+		return 0;
+	ret = rtl_ax_xtal_write(io, 4, cap, 127);
+	if (!ret)
+		ret = rtl_ax_xtal_write(io, 5, cap, 127);
+	cfo->trim_incomplete = !!ret;
+	if (!ret)
+		cfo->crystal_current = cap;
+	return ret;
+}
 
 static inline void rtl_ax_cfo_initialize(const struct rtl_ax_io *io,
 	unsigned int chip, unsigned int crystal_cap, struct rtl_ax_cfo *cfo)
