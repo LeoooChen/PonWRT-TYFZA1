@@ -43,6 +43,7 @@ typedef uint8_t u8;typedef uint32_t u32;
 #define GFP_KERNEL 0
 #define BIT(n) (1U<<(n))
 #define IEEE80211_NUM_TIDS 16
+#define RTL_AX_NI_TX_ACTIVITY 0x1c000
 #define HZ 100
 #define GENMASK(h,l) ((~0U << (l)) & (~0U >> (31-(h))))
 #define RTL_AX_SECURITY_ENTRIES 128
@@ -86,19 +87,19 @@ struct rtl_dq_io {struct rtl_fe *fe;};
 struct wiphy {int unused;};struct work_struct {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
 struct ieee80211_hw {struct wiphy *wiphy;};
-struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
+struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];u32 ba_ni_seen[6];};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;
  struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 static unsigned long jiffies;
+static struct ieee80211_sta *observed_sta;
+static unsigned ba_requests;
 #define time_after_eq(a,b) ((long)((a)-(b))>=0)
 static void rcu_read_lock(void) {}
 static void rcu_read_unlock(void) {}
 static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *peer,const u8 *self)
-{ (void)hw;(void)peer;(void)self;return NULL; }
+{ (void)hw;(void)peer;(void)self;return observed_sta; }
 static int ieee80211_start_tx_ba_session(struct ieee80211_sta *sta,unsigned tid,unsigned timeout)
-{ (void)sta;(void)tid;(void)timeout;assert(0);return 0; }
-struct rtl_ax_tx;
-static u8 rtl_ax_tx_active_tids(struct rtl_ax_tx *tx,unsigned macid){(void)tx;(void)macid;return 0;}
+{ assert(sta==observed_sta && tid==1 && !timeout);ba_requests++;return 0; }
 enum {IEEE80211_AMPDU_TX_STOP_CONT,IEEE80211_AMPDU_TX_STOP_FLUSH,IEEE80211_AMPDU_TX_STOP_FLUSH_CONT};
 struct ieee80211_ampdu_params {struct ieee80211_sta *sta;unsigned action,tid;};
 struct wireless_dev {struct net_device *netdev;int iftype;bool use_4addr;};struct ieee80211_vif {struct wireless_dev wdev;int type;u8 addr[6];};
@@ -225,6 +226,39 @@ int main(void){
   assert(tx.peer_offloaded[1]==(cancel!=1) && get_unaligned_le32(memory+0x11a04)==(cancel!=1));
   if(cancel!=1){rtl_ax_tx_peer_authorized(&tx,1,false);assert(!rtl_ax_tx_ni_retire_peer(&tx,1));assert(!dev.references);}
  }
+ {
+  u8 memory[0x20000]={};
+  struct rtl_ax_tx tx={.pe_active=true,.pe={memory}};
+  struct wiphy wiphy={};struct ieee80211_hw hw={&wiphy};struct ieee80211_vif vif={};
+  struct rtl_ax_ap radio={.tx=&tx,.hw=&hw,.ap_vif=&vif,.ap_started=true,.monitor_started=true};
+  struct ieee80211_sta sta={.wme=true,.deflink.he_cap.has_he=true,.drv_priv={{.macid=1}}};
+  u8 *counter=memory+RTL_AX_NI_TX_ACTIVITY+(8+1)*4;
+
+  observed_sta=&sta;active_radio=&radio;active_tx=&tx;radio.peer_authorized[1]=true;
+  put_unaligned_le32(99,counter);
+  sta.drv_priv[0].ba_ni_seen[1]=99;
+  rtl_ax_offload_work(&wiphy,&radio.offload_work);
+  assert(!ba_requests);
+  put_unaligned_le32(100,counter);
+  rtl_ax_offload_work(&wiphy,&radio.offload_work);
+  assert(ba_requests==1);
+  put_unaligned_le32(101,counter);
+  rtl_ax_offload_work(&wiphy,&radio.offload_work);
+  assert(ba_requests==1);
+  jiffies+=HZ;
+  rtl_ax_offload_work(&wiphy,&radio.offload_work);
+  assert(ba_requests==1);
+  radio.tx_ba[1].aggregation[1]=64;
+  put_unaligned_le32(102,counter);
+  struct ieee80211_ampdu_params params={.sta=&sta,.tid=1,.action=IEEE80211_AMPDU_TX_STOP_CONT};
+  assert(!rtl_ax_ampdu_action(&hw,&vif,&params) && !radio.tx_ba[1].stopping);
+  rtl_ax_offload_work(&wiphy,&radio.offload_work);
+  assert(ba_requests==1);
+  put_unaligned_le32(103,counter);
+  rtl_ax_offload_work(&wiphy,&radio.offload_work);
+  assert(ba_requests==2);
+  puts("Fresh NI traffic reopens BA; historical, throttled and aggregated traffic do not restart it");
+ }
  puts("FE transaction: initial/existing NI, four partial failures, prepared admission, scheduled retry and cancellation/withdrawal passed.");
 }
 '''
@@ -240,7 +274,7 @@ static int rtl9617c_wifi_peer_route(struct net_device *dev,const u8 *mac,unsigne
  return rtl_fe_wifi_peer_route(active_fe,dev,mac,route);}
 '''
 code += function(ni, 'rtl_ax_tx_ni_route') + function(ni, 'rtl_ax_tx_ni_peer') + function(ni, 'rtl_ax_tx_ni_cleanup') + function(ni, 'ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_peer') + function(ni, 'rtl_ax_tx_ni_retire_ba')
-code += function(tx, 'rtl_ax_tx_peer_authorized')
+code += function(tx, 'rtl_ax_tx_ni_activity') + function(tx, 'rtl_ax_tx_peer_authorized')
 if 'bool rtl_ax_tx_peer_security(' in tx:
     code += function(tx, 'rtl_ax_tx_peer_security')
 code += function(monitor, 'rtl_ax_offload_ready') + function(monitor, 'rtl_ax_ba_cmac') + function(monitor, 'rtl_ax_tx_ba_finish')

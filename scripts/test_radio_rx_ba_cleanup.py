@@ -44,7 +44,7 @@ struct ieee80211_vif {int type;u8 addr[6];};
 struct wiphy {int unused;};struct wiphy_work {int unused;};
 struct wiphy_delayed_work {struct wiphy_work work;};
 struct rtl_ax_security_role {unsigned valid,tx_keyid,cam[2];};
-struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
+struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];u32 ba_ni_seen[6];};
 struct ieee80211_sta {struct rtl_ax_station drv_priv[1];bool wme;
  struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 static unsigned long jiffies;
@@ -55,7 +55,7 @@ static struct ieee80211_sta *ieee80211_find_sta_by_ifaddr(void *hw,const u8 *pee
 { (void)hw;(void)peer;(void)self;return NULL; }
 static int ieee80211_start_tx_ba_session(struct ieee80211_sta *sta,unsigned tid,unsigned timeout)
 { (void)sta;(void)tid;(void)timeout;assert(0);return 0; }
-static u8 rtl_ax_tx_active_tids(int tx,unsigned macid){(void)tx;(void)macid;return 0;}
+static u32 rtl_ax_tx_ni_activity(int tx,unsigned macid,unsigned tid){(void)tx;(void)macid;(void)tid;return 0;}
 struct rtl_ax_ap {
  struct ieee80211_hw *hw;
  struct {unsigned macid,tid,cam;bool valid,deleting;}rx_ba[128*8];

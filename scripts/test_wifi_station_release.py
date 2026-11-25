@@ -107,6 +107,7 @@ static void rtl_ax_tx_peer_qos(struct rtl_ax_tx *t,unsigned id,bool qos,unsigned
 static void rtl_ax_tx_peer_client(struct rtl_ax_tx *t,unsigned id,bool client,const u8 *bssid){(void)t;(void)id;(void)client;(void)bssid;}
 static void rtl_ax_tx_peer_authorized(struct rtl_ax_tx *t,unsigned id,bool authorized){(void)t;(void)id;(void)authorized;}
 static void rtl_ax_tx_peer_ba(struct rtl_ax_tx *t,unsigned id,unsigned tid,unsigned size){(void)t;(void)id;(void)tid;(void)size;}
+static u32 rtl_ax_tx_ni_activity(struct rtl_ax_tx *t,unsigned id,unsigned tid){(void)t;(void)id;(void)tid;return 0;}
 static int rtl_ax_tx_peer_ssn(struct rtl_ax_tx *t,unsigned id,unsigned tid){(void)t;(void)id;(void)tid;return 0;}
 static void rtl_ax_port0_field(void *io,unsigned reg,unsigned mask,unsigned value){(void)io;(void)reg;(void)mask;(void)value;}
 static void wiphy_work_queue(struct wiphy *w,struct wiphy_work *work){(void)w;(void)work;}

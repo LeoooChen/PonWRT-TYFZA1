@@ -22,7 +22,9 @@ common = r'''
 #include <string.h>
 #include <errno.h>
 #include <stdio.h>
-typedef uint8_t u8;
+typedef uint8_t u8;typedef uint32_t u32;
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define RTL_AX_NI_TX_ACTIVITY 0x1c000
 #define BIT(n) (1U<<(n))
 #define WRITE_ONCE(p,v) ((p)=(v))
 #define READ_ONCE(p) (p)
@@ -31,7 +33,7 @@ typedef uint8_t u8;
 #define mutex_unlock(p) ((void)(p))
 struct rtl_ax_tx {bool peer_authorized[128],pe_active;struct {void *memory;} pe;struct {bool route_peers[128];} ni;};
 struct rtl_ax_ap {struct rtl_ax_tx *tx; bool sta_4addr,peer_authorized[128]; int offload_result; u8 sta_bssid[6];struct {u8 peer[6];} retired_stations[128];};
-struct rtl_ax_station { unsigned macid; };
+struct rtl_ax_station { unsigned macid; u32 ba_ni_seen[6]; };
 struct ieee80211_sta {void *drv_priv;u8 addr[6];};
 #define NL80211_IFTYPE_STATION 2
 #define RTL_AX_CLIENT_MACID 1
@@ -40,6 +42,7 @@ struct ieee80211_hw {struct rtl_ax_ap *radio;};
 enum ieee80211_sta_state { IEEE80211_STA_NOTEXIST,IEEE80211_STA_NONE,IEEE80211_STA_AUTH,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED };
 static void put_unaligned_le32(uint32_t v,void *p) {memcpy(p,&v,4);}
 static uint32_t get(const void *p) {uint32_t v;memcpy(&v,p,4);return v;}
+#define get_unaligned_le32 get
 static struct rtl_ax_ap *rtl_ax_monitor_radio(struct ieee80211_hw *hw) { return hw->radio; }
 static int rtl_ax_station_add(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_sta *sta) {(void)hw;(void)vif;(void)sta;return 0;}
 static int rtl_ax_station_remove(struct ieee80211_hw *hw,struct ieee80211_vif *vif,struct ieee80211_sta *sta) {(void)hw;(void)vif;(void)sta;return 0;}
@@ -66,17 +69,22 @@ int main(void) {
  assert(radio.offload_result==-ETIMEDOUT && !radio.peer_authorized[1]);
  assert(!get(memory+0x11a04));
  assert(get(memory+0x11a08)==1);
+ put_unaligned_le32(42,memory+RTL_AX_NI_TX_ACTIVITY+(8+1)*4);
+ put_unaligned_le32(99,memory+RTL_AX_NI_TX_ACTIVITY+(8+3)*4);
  assert(!rtl_ax_sta_state(&hw,&vif,&sta,IEEE80211_STA_ASSOC,IEEE80211_STA_AUTHORIZED));
+ assert(station.ba_ni_seen[1]==42 && station.ba_ni_seen[3]==99);
+ assert(!station.ba_ni_seen[0] && !station.ba_ni_seen[2]);
  assert(get(memory+0x11a04)==1);
  tx.pe_active=false;tx.pe.memory=NULL;
  rtl_ax_tx_peer_authorized(&tx,1,false);assert(!tx.peer_authorized[1]);
- puts("actual ARM source: authorization gates close before failed FE withdrawal; other peer unchanged; reauthorization restored");
+ puts("actual ARM source: authorization gates close before failed FE withdrawal; other peer unchanged; reauthorization snapshots NI counters");
 }
 '''
 with tempfile.TemporaryDirectory(prefix='tyfza1-authorization-') as folder:
     folder = Path(folder)
     body = common + '\n'.join(function(f, n) for f, n in [
-        ('tx.c', 'rtl_ax_tx_peer_authorized'), ('monitor.h', 'rtl_ax_sta_state')]) + test
+        ('tx.c', 'rtl_ax_tx_ni_activity'), ('tx.c', 'rtl_ax_tx_peer_authorized'),
+        ('monitor.h', 'rtl_ax_sta_state')]) + test
     source, binary = folder / 'authorization.c', folder / 'authorization'
     source.write_text(body)
     subprocess.run(['cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', str(source), '-o', str(binary)], check=True)

@@ -420,23 +420,27 @@ static void rtl_ax_offload_work(struct wiphy *wiphy, struct wiphy_work *work)
 	for (macid = 1; macid < 128; macid++) {
 		int ret;
 		struct rtl_ax_security_role *role = &radio->security_roles[macid];
-		/* NI bypasses wake_tx_queue; its active TIDs need the same BA
-		 * request policy while data transmission continues normally. */
+		/* NI bypasses wake_tx_queue. Only new NI traffic can request BA. */
 		if (radio->peer_authorized[macid]) {
-			u8 tids = rtl_ax_tx_active_tids(radio->tx, macid);
 			struct ieee80211_sta *sta;
 			rcu_read_lock();
 			sta = ieee80211_find_sta_by_ifaddr(radio->hw, radio->tx_ba[macid].address, vif->addr);
 			if (sta && sta->wme && (sta->deflink.ht_cap.ht_supported ||
 			    sta->deflink.vht_cap.vht_supported || sta->deflink.he_cap.has_he)) {
 				struct rtl_ax_station *station = (void *)sta->drv_priv;
-				for (unsigned int tid = 0; tid < 6; tid++)
-					if ((tids & BIT(tid)) && !radio->tx_ba[macid].aggregation[tid] &&
+				for (unsigned int tid = 0; tid < ARRAY_SIZE(station->ba_ni_seen); tid++) {
+					u32 packets = rtl_ax_tx_ni_activity(radio->tx, macid, tid);
+
+					if (packets == station->ba_ni_seen[tid])
+						continue;
+					station->ba_ni_seen[tid] = packets;
+					if (!radio->tx_ba[macid].aggregation[tid] &&
 					    !(radio->tx_ba[macid].stopping & BIT(tid)) &&
 					    (!station->ba_retry[tid] || time_after_eq(jiffies, station->ba_retry[tid]))) {
 						station->ba_retry[tid] = jiffies + HZ;
 						ieee80211_start_tx_ba_session(sta, tid, 0);
 					}
+				}
 			}
 			rcu_read_unlock();
 		}
@@ -1156,6 +1160,11 @@ static int rtl_ax_sta_state(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		return 0;
 	}
 	if (new == IEEE80211_STA_AUTHORIZED) {
+		struct rtl_ax_station *station = (void *)sta->drv_priv;
+
+		/* The PE counters outlive a station and its MACID assignment. */
+		for (unsigned int tid = 0; tid < ARRAY_SIZE(station->ba_ni_seen); tid++)
+			station->ba_ni_seen[tid] = rtl_ax_tx_ni_activity(radio->tx, macid, tid);
 		radio->peer_authorized[macid] = true;
 		rtl_ax_tx_peer_authorized(radio->tx, macid, true);
 		rtl_ax_offload_ready(radio);
@@ -1212,6 +1221,10 @@ static int rtl_ax_ampdu_action(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		if (params->action != IEEE80211_AMPDU_TX_STOP_CONT)
 			radio->tx_ba[station->macid].flushing |= BIT(params->tid);
 		ret = rtl_ax_tx_ba_finish(radio, station->macid, params->tid);
+		/* Active sessions can transmit without running offload_work. */
+		if (params->tid < ARRAY_SIZE(station->ba_ni_seen))
+			station->ba_ni_seen[params->tid] =
+				rtl_ax_tx_ni_activity(radio->tx, station->macid, params->tid);
 		if (ret)
 			wiphy_delayed_work_queue(hw->wiphy, &radio->cleanup_work, HZ);
 		return 0;

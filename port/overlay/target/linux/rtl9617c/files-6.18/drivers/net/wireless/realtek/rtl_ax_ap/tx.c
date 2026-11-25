@@ -1301,9 +1301,11 @@ unsigned int rtl_ax_tx_peer_flows(struct rtl_ax_tx *tx, unsigned int macid)
 	return active;
 }
 
-u8 rtl_ax_tx_active_tids(struct rtl_ax_tx *tx, unsigned int macid)
+u32 rtl_ax_tx_ni_activity(struct rtl_ax_tx *tx, unsigned int macid, unsigned int tid)
 {
-	return get_unaligned_le32(tx->pe.memory + 0x17200 + macid * 4);
+	if (!tx->pe_active)
+		return 0;
+	return get_unaligned_le32(tx->pe.memory + RTL_AX_NI_TX_ACTIVITY + (macid * 8 + tid) * 4);
 }
 
 void rtl_ax_tx_wmm(struct rtl_ax_tx *tx, unsigned int quota)
