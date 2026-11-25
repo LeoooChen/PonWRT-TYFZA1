@@ -41,6 +41,7 @@ typedef uint8_t u8; typedef uint16_t __le16; typedef uint32_t u32; typedef uint6
 #define IEEE80211_TX_RC_MCS BIT(7)
 #define IEEE80211_TX_RC_SHORT_GI BIT(8)
 #define READ_ONCE(x) (x)
+#define WRITE_ONCE(x,v) ((x)=(v))
 struct rate {int idx,flags,count;};
 struct ieee80211_tx_info {unsigned flags,band; struct {struct rate rates[4];unsigned ampdu_len,ampdu_ack_len;}status;};
 struct sk_buff {u8 data[64];struct ieee80211_tx_info cb;};
@@ -55,7 +56,7 @@ struct rtl_ax_rx_packet {unsigned bytes;u8 *payload;bool pe_completed;};
 struct ewma_rtl_ax_success {unsigned total,calls;};
 static void ewma_rtl_ax_success_add(struct ewma_rtl_ax_success *p,unsigned value){p->total+=value;p->calls++;}
 struct rtl_ax_tx {struct ewma_rtl_ax_success peer_success[128];int lock,key_flush_wait;u32 ac_pending[128][6];struct {int ps_work;}ni;struct {void *memory;}pe;u8 *headers;
- bool pe_active,running,queues_paused,queues_stopped,peer_asleep[128],pending[256];
+ bool pe_active,running,queues_paused,queues_stopped,credit_wake,peer_asleep[128],pending[256];
  struct ieee80211_hw *hw;struct rtl_ax_tx_slot slots[256];
  unsigned occupied,last_report,unmatched,completed,completed_ring[6],status_count[8],polluted,queue_wakes;
  unsigned ni_reports,ni_failed,ni_first_report_ns,ampdu_completed;};

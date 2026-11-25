@@ -569,7 +569,7 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 			unsigned int read = rx->read[cos];
 			void *entry = rx->ring_memory + cos * RTL_QM_RING_BYTES + read;
 			u32 command, length_word, address, offset, h0, h1;
-			unsigned int length, header;
+			unsigned int length, header, span;
 			u64 copied = 0;
 			struct sk_buff *skb;
 			struct net_device *input;
@@ -595,10 +595,10 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				goto consume;
 			}
 			refill_buffer = true;
-			/* EPP publishes device ownership completion; invalidate only this
-			 * payload buffer before reading it through the CPU's cached map. */
-			dma_sync_single_for_cpu(rx->device, rx->memory_dma + offset,
-				RTL_QM_BUFFER_BYTES, DMA_FROM_DEVICE);
+			/* The EPP publishes ownership. Read the internal header before
+			 * invalidating the rest of the frame's cache lines. */
+			dma_sync_single_range_for_cpu(rx->device, rx->memory_dma,
+				offset + RTL_QM_HEADROOM, L1_CACHE_BYTES, DMA_FROM_DEVICE);
 			h0 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM);
 			h1 = get_unaligned_be32(rx->memory + offset + RTL_QM_HEADROOM + 4);
 			rx->last_header[0] = h0;
@@ -620,6 +620,11 @@ int rtl_qm_rx_poll(struct rtl_qm_rx *rx, struct napi_struct *napi, int budget)
 				dev->stats.rx_errors++;
 				goto consume;
 			}
+			span = ALIGN(header + length, L1_CACHE_BYTES);
+			if (span > L1_CACHE_BYTES)
+				dma_sync_single_range_for_cpu(rx->device, rx->memory_dma,
+					offset + RTL_QM_HEADROOM + L1_CACHE_BYTES,
+					span - L1_CACHE_BYTES, DMA_FROM_DEVICE);
 			/* Warm only validated, CPU-owned bytes while allocating the skb. */
 			for (unsigned int i = 0; i < length; i += L1_CACHE_BYTES)
 				prefetch(rx->memory + offset + RTL_QM_HEADROOM + header + i);

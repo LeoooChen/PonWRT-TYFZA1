@@ -23,6 +23,7 @@ for cos in range(8):
    blocked=used+pending+1>96
    assert r.get(MB+90*4)==pending+(not blocked)
    assert r.get(MB+175*4)==(0 if blocked else 1)
+   assert r.get(MB+111*4)==int(blocked)
    assert not r.get(MB+94*4)
    if blocked:
     assert bytes(r.u.mem_read(at,len(raw)))==raw

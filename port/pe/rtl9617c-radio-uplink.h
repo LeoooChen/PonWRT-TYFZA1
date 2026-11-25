@@ -316,8 +316,10 @@ static u32 __attribute__((section(".rxq"), noinline)) rx_uplink(
 	}
 	/* Leave 32 EPP entries for fabric and other ingress. */
 	if (rx_cpu_epp_peak(ni) + ((write - read) & RTL_AX_NI_TX_MASK) + frames > 96 &&
-	    !rx_epp_retry(mailbox, ni, write, frames))
+	    !rx_epp_retry(mailbox, ni, write, frames)) {
+		mailbox[111]++;
 		return RX_NI_BUSY;
+	}
 	u32 config = *(u32 *)(states + RX_PEER_CONFIG + macid * 4);
 	u32 descriptor_base = mailbox[89];
 	u32 total_bytes = 0;

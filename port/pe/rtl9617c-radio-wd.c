@@ -729,7 +729,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 	u32 rx_poll[2] = {};
 	/* PE0's RX addresses and PE1's selected requests fit in their private DMEM. */
 	union {
-		u32 tx_requests[2][16][32];
+		u32 tx_requests[2][16][RTL_AX_TX_REQ_WORDS];
 		u32 rx_addresses[2][RTL_AX_RX_BUFFERS];
 	} local;
 #endif
@@ -796,7 +796,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 #ifdef PE_UPLINK
 		u32 *ni_request;
 #else
-		u32 ni_request[32];
+		u32 ni_request[RTL_AX_TX_REQ_WORDS];
 #endif
 		#ifndef PE_UPLINK
 		volatile u32 *ni = (void *)0xb0000000;
@@ -955,7 +955,7 @@ void __attribute__((section(".text.main"))) pe_main(volatile u32 *control)
 #ifdef PE_UPLINK
 			{
 				u32 write = mailbox[RTL_AX_TX_PUBLISH_WRITE];
-				u32 words = 8 + (request[2] >> 24) * 2;
+				u32 words = rtl_ax_tx_req_words(request[2] >> 24);
 				u32 *out = local.tx_requests[slot][write];
 				if (request != out)
 					for (u32 i = 0; i < words; i++) out[i] = request[i];

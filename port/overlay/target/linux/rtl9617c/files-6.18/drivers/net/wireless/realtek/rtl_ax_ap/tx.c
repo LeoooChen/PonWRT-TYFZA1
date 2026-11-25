@@ -3,6 +3,7 @@
 #include <linux/bitmap.h>
 #include <linux/average.h>
 #include <linux/dma-mapping.h>
+#include <linux/mempool.h>
 #include <linux/pci.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
@@ -85,13 +86,14 @@ struct rtl_ax_tx {
 	u8 last_eth[14];
 	dma_addr_t ring_dma, pages_dma, headers_dma;
 	struct rtl_ax_tx_slot slots[RTL_AX_TX_ENTRIES];
+	mempool_t *mappings;
 	DECLARE_BITMAP(pending, RTL_AX_TX_ENTRIES);
 	unsigned int producer[RTL_AX_TX_RINGS];
 	unsigned int wd_producer[RTL_AX_TX_RINGS];
 	u64 submitted_ring[RTL_AX_TX_RINGS], completed_ring[RTL_AX_TX_RINGS];
 	bool running, paused, dfs_blocked;
 	bool checksum_enabled;
-	bool queues_stopped, queues_paused;
+	bool queues_stopped, queues_paused, credit_wake;
 	unsigned int occupied;
 	u64 queue_stops, queue_wakes;
 	u64 ampdu_submitted, ampdu_completed;
@@ -201,6 +203,13 @@ struct rtl_ax_tx *rtl_ax_tx_prepare(struct pci_dev *pdev, const struct rtl_ax_io
 	tx = kzalloc(sizeof(*tx), GFP_KERNEL);
 	if (!tx)
 		return ERR_PTR(-ENOMEM);
+	/* A completion can retire an ID before returning its mapping. */
+	tx->mappings = mempool_create_kmalloc_pool(RTL_AX_TX_ENTRIES + num_possible_cpus(),
+						 sizeof(struct rtl_ax_tx_mapping));
+	if (!tx->mappings) {
+		kfree(tx);
+		return ERR_PTR(-ENOMEM);
+	}
 	tx->pdev = pdev;
 	tx->dma_device = &pdev->dev;
 	init_waitqueue_head(&tx->key_flush_wait);
@@ -361,11 +370,16 @@ void rtl_ax_tx_open(struct rtl_ax_tx *tx)
 	rtl_ax_rx_pe_open(tx->rx);
 }
 
+bool rtl_ax_tx_take_credit_wake(struct rtl_ax_tx *tx)
+{
+	return xchg(&tx->credit_wake, false);
+}
+
 static void rtl_ax_tx_unmap(struct rtl_ax_tx *tx, const struct rtl_ax_tx_slot *slot)
 {
 	if (slot->mapping) {
 		dma_unmap_sg(&tx->pdev->dev, slot->mapping->sg, slot->mapping->count, DMA_TO_DEVICE);
-		kfree(slot->mapping);
+		mempool_free(slot->mapping, tx->mappings);
 	} else
 		dma_unmap_single(&tx->pdev->dev, slot->dma, slot->bytes, DMA_TO_DEVICE);
 }
@@ -408,7 +422,7 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 	int count, ret;
 
 	if (skb_is_nonlinear(skb)) {
-		slot->mapping = kmalloc(sizeof(*slot->mapping), GFP_ATOMIC);
+		slot->mapping = mempool_alloc_preallocated(tx->mappings);
 		if (!slot->mapping)
 			return -ENOMEM;
 		sg_init_table(slot->mapping->sg, RTL_AX_TX_MAX_DMA_SEGMENTS);
@@ -417,7 +431,7 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 			slot->mapping->count = count;
 			slot->mapping->dma_count = dma_map_sg(&tx->pdev->dev, slot->mapping->sg, count, DMA_TO_DEVICE);
 			if (!slot->mapping->dma_count) {
-				kfree(slot->mapping);
+				mempool_free(slot->mapping, tx->mappings);
 				slot->mapping = NULL;
 				return -ENOMEM;
 			}
@@ -427,7 +441,7 @@ static int rtl_ax_tx_map(struct rtl_ax_tx *tx, struct sk_buff *skb,
 				return addresses;
 			rtl_ax_tx_unmap(tx, slot);
 		} else
-			kfree(slot->mapping);
+			mempool_free(slot->mapping, tx->mappings);
 		slot->mapping = NULL;
 		/* Coalesce only if the fragments exceed this descriptor's address space. */
 		ret = skb_linearize(skb);
@@ -735,7 +749,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 	if (encap || ieee80211_is_data(header->frame_control))
 		rate |= tx->peer_rates[macid] & BIT(22);
 	if (tx->pe_active) {
-		u32 request[8 + RTL_AX_TX_REQ_INLINE_SEGMENTS * 2];
+		u32 request[RTL_AX_TX_REQ_WORDS];
 		u32 *published = tx->pe.memory + 0x4000 + tx->pe_producer * 128;
 		unsigned int segments = slot.mapping ? slot.mapping->dma_count : 1;
 		u32 request_flags = (encap ? tid : ieee80211_is_ctl(header->frame_control) ? 0 : le16_to_cpu(header->seq_ctrl) >> 4) | tid_indicators[tid] << 12 |
@@ -819,9 +833,7 @@ int rtl_ax_tx_submit(struct rtl_ax_tx *tx, struct ieee80211_hw *hw,
 			memcpy(tx->pe.memory + 0xe400 + macid * 8, header->addr1, ETH_ALEN);
 			template_ready = true;
 		}
-		memcpy(published, request,
-			(8 + min(segments, (unsigned int)RTL_AX_TX_REQ_INLINE_SEGMENTS) * 2) *
-			sizeof(*request));
+		memcpy(published, request, rtl_ax_tx_req_words(segments) * sizeof(*request));
 	} else {
 	memset(page, 0, RTL_AX_TX_WP_BYTES);
 	if (slot.mapping) {
@@ -1071,6 +1083,7 @@ int rtl_ax_tx_report(struct rtl_ax_tx *tx, struct ieee80211_hw *hw, const struct
 		    (RTL_AX_TX_ENTRIES / 2)) {
 			tx->queues_stopped = false;
 			tx->queue_wakes++;
+			WRITE_ONCE(tx->credit_wake, true);
 			ieee80211_wake_queues(hw);
 		}
 		spin_unlock_irqrestore(&tx->lock, flags);
@@ -1234,6 +1247,7 @@ int rtl_ax_tx_free(struct rtl_ax_tx *tx, struct ieee80211_hw *hw)
 		dma_free_coherent(tx->dma_device, RTL_AX_TX_RINGS * RTL_AX_TX_ENTRIES * 8, tx->ring, tx->ring_dma);
 	if (tx->pe.memory)
 		pe_probe_free(&tx->pe);
+	mempool_destroy(tx->mappings);
 	kfree(tx);
 	return 0;
 }

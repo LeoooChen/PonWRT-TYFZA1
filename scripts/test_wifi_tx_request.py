@@ -10,7 +10,7 @@ driver = root / 'port/overlay/target/linux/rtl9617c/files-6.18/drivers/net/wirel
 temporary = tempfile.TemporaryDirectory(prefix='wifi-tx-request-')
 p = Path(temporary.name)
 current = (driver / 'tx.c').read_text()
-old = current.replace('u32 request[8 + RTL_AX_TX_REQ_INLINE_SEGMENTS * 2];\n\t\tu32 *published =', 'u32 *request =')
+old = current.replace('u32 request[RTL_AX_TX_REQ_WORDS];\n\t\tu32 *published =', 'u32 *request =')
 assert old != current
 publish = re.search(r'\t\tmemcpy\(published, request,.*?sizeof\(\*request\)\);\n', old, re.S)
 assert publish
@@ -114,6 +114,10 @@ code += r'''
 int main(void){
  static u8 mem[2][0x20000],headers[2][256*128],payload[2048];
  unsigned vectors=0;
+ assert(rtl_ax_tx_req_words(1)==10);
+ assert(rtl_ax_tx_req_words(11)==30);
+ assert(rtl_ax_tx_req_words(12)==RTL_AX_TX_REQ_WORDS);
+ assert(rtl_ax_tx_req_words(13)==RTL_AX_TX_REQ_WORDS);
  for(unsigned client=0;client<2;client++)
  for(unsigned layout=0;layout<=13;layout++)
  for(unsigned encap=0;encap<2;encap++)for(unsigned seq=0;seq<2;seq++)

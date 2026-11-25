@@ -37,6 +37,7 @@ typedef uint8_t u8;typedef uint16_t u16;typedef uint32_t u32;typedef uint64_t u6
 #define L1_CACHE_BYTES 64
 #define round_down(x,a) ((x)&~((a)-1))
 #define round_up(x,a) (((x)+(a)-1)&~((a)-1))
+#define ALIGN(x,a) round_up(x,a)
 #define prefetch(p) ((void)(p))
 #define RTL_QM_RING_BYTES 1024
 #define RTL_QM_COMMAND_BYTES 8
@@ -78,6 +79,13 @@ static void writel(u32 v,void *p){unsigned r=(u8 *)p-(u8 *)active->ni;
 static void dma_sync_single_for_cpu(void *d,dma_addr_t a,unsigned n,int direction){(void)d;
  if(a>=active->ring_dma&&a<active->ring_dma+8192){assert(n&&!(a%64)&&!(n%64)&&a+n<=active->ring_dma+8192&&direction==2);return;}
  assert(n==2048&&direction==2);}
+static void dma_sync_single_range_for_cpu(void *d,dma_addr_t a,unsigned offset,unsigned n,int direction){
+ assert(d==active->device&&a==active->memory_dma&&direction==DMA_FROM_DEVICE);
+ unsigned start=(offset-8192)%RTL_QM_BUFFER_BYTES;
+ assert(offset>=8192&&offset+n<=RTL_QM_MEMORY_BYTES);
+ assert(start>=RTL_QM_HEADROOM&&!(start%L1_CACHE_BYTES)&&n&&!(n%L1_CACHE_BYTES));
+ assert(start+n<=RTL_QM_BUFFER_BYTES-RTL_QM_TAILROOM);
+}
 static inline void dma_sync_single_for_device(void *d,dma_addr_t a,unsigned n,int direction){dma_sync_single_for_cpu(d,a,n,direction);}
 static int rtl_qm_try_push(void *context,unsigned address,unsigned eq){struct rtl_qm_rx *rx=context;
  unsigned id=(address-(u32)rx->memory_dma-8192)/2048;
@@ -149,7 +157,7 @@ int main(void){
 }
 '''
 (out/'credit.c').write_text(common+source[a:b]+case)
-subprocess.run(['cc','-std=gnu11','-O2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-fsanitize=address,undefined','-I',str(root/relative).rsplit('/',1)[0],'-I',str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include/linux'),str(out/'credit.c'),'-o',str(out/'credit')],check=True)
+subprocess.run(['cc','-std=gnu11','-O2','-Wall','-Wextra','-Werror','-Wno-misleading-indentation','-Wno-unused-function','-fsanitize=address,undefined','-I',str(root/relative).rsplit('/',1)[0],'-I',str(root/'port/overlay/target/linux/rtl9617c/files-6.18/include/linux'),str(out/'credit.c'),'-o',str(out/'credit')],check=True)
 result=subprocess.run([str(out/'credit')],capture_output=True,text=True)
 print(result.stdout,end='')
 if before:

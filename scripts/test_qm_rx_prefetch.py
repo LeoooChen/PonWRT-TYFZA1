@@ -24,13 +24,17 @@ static unsigned int test_length, test_header, synced, hints;
 static bool fail_alloc;
 static void prefetch(const void *p) {
  uintptr_t first=(uintptr_t)active->memory+8192+RTL_QM_HEADROOM+test_header;
- assert(synced==1);
+ assert(synced>=round_up(test_header+test_length,L1_CACHE_BYTES));
  assert((uintptr_t)p==first+hints*L1_CACHE_BYTES);
  assert((uintptr_t)p>=first && (uintptr_t)p<first+test_length);
  hints++;
 }
 ''')
-common = common.replace('assert(n==2048&&direction==2);', 'assert(n==2048&&direction==2);synced++;')
+if 'dma_sync_single_range_for_cpu' in source:
+    common = common.replace('assert(start+n<=RTL_QM_BUFFER_BYTES-RTL_QM_TAILROOM);',
+                            'assert(start==RTL_QM_HEADROOM+synced);synced+=n;')
+else:
+    common = common.replace('assert(n==2048&&direction==2);', 'assert(n==2048&&direction==2);synced+=n;')
 common = common.replace('assert(length==64);', 'assert(length==test_length);assert(hints==(test_length+63)/64);if(fail_alloc)return NULL;')
 a = common.index('static void received(')
 b = common.index('static void napi_gro_receive', a)
@@ -44,6 +48,10 @@ static void received(struct sk_buff *s){
 ''' + common[b:]
 start = source.index('static void rtl_qm_rx_retire(')
 end = source.index('\nssize_t rtl_qm_rx_state(', start)
+if 'dma_sync_single_range_for_cpu' in source:
+    common += '\n#define EXPECTED_SYNC(valid) ((valid)?round_up(test_header+test_length,L1_CACHE_BYTES):L1_CACHE_BYTES)\n'
+else:
+    common += '\n#define EXPECTED_SYNC(valid) RTL_QM_BUFFER_BYTES\n'
 tests = r'''
 int main(void){unsigned cases=0;
 unsigned sizes[]={14,63,64,65,127,128,129,1490,1584,1592};
@@ -69,7 +77,7 @@ for(unsigned mode=0;mode<4;mode++)for(unsigned si=0;si<ARRAY_SIZE(sizes);si++)fo
  assert(!mprotect(rx.memory,RTL_QM_MEMORY_BYTES,PROT_READ));
  bool valid=fault<2&&test_length<=RTL_QM_DATA_BYTES-test_header;
  assert(rtl_qm_rx_poll(&rx,&napi,64)==1&&consumer==1);
- assert(synced==(fault==3?0:1));assert(hints==(valid?(test_length+63)/64:0));
+ assert(synced==(fault==3?0:EXPECTED_SYNC(valid)));assert(hints==(valid?(test_length+63)/64:0));
  assert(delivered==(valid&&!fail_alloc));assert(rx.refill.returned==(fault==3?0:1));
  munmap(rx.memory,RTL_QM_MEMORY_BYTES);free(rx.ring_memory);free(rx.ni);cases++;
 }

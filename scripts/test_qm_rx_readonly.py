@@ -22,7 +22,11 @@ common = common.replace('static bool seen[129];', '''static bool seen[129];
 static bool allocation_failure;
 static unsigned int cpu_syncs;
 ''')
-common = common.replace('assert(n==2048&&direction==2);', 'assert(n==2048&&direction==2);cpu_syncs++;')
+if 'dma_sync_single_range_for_cpu' in source:
+    common = common.replace('assert(start+n<=RTL_QM_BUFFER_BYTES-RTL_QM_TAILROOM);',
+                            'assert(start+n<=RTL_QM_BUFFER_BYTES-RTL_QM_TAILROOM);cpu_syncs++;')
+else:
+    common = common.replace('assert(n==2048&&direction==2);', 'assert(n==2048&&direction==2);cpu_syncs++;')
 common = common.replace('dma_sync_single_for_cpu(d,a,n,direction);}',
                         '(void)d;(void)a;(void)n;(void)direction;assert(!"redundant device sync on read-only RX");}')
 common = common.replace('(void)n;assert(length==64);', '(void)n;assert(length==64);if(allocation_failure)return NULL;')
@@ -34,6 +38,10 @@ if 'endpoint->receive(endpoint, napi, skb, wifi_forwarded)' not in source:
     common = common.replace('assert(n && n->dev==active->device);', '')
 start = source.index('static void rtl_qm_rx_retire(')
 end = source.index('\nssize_t rtl_qm_rx_state(', start)
+if 'dma_sync_single_range_for_cpu' in source:
+    common += '\n#define EXPECTED_SYNCS(fault) ((fault)==2?64:128)\n'
+else:
+    common += '\n#define EXPECTED_SYNCS(fault) 64\n'
 case = r'''
 int main(void) {
  unsigned cases=0;
@@ -66,10 +74,10 @@ int main(void) {
    /* Any source mutation by the production poll faults, including on errors. */
    assert(!mprotect(rx.memory,RTL_QM_MEMORY_BYTES,PROT_READ));
    assert(rtl_qm_rx_poll(&rx,&napi,64)==64);
-   assert(cpu_syncs==64&&consumer==64&&rx.refill.returned==64&&!rx.refill.pending);
+   assert(cpu_syncs==EXPECTED_SYNCS(fault)&&consumer==64&&rx.refill.returned==64&&!rx.refill.pending);
    assert(delivered==(fault?0:64));
    assert(!memcmp(original,rx.memory,RTL_QM_MEMORY_BYTES));
-   assert(rtl_qm_rx_poll(&rx,&napi,64)==0&&cpu_syncs==64);
+   assert(rtl_qm_rx_poll(&rx,&napi,64)==0&&cpu_syncs==EXPECTED_SYNCS(fault));
    cases++;
   }
   munmap(rx.memory,RTL_QM_MEMORY_BYTES);free(original);free(rx.ring_memory);free(rx.ni);

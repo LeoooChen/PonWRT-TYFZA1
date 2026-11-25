@@ -1491,6 +1491,8 @@ static void rtl_ax_wake_tx_queue(struct ieee80211_hw *hw, struct ieee80211_txq *
 	if (READ_ONCE(radio->monitor_started) &&
 	    !(atomic_fetch_or(RTL_AX_TXQ_OWNED | RTL_AX_TXQ_RERUN,
 			      &radio->txq_schedule) & RTL_AX_TXQ_OWNED)) {
+		bool credit_wake = rtl_ax_tx_take_credit_wake(radio->tx);
+
 		/* Let successive local sends form A-MSDUs before softirq drains BE. */
 		if (sta && !queue->tid && queue->vif->type == NL80211_IFTYPE_AP &&
 		    READ_ONCE(radio->channel.bandwidth) == 3 &&
@@ -1503,9 +1505,13 @@ static void rtl_ax_wake_tx_queue(struct ieee80211_hw *hw, struct ieee80211_txq *
 			    smp_processor_id() == RTL_AX_HE160_TX_BATCH_ALT_CPU)
 				cpu = RTL_AX_HE160_TX_BATCH_ALT_CPU;
 			WRITE_ONCE(radio->tx_batch_cpu, cpu);
-			hrtimer_start(&radio->tx_batch_timer,
-				      ns_to_ktime(RTL_AX_HE160_TX_BATCH_US * NSEC_PER_USEC),
-				      HRTIMER_MODE_REL_PINNED_SOFT);
+			/* Credit recovery already has queued frames to drain. */
+			if (credit_wake)
+				rtl_ax_tx_batch_timer(&radio->tx_batch_timer);
+			else
+				hrtimer_start(&radio->tx_batch_timer,
+					      ns_to_ktime(RTL_AX_HE160_TX_BATCH_US * NSEC_PER_USEC),
+					      HRTIMER_MODE_REL_PINNED_SOFT);
 		} else {
 			tasklet_schedule(&radio->tx_tasklet);
 		}

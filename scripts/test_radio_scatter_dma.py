@@ -48,14 +48,14 @@ mapping = r'''
 struct scatterlist {unsigned int length;dma_addr_t dma;};
 struct sk_buff {bool nonlinear;unsigned int len,count,lengths[14];u8 *data;};
 struct pci_dev {int dev;};
-struct rtl_ax_tx {struct pci_dev *pdev;int *dma_device;};
+struct rtl_ax_tx {struct pci_dev *pdev;int *dma_device;void *mappings;};
 struct rtl_ax_tx_mapping {struct scatterlist sg[RTL_AX_TX_MAX_DMA_SEGMENTS];unsigned int count,dma_count;};
 struct rtl_ax_tx_slot {dma_addr_t dma;unsigned int bytes;struct rtl_ax_tx_mapping *mapping;};
 static unsigned int allocated,mapped,linearized,unmapped_count;
 static bool fail_alloc,fail_map,merge;
 static struct scatterlist *active_sg;
-static void *kmalloc(size_t n,int flags){(void)flags;if(fail_alloc)return NULL;allocated++;return malloc(n);}
-static void kfree(void *p){assert(allocated);allocated--;free(p);}
+static void *mempool_alloc_preallocated(void *pool){(void)pool;if(fail_alloc)return NULL;allocated++;return malloc(sizeof(struct rtl_ax_tx_mapping));}
+static void mempool_free(void *p,void *pool){(void)pool;assert(allocated);allocated--;free(p);}
 static bool skb_is_nonlinear(struct sk_buff *s){return s->nonlinear;}
 static void sg_init_table(struct scatterlist *s,unsigned int n){memset(s,0,n*sizeof(*s));}
 static int rtl_ax_tx_sgvec(struct sk_buff *s,struct scatterlist *sg){

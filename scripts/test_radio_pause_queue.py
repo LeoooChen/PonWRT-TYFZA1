@@ -53,13 +53,14 @@ typedef uint32_t u32;typedef uint8_t u8;
 #define PE_PROBE_MAILBOX 0x2000
 #define READ_ONCE(p) (p)
 #define WRITE_ONCE(p,v) ((p)=(v))
+#define xchg(p,v) __atomic_exchange_n(p,v,__ATOMIC_RELAXED)
 #define spin_lock_irqsave(p,f) ((void)(p),(f)=0)
 #define spin_unlock_irqrestore(p,f) ((void)(p),(void)(f))
 #define dma_wmb() ((void)0)
 #define read_poll_timeout(op,v,cond,delay,timeout,sleep,addr) ((void)(delay),(void)(timeout),(void)(sleep),poll_tick(addr),(v)=op(addr),poll_error?poll_error:((cond)?0:-ETIMEDOUT))
 struct ieee80211_hw {unsigned queues;bool stopped;};
 struct rtl_ax_io {void *ctx;u32(*read32)(void*,unsigned);u8(*read8)(void*,unsigned);void(*delay_us)(void*,unsigned);};
-struct rtl_ax_tx {const struct rtl_ax_io *io;int lock;bool running,paused,queues_paused,dfs_blocked,pe_active,queues_stopped,checksum_enabled;
+struct rtl_ax_tx {const struct rtl_ax_io *io;int lock;bool running,paused,queues_paused,dfs_blocked,pe_active,queues_stopped,checksum_enabled,credit_wake;
  void *rx;bool peer_offloaded[128];struct {bool active;}ni;
  struct ieee80211_hw *hw;unsigned occupied,pe_producer,pe_command,queue_stops,queue_wakes,stopped;struct {void *memory;}pe;u32 scheduler_saved;};
 typedef struct {unsigned value;} atomic_t;
@@ -69,7 +70,8 @@ static void atomic_andnot(unsigned v,atomic_t*p){p->value&=~v;}
 static unsigned atomic_cmpxchg(atomic_t*p,unsigned old,unsigned v){unsigned was=p->value;if(was==old)p->value=v;return was;}
 struct tasklet_struct {int unused;};
 static void tasklet_schedule(struct tasklet_struct*t){(void)t;tasklet_schedules++;}
-struct hrtimer {unsigned expires;};
+struct hrtimer {unsigned expires,dispatched;};
+static void rtl_ax_tx_batch_timer(struct hrtimer *timer){timer->dispatched++;}
 static unsigned wake_cpu;
 static bool serving_softirq;
 static unsigned smp_processor_id(void){return wake_cpu;}
@@ -83,7 +85,7 @@ static void hrtimer_start(struct hrtimer *timer,unsigned expires,int mode){
 struct rtl_ax_station {unsigned macid;unsigned long ba_retry[8];};
 struct ieee80211_sta {void *drv_priv;bool wme;struct {struct {bool ht_supported;}ht_cap;struct {bool vht_supported;}vht_cap;struct {bool has_he;}he_cap;}deflink;};
 struct rtl_ax_ap {atomic_t txq_schedule;struct tasklet_struct tx_tasklet;struct hrtimer tx_batch_timer;unsigned tx_batch_cpu;
- struct {unsigned bandwidth;}channel;struct ieee80211_hw *hw;bool monitor_started;bool peer_authorized[128];struct {unsigned aggregation[8],stopping;}tx_ba[128];};
+ struct {unsigned bandwidth;}channel;struct ieee80211_hw *hw;struct rtl_ax_tx *tx;bool monitor_started;bool peer_authorized[128];struct {unsigned aggregation[8],stopping;}tx_ba[128];};
 #define NL80211_IFTYPE_AP 3
 struct ieee80211_vif {unsigned type;};
 struct ieee80211_txq {struct ieee80211_sta *sta;struct ieee80211_vif *vif;unsigned tid;};
@@ -170,7 +172,7 @@ int main(void){
 #else
  rtl_ax_tx_bind_hw(&tx,&hw);
 #endif
- struct rtl_ax_ap radio={.hw=&hw,.monitor_started=true};active=&tx;active_radio=&radio;
+ struct rtl_ax_ap radio={.hw=&hw,.tx=&tx,.monitor_started=true};active=&tx;active_radio=&radio;
  remaining=32;inflight=1;assert(!rtl_ax_tx_pause(&tx));run_tx_queues(&radio);
  unsigned kept=remaining,loss=dropped;
 #ifdef EXPECT_OLD
@@ -255,6 +257,14 @@ int main(void){
  wake_cpu=RTL_AX_HE160_TX_BATCH_CPU;
  rtl_ax_wake_tx_queue(&hw,&queue);
  assert(radio.tx_batch_cpu==RTL_AX_HE160_TX_BATCH_ALT_CPU);
+ /* Returning real WP credits dispatches on the same TX CPU without a new timer. */
+ run_tx_queues(&radio);
+ radio.tx_batch_timer.expires=0;
+ tx.queues_stopped=true;tx.occupied=128;credit_complete(&tx,&hw);
+ assert(tx.credit_wake&&!tx.queues_stopped);
+ rtl_ax_wake_tx_queue(&hw,&queue);
+ assert(!tx.credit_wake&&radio.tx_batch_timer.dispatched==1&&!radio.tx_batch_timer.expires);
+ assert(radio.tx_batch_cpu==RTL_AX_HE160_TX_BATCH_CPU);
  /* Probe/teardown without a registered mac80211 object cannot touch its queues. */
  rtl_ax_tx_bind_hw(&tx,0);tx.pe_active=false;unsigned old_stops=stops,old_wakes=wakes;
  assert(!rtl_ax_tx_pause(&tx));rtl_ax_tx_open(&tx);assert(stops==old_stops&&wakes==old_wakes);
@@ -269,6 +279,7 @@ with tempfile.TemporaryDirectory(prefix='pause-queue-', dir=root / 'artifacts') 
     source = common + schedule_bits + guard + callbacks + report + callbacks2
     if not args.before:
         source += function(tx, 'rtl_ax_tx_bind_hw')
+    source += function((driver / 'tx.c').read_text(), 'rtl_ax_tx_take_credit_wake')
     source += function(tx, 'rtl_ax_tx_pause') + function(tx, 'rtl_ax_tx_open') + function((driver / 'ni-test.h').read_text(), 'rtl_ax_tx_rx_retire') + function(monitor, 'rtl_ax_tx_queues') + function(monitor, 'rtl_ax_wake_tx_queue') + r'''
 static void run_tx_queues(struct rtl_ax_ap *radio){radio->txq_schedule.value=1;rtl_ax_tx_queues(&radio->tx_tasklet);}
 ''' + case

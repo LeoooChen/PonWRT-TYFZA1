@@ -8,9 +8,18 @@
 #define RTL_AX_TX_REQ_SHORT_WD (1U << 31)
 #define RTL_AX_TX_REQ_INLINE_SEGMENTS 12
 
+#define RTL_AX_TX_REQ_HEADER_WORDS 8
+#define RTL_AX_TX_REQ_WORDS (RTL_AX_TX_REQ_HEADER_WORDS + RTL_AX_TX_REQ_INLINE_SEGMENTS * 2)
+
+static inline unsigned int rtl_ax_tx_req_words(unsigned int segments)
+{
+	return segments < RTL_AX_TX_REQ_INLINE_SEGMENTS ?
+		RTL_AX_TX_REQ_HEADER_WORDS + segments * 2 : RTL_AX_TX_REQ_WORDS;
+}
+
 static inline unsigned int rtl_ax_tx_req_dma_word(unsigned int segment)
 {
-	return segment == RTL_AX_TX_REQ_INLINE_SEGMENTS ? 6 : 8 + segment * 2;
+	return segment == RTL_AX_TX_REQ_INLINE_SEGMENTS ? 6 : RTL_AX_TX_REQ_HEADER_WORDS + segment * 2;
 }
 /* PE-visible DDR tables. Software request IDs and PCIe WP tags are separate. */
 #define RTL_AX_NI_REQUESTS 2048
