@@ -265,6 +265,14 @@ int main(void){
  rtl_ax_wake_tx_queue(&hw,&queue);
  assert(!tx.credit_wake&&radio.tx_batch_timer.dispatched==1&&!radio.tx_batch_timer.expires);
  assert(radio.tx_batch_cpu==RTL_AX_HE160_TX_BATCH_CPU);
+ /* A credit wake served by an owned tasklet must not affect the next batch. */
+ tx.queues_stopped=true;tx.occupied=128;credit_complete(&tx,&hw);
+ rtl_ax_wake_tx_queue(&hw,&queue);
+ assert(tx.credit_wake&&radio.txq_schedule.value==3);
+ rtl_ax_tx_queues(&radio.tx_tasklet);
+ assert(!tx.credit_wake&&!radio.txq_schedule.value);
+ rtl_ax_wake_tx_queue(&hw,&queue);
+ assert(radio.tx_batch_timer.dispatched==1&&radio.tx_batch_timer.expires==RTL_AX_HE160_TX_BATCH_US*NSEC_PER_USEC);
  /* Probe/teardown without a registered mac80211 object cannot touch its queues. */
  rtl_ax_tx_bind_hw(&tx,0);tx.pe_active=false;unsigned old_stops=stops,old_wakes=wakes;
  assert(!rtl_ax_tx_pause(&tx));rtl_ax_tx_open(&tx);assert(stops==old_stops&&wakes==old_wakes);

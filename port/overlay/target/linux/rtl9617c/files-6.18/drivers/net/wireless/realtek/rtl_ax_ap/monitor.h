@@ -1423,6 +1423,8 @@ static void rtl_ax_tx_queues(struct tasklet_struct *tasklet)
 	atomic_andnot(RTL_AX_TXQ_RERUN, &radio->txq_schedule);
 	if (!READ_ONCE(radio->monitor_started))
 		goto complete;
+	/* An owned tasklet serves credit wakes without a new timer dispatch. */
+	rtl_ax_tx_take_credit_wake(radio->tx);
 	rcu_read_lock();
 	for (ac = 0; ac < hw->queues; ac++) {
 		ieee80211_txq_schedule_start(hw, ac);
