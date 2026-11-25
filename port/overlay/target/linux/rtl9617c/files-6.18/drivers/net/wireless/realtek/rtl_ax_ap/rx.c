@@ -94,6 +94,7 @@ struct rtl_ax_rx {
 	u32 uplink_forwarded_seen, pe_rdu_seen[2], pe_capture_seen;
 	u64 pe_rdu[2], pe_rx_delivered, pe_rx_malformed, pe_captured;
 	bool pool_initialized;
+	unsigned long pe_last_wake;
 };
 
 static struct rtl_ax_rx_buffer rtl_ax_rx_slot_buffer(struct rtl_ax_rx *rx,
@@ -444,7 +445,33 @@ void rtl_ax_rx_pe_event_ack(struct rtl_ax_rx *rx)
 
 void rtl_ax_rx_pe_wake(struct rtl_ax_rx *rx)
 {
-	if (READ_ONCE(rx->running)) mod_delayed_work(system_wq, &rx->work, 0);
+	unsigned long now = jiffies;
+	void *rpq_mem, *pe_mem;
+
+	if (!rx || !READ_ONCE(rx->running))
+		return;
+
+	rpq_mem = READ_ONCE(rx->rpq_memory);
+	pe_mem = READ_ONCE(rx->pe.memory);
+
+	if (READ_ONCE(rx->rpq_owned) && rpq_mem && pe_mem) {
+		bool has_rx, has_rpq;
+
+		dma_rmb();
+		has_rx = get_unaligned_le32(pe_mem + 0x2178) !=
+			 get_unaligned_le32(pe_mem + 0x217c);
+		has_rpq = get_unaligned_le32(rpq_mem + 0x2124) !=
+			  get_unaligned_le32(rpq_mem + 0x2128);
+
+		/* Skip redundant kworker wakeups when rings are empty, while keeping a 5ms
+		 * safety floor so 25ms H2C ACK stall recovery always passes through. */
+		if (!has_rx && !has_rpq &&
+		    time_before(now, READ_ONCE(rx->pe_last_wake) + msecs_to_jiffies(5)))
+			return;
+	}
+
+	WRITE_ONCE(rx->pe_last_wake, now);
+	mod_delayed_work(system_unbound_wq, &rx->work, 0);
 }
 
 int rtl_ax_rx_pe_rpq_start(struct rtl_ax_rx *rx, void *tx_memory, u32 tx_dma,
